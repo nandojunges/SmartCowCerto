@@ -282,15 +282,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       }
     }
 
-    const entradaOpcional = {
-      quantidade: Number(totalCalculado) || null,
-      unidade: unidadeFinal || null,
-      valor_total: Number(form.valorTotalEntrada) || null,
-      data_compra: form.dataCompra || null,
-      validade: form.validadeEntrada || null,
-    };
-
-    return { produto: normalizeProdutoPayload(form, isEdit), entradaOpcional };
+    return normalizeProdutoPayload(form, isEdit);
   };
 
   if (!open) return null;
@@ -765,6 +757,17 @@ function toForm(initial) {
  * ✅ Retorna payload do catálogo em snake_case.
  */
 function normalizeProdutoPayload(f, isEdit) {
+  let quantidadeEntrada = 0;
+  if (f.formaCompra === "A_GRANEL") {
+    quantidadeEntrada = Number(f.quantidadeTotal) || 0;
+  } else if (f.formaCompra === "EMBALADO") {
+    if (f.reutilizavel) {
+      quantidadeEntrada = (Number(f.qtdEmbalagens) || 0) * (Number(f.usosPorUnidade) || 0);
+    } else {
+      quantidadeEntrada = (Number(f.qtdEmbalagens) || 0) * (Number(f.tamanhoPorEmbalagem) || 0);
+    }
+  }
+
   return {
     nome_comercial: String(f.nomeComercial || "").trim(),
     categoria: String(f.categoria || "").trim(),
@@ -781,6 +784,13 @@ function normalizeProdutoPayload(f, isEdit) {
     sem_carencia_leite: !!f.semCarenciaLeite,
     sem_carencia_carne: !!f.semCarenciaCarne,
     ativo: isEdit && f.ativo === false ? false : true,
+    _entrada: {
+      quantidade: quantidadeEntrada,
+      data_compra: f.dataCompra || null,
+      validade: f.validadeEntrada || null,
+      valor_total: f.valorTotalEntrada !== "" ? Number(f.valorTotalEntrada) : null,
+      observacoes: null,
+    },
   };
 }
 

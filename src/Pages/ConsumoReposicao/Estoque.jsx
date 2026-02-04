@@ -361,7 +361,7 @@ export default function Estoque({ onCountChange }) {
             supabase
               .from("estoque_lotes")
               .select(
-                "id,fazenda_id,produto_id,validade,unidade_medida,quantidade_inicial,quantidade_atual,ativo,created_at"
+                "id,fazenda_id,produto_id,data_compra,validade,quantidade_inicial,quantidade_atual,valor_total,observacoes,ativo,created_at"
               ),
             fazId
           ).in("produto_id", ids);
@@ -590,7 +590,7 @@ export default function Estoque({ onCountChange }) {
           id: loteId,
           fazenda_id: fazendaAtualId || null,
           produto_id: produtoId,
-          data_entrada: toDateOnly(new Date()),
+          data_compra: toDateOnly(new Date()),
           validade,
           quantidade_inicial: quantidade,
           quantidade_atual: quantidade,
@@ -600,21 +600,25 @@ export default function Estoque({ onCountChange }) {
           fazenda_id: fazendaAtualId || null,
           produto_id: produtoId,
           lote_id: loteId,
-          tipo: "entrada",
+          tipo: "ENTRADA",
           quantidade,
           valor_total: Number.isFinite(valorTotal) ? valorTotal : 0,
-          data_movimento: toDateOnly(new Date()),
+          data_mov: toDateOnly(new Date()),
         },
       });
       return;
     }
 
+    const { data: auth } = await supabase.auth.getUser();
+    const userId = auth?.user?.id || null;
+
     const { data: loteCriado, error } = await supabase
       .from("estoque_lotes")
       .insert({
         fazenda_id: requireFazendaId(),
+        user_id: userId,
         produto_id: produtoId,
-        data_entrada: toDateOnly(new Date()),
+        data_compra: toDateOnly(new Date()),
         validade,
         quantidade_inicial: quantidade,
         quantidade_atual: quantidade,
@@ -628,12 +632,13 @@ export default function Estoque({ onCountChange }) {
     try {
       await supabase.from("estoque_movimentos").insert({
         fazenda_id: requireFazendaId(),
+        user_id: userId,
         produto_id: produtoId,
         lote_id: loteCriado?.id || null,
-        tipo: "entrada",
+        tipo: "ENTRADA",
         quantidade,
         valor_total: Number.isFinite(valorTotal) ? valorTotal : 0,
-        data_movimento: toDateOnly(new Date()),
+        data_mov: toDateOnly(new Date()),
       });
     } catch (e) {
       console.warn("Movimentos não registrados (ok se ainda não implementado).", e);
@@ -1165,6 +1170,7 @@ function uiToDbProduto(p) {
 function agregarLotesPorProduto(lotesDb) {
   const lotes = Array.isArray(lotesDb) ? lotesDb : [];
   const by = {};
+  const hoje = new Date().toISOString().slice(0, 10);
 
   for (const l of lotes) {
     const pid = l.produto_id;
@@ -1181,7 +1187,8 @@ function agregarLotesPorProduto(lotesDb) {
         compradoTotal: 0,
         emEstoque: 0,
         valorTotalRestante: 0,
-        validadeMaisProxima: null,
+        validadeFuturaMin: null,
+        validadePassadaMin: null,
       };
     }
 
@@ -1192,10 +1199,13 @@ function agregarLotesPorProduto(lotesDb) {
     const validade = l.validade ?? l.data_validade ?? null;
 
     if (qtdAtual > 0 && validade) {
-      const dt = new Date(validade);
-      if (!Number.isNaN(dt.getTime())) {
-        const atual = by[pid].validadeMaisProxima ? new Date(by[pid].validadeMaisProxima) : null;
-        if (!atual || dt < atual) by[pid].validadeMaisProxima = dt.toISOString();
+      const validadeISO = String(validade).slice(0, 10);
+      if (validadeISO >= hoje) {
+        if (!by[pid].validadeFuturaMin || validadeISO < by[pid].validadeFuturaMin) {
+          by[pid].validadeFuturaMin = validadeISO;
+        }
+      } else if (!by[pid].validadePassadaMin || validadeISO < by[pid].validadePassadaMin) {
+        by[pid].validadePassadaMin = validadeISO;
       }
     }
   }
@@ -1204,6 +1214,7 @@ function agregarLotesPorProduto(lotesDb) {
     by[pid].compradoTotal = safeNum(by[pid].compradoTotal, 0);
     by[pid].emEstoque = safeNum(by[pid].emEstoque, 0);
     by[pid].valorTotalRestante = safeNum(by[pid].valorTotalRestante, 0);
+    by[pid].validadeMaisProxima = by[pid].validadeFuturaMin || by[pid].validadePassadaMin || null;
   });
 
   return by;
