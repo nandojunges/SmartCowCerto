@@ -147,7 +147,9 @@ const GRUPOS_FALLBACK = [
   { value: "HORMONIO_ECG", categoria: "Farmácia", label: "Hormônio — eCG", tags: ["HORMONIO"] },
   { value: "HORMONIO_HCG", categoria: "Farmácia", label: "Hormônio — hCG", tags: ["HORMONIO"] },
   { value: "HORMONIO_FSH", categoria: "Farmácia", label: "Hormônio — FSH", tags: ["HORMONIO"] },
-  { value: "HORMONIO_ESTRADIOL", categoria: "Farmácia", label: "Hormônio — Estradiol (ésteres)", tags: ["HORMONIO"] },
+  { value: "HORMONIO_ESTRADIOL_BENZOATO", categoria: "Farmácia", label: "Hormônio — Benzoato de Estradiol", tags: ["HORMONIO"] },
+  { value: "HORMONIO_ESTRADIOL_CIPIONATO", categoria: "Farmácia", label: "Hormônio — Cipionato de Estradiol", tags: ["HORMONIO"] },
+  { value: "HORMONIO_ESTRADIOL", categoria: "Farmácia", label: "Hormônio — Estradiol (outros ésteres)", tags: ["HORMONIO"] },
   { value: "HORMONIO_OXITOCINA", categoria: "Farmácia", label: "Hormônio — Ocitocina", tags: ["HORMONIO"] },
 
   { value: "ANTIPARASITARIO_ENDO", categoria: "Farmácia", label: "Antiparasitário — Endoparasiticida", tags: ["ANTIPARASITARIO"] },
@@ -214,6 +216,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const { fazendaAtualId } = useFazenda();
   const isEdit = !!initial?.id;
   const [form, setForm] = useState(() => toForm(initial));
+  const [loteEditId, setLoteEditId] = useState(null);
   const [gruposEq, setGruposEq] = useState([]);
   const [carregandoGrupos, setCarregandoGrupos] = useState(false);
 
@@ -289,6 +292,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   useEffect(() => {
     if (!open) return;
     setForm(toForm(initial));
+    setLoteEditId(null);
   }, [initial, open]);
 
   useEffect(() => {
@@ -325,27 +329,39 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
 
     if (!open || !initial?.id || !fazendaAtualId) return undefined;
 
-    const carregarUltimoLote = async () => {
-      const { data: lote, error } = await supabase
+    const buscarLote = async (orderBy) => {
+      const { data, error } = await supabase
         .from("estoque_lotes")
         .select("id,produto_id,data_compra,validade,quantidade_inicial,valor_total,created_at,ativo")
         .eq("fazenda_id", fazendaAtualId)
         .eq("produto_id", initial.id)
         .eq("ativo", true)
-        .order("data_compra", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false })
+        .order(orderBy, { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle();
 
-      if (!ativo || error || !lote) return;
+      if (error) return { data: null, error };
+      return { data, error: null };
+    };
+
+    const carregarUltimoLote = async () => {
+      const primeiro = await buscarLote("created_at");
+      const lote = primeiro.data ? primeiro.data : (await buscarLote("data_compra")).data;
+
+      if (!ativo) return;
+      if (!lote) {
+        setLoteEditId(null);
+        return;
+      }
 
       const qtdEmbalagensDerivada = derivarQtdEmbalagens({ produto: initial, lote });
 
+      setLoteEditId(lote.id || null);
       setForm((f) => ({
         ...f,
         valorTotalEntrada: lote.valor_total !== null && lote.valor_total !== undefined ? String(lote.valor_total) : "",
-        dataCompra: isoToBR(lote.data_compra),
-        validadeEntrada: isoToBR(lote.validade),
+        dataCompra: toISODateOnly(lote.data_compra),
+        validadeEntrada: toISODateOnly(lote.validade),
         qtdEmbalagens: qtdEmbalagensDerivada,
       }));
     };
@@ -515,7 +531,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       subTipo: isCozinha ? "" : form.subTipo,
     };
 
-    return normalizeProdutoPayload(normalizedForm, isEdit);
+    return normalizeProdutoPayload(normalizedForm, isEdit, loteEditId);
   };
 
   if (!open) return null;
@@ -1012,14 +1028,24 @@ function toForm(initial) {
   };
 }
 
-function isoToBR(iso) {
-  if (!iso) return "";
+function parseBR(value) {
+  if (!value || typeof value !== "string") return null;
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const [, dd, mm, yyyy] = match;
+  const iso = `${yyyy}-${mm}-${dd}`;
   const dt = new Date(iso);
-  if (!Number.isFinite(dt.getTime())) return "";
-  const dd = String(dt.getDate()).padStart(2, "0");
-  const mm = String(dt.getMonth() + 1).padStart(2, "0");
-  const yy = dt.getFullYear();
-  return `${dd}/${mm}/${yy}`;
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function toISODateOnly(value) {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const br = parseBR(value);
+  if (br) return br.toISOString().slice(0, 10);
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toISOString().slice(0, 10);
 }
 
 function derivarQtdEmbalagens({ produto, lote }) {
@@ -1070,7 +1096,7 @@ function obterTagsTipoFarmacia(tipoFarmacia) {
 /**
  * ✅ Retorna payload do catálogo em snake_case.
  */
-function normalizeProdutoPayload(f, isEdit) {
+function normalizeProdutoPayload(f, isEdit, loteEditId) {
   let quantidadeEntrada = 0;
   if (f.formaCompra === "A_GRANEL") {
     quantidadeEntrada = Number(f.quantidadeTotal) || 0;
@@ -1128,6 +1154,7 @@ function normalizeProdutoPayload(f, isEdit) {
       valor_total: f.valorTotalEntrada !== "" ? Number(f.valorTotalEntrada) : null,
       observacoes: null,
     },
+    _loteEditId: loteEditId || null,
   };
 }
 
