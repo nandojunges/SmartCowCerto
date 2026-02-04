@@ -24,6 +24,13 @@ function toNumber(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function pick(obj, ...keys) {
+  for (const key of keys) {
+    if (obj && obj[key] !== undefined && obj[key] !== null) return obj[key];
+  }
+  return undefined;
+}
+
 /* ========================= Tabs Modernas ========================= */
 function ModernTabs({ selected, setSelected, contadores }) {
   const tabs = useMemo(
@@ -416,16 +423,19 @@ export default function ConsumoReposicao() {
 
   // ✅ Abrir/Fechar modal
   const abrirNovoProduto = useCallback(() => {
+    setErro("");
     setEditando(null);
     setModalNovoProdutoOpen(true);
   }, []);
 
   const fecharNovoProduto = useCallback(() => {
+    setErro("");
     setModalNovoProdutoOpen(false);
     setEditando(null);
   }, []);
 
   const editarProduto = useCallback((prod) => {
+    setErro("");
     setEditando(prod?._raw || null);
     setModalNovoProdutoOpen(true);
   }, []);
@@ -469,51 +479,66 @@ export default function ConsumoReposicao() {
 
         const idEdicao = editando?.id ?? null;
 
-        // ✅ row pronto (tabela nova)
+        const nome = pick(produtoIn, "nome_comercial", "nomeComercial");
+        const categoriaProduto = pick(produtoIn, "categoria");
+        const sub_tipo = pick(produtoIn, "sub_tipo", "subTipo");
+        const forma_compra = pick(produtoIn, "forma_compra", "formaCompra");
+        const tipo_embalagem = pick(produtoIn, "tipo_embalagem", "tipoEmbalagem");
+        const tamanho_por_embalagem = pick(produtoIn, "tamanho_por_embalagem", "tamanhoPorEmbalagem");
+        const unidade_medida = pick(produtoIn, "unidade_medida", "unidadeMedida");
+        const reutilizavel = !!pick(produtoIn, "reutilizavel");
+        const usos_por_unidade = pick(produtoIn, "usos_por_unidade", "usosPorUnidade");
+        const carencia_leite = pick(produtoIn, "carencia_leite", "carenciaLeiteDias", "carenciaLeite");
+        const carencia_carne = pick(produtoIn, "carencia_carne", "carenciaCarneDias", "carenciaCarne");
+        const sem_carencia_leite = !!pick(produtoIn, "sem_carencia_leite", "semCarenciaLeite");
+        const sem_carencia_carne = !!pick(produtoIn, "sem_carencia_carne", "semCarenciaCarne");
+        const ativo = pick(produtoIn, "ativo") === false ? false : true;
+
+        // ✅ row pronto (tabela nova) - sempre snake_case
         const row = {
           fazenda_id: fazendaAtualId,
 
-          nome_comercial: String(produtoIn?.nome_comercial || "").trim(),
-          categoria: String(produtoIn?.categoria || "").trim(),
-          sub_tipo: produtoIn?.sub_tipo ?? null,
+          nome_comercial: String(nome || "").trim(),
+          categoria: String(categoriaProduto || "").trim(),
+          sub_tipo: sub_tipo ?? null,
 
-          forma_compra: produtoIn?.forma_compra ?? null,
-          tipo_embalagem: produtoIn?.tipo_embalagem ?? null,
+          forma_compra: forma_compra ?? null,
+          tipo_embalagem: tipo_embalagem ?? null,
           tamanho_por_embalagem:
-            produtoIn?.tamanho_por_embalagem === null || produtoIn?.tamanho_por_embalagem === undefined
+            tamanho_por_embalagem === null || tamanho_por_embalagem === undefined
               ? null
-              : Number(produtoIn.tamanho_por_embalagem) > 0
-              ? Number(produtoIn.tamanho_por_embalagem)
+              : Number(tamanho_por_embalagem) > 0
+              ? Number(tamanho_por_embalagem)
               : null,
 
-          unidade_medida: produtoIn?.unidade_medida ?? null,
+          unidade_medida: unidade_medida ?? null,
 
-          reutilizavel: !!produtoIn?.reutilizavel,
+          reutilizavel,
           usos_por_unidade:
-            produtoIn?.usos_por_unidade === null || produtoIn?.usos_por_unidade === undefined
+            usos_por_unidade === null || usos_por_unidade === undefined
               ? null
-              : Number(produtoIn.usos_por_unidade) >= 2
-              ? Number(produtoIn.usos_por_unidade)
+              : Number(usos_por_unidade) >= 2
+              ? Number(usos_por_unidade)
               : null,
 
           // ✅ schema novo: carencia_leite / carencia_carne (não _dias)
           carencia_leite:
-            produtoIn?.carencia_leite === null || produtoIn?.carencia_leite === undefined
+            carencia_leite === null || carencia_leite === undefined
               ? null
-              : Number(produtoIn.carencia_leite),
+              : Number(carencia_leite),
           carencia_carne:
-            produtoIn?.carencia_carne === null || produtoIn?.carencia_carne === undefined
+            carencia_carne === null || carencia_carne === undefined
               ? null
-              : Number(produtoIn.carencia_carne),
+              : Number(carencia_carne),
 
-          sem_carencia_leite: !!produtoIn?.sem_carencia_leite,
-          sem_carencia_carne: !!produtoIn?.sem_carencia_carne,
+          sem_carencia_leite,
+          sem_carencia_carne,
 
-          ativo: produtoIn?.ativo === false ? false : true,
+          ativo,
         };
 
-        if (!row.nome_comercial) throw new Error("Nome do produto é obrigatório.");
-        if (!row.categoria) throw new Error("Categoria do produto é obrigatória.");
+        if (!String(row.nome_comercial || "").trim()) throw new Error("Nome do produto é obrigatório.");
+        if (!String(row.categoria || "").trim()) throw new Error("Categoria do produto é obrigatória.");
 
         if (idEdicao) {
           const { data, error } = await supabase
