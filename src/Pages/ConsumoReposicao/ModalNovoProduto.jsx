@@ -1003,21 +1003,15 @@ function normalizePayload(f, isEdit) {
   };
 
   const lote =
-    !isEdit && f.qtdEntrada
-      ? {
-          quantidade: Number(f.qtdEntrada),
-          valorTotal: Number(f.valorTotalEntrada) || 0,
-          validade: f.validadeEntrada || null,
-          // ✅ agora significa "saldo base":
-          // - fracionado: usos
-          // - líquido: volume total (ml ou L)
-          // - peso: peso total
-          // - integral: unidades
-          quantidadeUsos: calcularSaldoBase(),
-        }
-      : null;
+  !isEdit && f.qtdEntrada
+    ? {
+        quantidade: Number(f.qtdEntrada),
+        valorTotal: Number(f.valorTotalEntrada) || 0,
+        validade: f.validadeEntrada || null,
+      }
+    : null;
 
-  return { produto, lote };
+return { produto, lote };
 }
 
 /* ===================== ESTILOS ===================== */
