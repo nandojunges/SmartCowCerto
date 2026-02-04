@@ -204,13 +204,6 @@ export default function Estoque({ onCountChange }) {
     await kvSet(CACHE_ESTOQUE_KEY, nextList);
   }, []);
 
-  function splitPayload(payload) {
-    return {
-      produto: payload?.produto ?? payload,
-      lote: payload?.lote ?? null,
-    };
-  }
-
   function requireFazendaId() {
     if (!fazendaAtualId) throw new Error("Selecione uma fazenda para continuar.");
     return fazendaAtualId;
@@ -531,91 +524,13 @@ export default function Estoque({ onCountChange }) {
 
   /* ===================== CRUD PRODUTO ===================== */
   async function salvarNovoProduto(produtoUi) {
-    const db = uiToDbProduto(produtoUi);
-
-    // ✅ garante o NOT NULL do schema: forma_compra (enum: EMBALADO | A_GRANEL)
-    if (!db.forma_compra) {
-      // fallback final (não deveria chegar aqui se Modal preencher)
-      db.forma_compra = normalizeFormaCompra(null, produtoUi);
-    }
-
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const localId = generateLocalId();
-      const fazendaId = fazendaAtualId;
-      const payload = { id: localId, ...db, ...(fazendaId ? { fazenda_id: fazendaId } : {}) };
-
-      const novoItem = {
-        id: localId,
-        nomeComercial: produtoUi?.nomeComercial || "",
-        categoria: produtoUi?.categoria || "",
-        unidade: produtoUi?.unidade || "",
-        formaCompra: db.forma_compra || null,
-        compradoTotal: 0,
-        quantidade: 0,
-        valorTotal: 0,
-        validade: null,
-        prevTerminoDias: null,
-        meta: {},
-      };
-
-      const nextList = sortProdutosByNome([...produtos, novoItem]);
-      await updateCache(nextList);
-      await enqueue("estoque.produto.insert", { produto: payload });
-      return localId;
-    }
-
-    const fazendaId = requireFazendaId();
-
-    const payload = { ...db, fazenda_id: fazendaId };
-
-    const { data, error } = await supabase
-      .from("estoque_produtos")
-      .insert(payload)
-      .select("id")
-      .single();
-
-    if (error) {
-      // debug real do 400
-      console.log("payload estoque_produtos ->", payload);
-      console.log("error ->", error);
-      throw error;
-    }
-
-    MEMO_ESTOQUE.lastAt = 0;
-    return data?.id;
+    console.warn("Cadastro via Estoque está desativado.", produtoUi);
+    throw new Error("Cadastro de produtos é feito na aba Consumo/Reposição.");
   }
 
   async function salvarEdicaoProduto(id, produtoUi) {
-    const db = uiToDbProduto(produtoUi);
-
-    // ✅ mantém compatível com schema (se vier vazio, não manda null sem querer)
-    if (!db.forma_compra) {
-      db.forma_compra = normalizeFormaCompra(produtoUi?.formaCompra, produtoUi);
-    }
-
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const nextList = sortProdutosByNome(
-        produtos.map((p) => {
-          if (p.id !== id) return p;
-          return {
-            ...p,
-            nomeComercial: produtoUi?.nomeComercial ?? p.nomeComercial,
-            categoria: produtoUi?.categoria ?? p.categoria,
-            unidade: produtoUi?.unidade ?? p.unidade,
-            formaCompra: db.forma_compra ?? p.formaCompra ?? null,
-          };
-        })
-      );
-      await updateCache(nextList);
-      await enqueue("estoque.produto.update", { id, payload: db });
-      return true;
-    }
-
-    const { error } = await withFazendaId(supabase.from("estoque_produtos").update(db), requireFazendaId()).eq("id", id);
-    if (error) throw error;
-
-    MEMO_ESTOQUE.lastAt = 0;
-    return true;
+    console.warn("Edição via Estoque está desativada.", id, produtoUi);
+    throw new Error("Edição de produtos é feita na aba Consumo/Reposição.");
   }
 
   async function excluirProduto(id) {
@@ -1056,30 +971,10 @@ export default function Estoque({ onCountChange }) {
         <ModalNovoProduto
           open={mostrarCadastro}
           onClose={() => setMostrarCadastro(false)}
-          onSaved={async ({ produto, lote }) => {
+          onSaved={async () => {
             try {
               setErro("");
-
-              if (!produto?.nomeComercial || !produto?.categoria || !produto?.unidade) {
-                setErro("Preencha Nome, Categoria e Unidade.");
-                return;
-              }
-
-              // ✅ forma_compra é NOT NULL no banco
-              // (se Modal ainda não envia, o adapter faz fallback, mas aqui já avisa pra você completar depois)
-              // se tu quiser exigir de vez, descomenta:
-              // if (!produto?.formaCompra) { setErro("Selecione a forma de compra (Embalado / A granel)."); return; }
-
-              const novoId = await salvarNovoProduto(produto);
-
-              if (lote) {
-                await criarEntradaLote(novoId, lote);
-              }
-
-              setMostrarCadastro(false);
-
-              MEMO_ESTOQUE.lastAt = 0;
-              await carregar(categoriaSelecionada, { force: true });
+              await salvarNovoProduto();
             } catch (e) {
               console.error(e);
               setErro(e?.message ? String(e.message) : "Não foi possível salvar o produto.");
@@ -1091,23 +986,10 @@ export default function Estoque({ onCountChange }) {
           open={editar.abrir}
           initial={editar.item}
           onClose={() => setEditar({ abrir: false, item: null })}
-          onSaved={async (payload) => {
+          onSaved={async () => {
             try {
               setErro("");
-              if (!editar?.item?.id) {
-                setErro("Produto sem ID para editar.");
-                return;
-              }
-
-              const { produto, lote } = splitPayload(payload);
-
-              await salvarEdicaoProduto(editar.item.id, produto);
-              await criarEntradaLote(editar.item.id, lote);
-
-              setEditar({ abrir: false, item: null });
-
-              MEMO_ESTOQUE.lastAt = 0;
-              await carregar(categoriaSelecionada, { force: true });
+              await salvarEdicaoProduto();
             } catch (e) {
               console.error(e);
               setErro(e?.message ? String(e.message) : "Não foi possível salvar a edição.");

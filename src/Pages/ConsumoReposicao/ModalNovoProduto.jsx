@@ -282,8 +282,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       }
     }
 
-    // ✅ retorna { produto, lote } no formato que Estoque.jsx espera
-    return buildOnSavedPayload(form, { totalCalculado, unidadeFinal }, isEdit);
+    return normalizeProdutoPayload(form, isEdit);
   };
 
   if (!open) return null;
@@ -653,7 +652,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
             style={btnPrimary}
             onClick={() => {
               const payload = validar();
-              if (payload) onSaved?.(payload); // ✅ agora payload = { produto, lote }
+              if (payload) onSaved?.(payload);
             }}
           >
             {isEdit ? "Salvar Alterações" : "Cadastrar Produto"}
@@ -755,57 +754,26 @@ function toForm(initial) {
 }
 
 /**
- * ✅ Retorna o formato que o Estoque.jsx espera:
- * onSaved({ produto, lote })
- * - produto: formato UI (nomeComercial, categoria, unidade, formaCompra...)
- * - lote: opcional (quantidade, valorTotal, validade) -> só se preencher Valor/Data/Validade
+ * ✅ Retorna payload do catálogo em snake_case.
  */
-function buildOnSavedPayload(f, calc, isEdit) {
-  const { totalCalculado, unidadeFinal } = calc;
-
-  const produto = {
-    // UI keys (o Estoque.jsx converte pro banco)
-    nomeComercial: (f.nomeComercial || "").trim(),
-    categoria: f.categoria || "",
-    subTipo: f.subTipo || "",
-    formaCompra: f.formaCompra || "", // "EMBALADO" | "A_GRANEL" (enum)
-    tipoEmbalagem: f.formaCompra === "EMBALADO" ? (f.tipoEmbalagem || "") : "",
-    tamanhoPorEmbalagem:
-      f.formaCompra === "EMBALADO" && !f.reutilizavel ? (f.tamanhoPorEmbalagem || "") : "",
-    unidade: unidadeFinal || "",
-
+function normalizeProdutoPayload(f, isEdit) {
+  return {
+    nome_comercial: String(f.nomeComercial || "").trim(),
+    categoria: String(f.categoria || "").trim(),
+    sub_tipo: f.subTipo || "",
+    forma_compra: f.formaCompra || "",
+    tipo_embalagem: f.formaCompra === "EMBALADO" ? f.tipoEmbalagem || "" : "",
+    tamanho_por_embalagem:
+      f.formaCompra === "EMBALADO" && !f.reutilizavel ? f.tamanhoPorEmbalagem || "" : "",
+    unidade_medida: f.reutilizavel ? "" : f.unidadeMedida || "",
     reutilizavel: !!f.reutilizavel,
-    usosPorUnidade: f.reutilizavel ? String(f.usosPorUnidade || "") : "",
-
-    carenciaLeiteDias: f.carenciaLeiteDias,
-    carenciaCarneDias: f.carenciaCarneDias,
-    semCarenciaLeite: !!f.semCarenciaLeite,
-    semCarenciaCarne: !!f.semCarenciaCarne,
-
-    // se quiser suportar inativar depois
+    usos_por_unidade: f.reutilizavel ? String(f.usosPorUnidade || "") : "",
+    carencia_leite: f.carenciaLeiteDias || "",
+    carencia_carne: f.carenciaCarneDias || "",
+    sem_carencia_leite: !!f.semCarenciaLeite,
+    sem_carencia_carne: !!f.semCarenciaCarne,
     ativo: isEdit && f.ativo === false ? false : true,
   };
-
-  // ✅ Só cria LOTE se o usuário realmente preencheu algo na seção opcional
-  const valor = toNum(f.valorTotalEntrada);
-  const temValor = valor > 0;
-  const temValidade = !!f.validadeEntrada;
-  const temDataCompra = !!f.dataCompra;
-
-  const deveCriarLote = temValor || temValidade || temDataCompra;
-
-  const lote = deveCriarLote
-    ? {
-        quantidade: Number(totalCalculado || 0), // quantidade inicial do lote
-        valorTotal: temValor ? valor : 0,
-        validade: temValidade ? f.validadeEntrada : null,
-
-        // extra opcional (se tu decidir usar depois no Estoque.jsx)
-        dataCompra: temDataCompra ? f.dataCompra : null,
-      }
-    : null;
-
-  return { produto, lote };
 }
 
 /* ===================== ESTILOS ===================== */
