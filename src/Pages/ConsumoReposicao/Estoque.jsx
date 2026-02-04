@@ -17,6 +17,15 @@ let MEMO_ESTOQUE = {
   lastAt: 0,
 };
 
+/* ===================== CACHE KEY (único) ===================== */
+const CACHE_ESTOQUE_KEY = "cache:estoque:list";
+
+/** ✅ Invalida o cache/memo do Estoque (usar após deletes/resets/ações críticas) */
+async function invalidarCacheEstoque() {
+  MEMO_ESTOQUE = { data: null, lastAt: 0 };
+  await kvSet(CACHE_ESTOQUE_KEY, null);
+}
+
 /* ===================== MODAL BASE (somente para excluir) ===================== */
 const overlay = {
   position: "fixed",
@@ -66,8 +75,6 @@ const rsStylesCompact = {
   menuPortal: (base) => ({ ...base, zIndex: 100000 }),
   menu: (base) => ({ ...base, zIndex: 100000 }),
 };
-
-const CACHE_ESTOQUE_KEY = "cache:estoque:list";
 
 function normalizeEstoqueCache(cache) {
   return Array.isArray(cache) ? cache : [];
@@ -157,15 +164,10 @@ export default function Estoque({ onCountChange }) {
 
   /* ===================== HELPERS DE PAYLOAD DO MODAL ===================== */
   function splitPayload(payload) {
-    // aceita:
-    // 1) antigo: { nomeComercial, categoria, ... }
-    // 2) novo: { produto: {...}, lote: {...} }
-    if (payload && typeof payload === "object" && payload.produto) {
-      // blindagem extra: às vezes vem {produto:{produto:{...}}}
-      const produto = payload.produto?.produto ? payload.produto.produto : payload.produto;
-      return { produto, lote: payload.lote || null };
-    }
-    return { produto: payload, lote: null };
+    return {
+      produto: payload?.produto ?? payload,
+      lote: payload?.lote ?? null,
+    };
   }
 
   function toDateOnly(v) {
@@ -266,29 +268,28 @@ export default function Estoque({ onCountChange }) {
 
   /* ===================== LOAD (Supabase) ===================== */
   const carregar = useCallback(
-    async (categoriaOpt = categoriaSelecionada) => {
+    async (categoriaOpt = categoriaSelecionada, opts = {}) => {
+      const { force = false } = opts;
+
       const memo = MEMO_ESTOQUE.data;
       const memoFresh = memo && Date.now() - MEMO_ESTOQUE.lastAt < 30000;
       const memoCategoria = memo?.categoriaSelecionada?.value;
       const categoriaAtual = categoriaOpt?.value;
 
-      if (
-        memoFresh &&
-        Array.isArray(memo?.produtos) &&
-        memo.produtos.length > 0 &&
-        memoCategoria === categoriaAtual
-      ) {
-        return;
-      }
+      // ✅ NUNCA “travar” a busca por causa do memo (isso gerava itens fantasma quando o banco mudava)
+      // Se estiver fresh e tiver algo na tela, só evitamos flicker (carrega em background).
+      const hasProdutos = Array.isArray(produtos) && produtos.length > 0;
+      const podeBackground = memoFresh && memoCategoria === categoriaAtual && hasProdutos && !force;
+
       try {
-        const hasProdutos = Array.isArray(produtos) && produtos.length > 0;
-        if (hasProdutos) {
+        if (podeBackground) {
           setAtualizando(true);
         } else {
           setLoading(true);
         }
         setErro("");
 
+        // OFFLINE -> usa cache e sai
         if (typeof navigator !== "undefined" && !navigator.onLine) {
           const cache = normalizeEstoqueCache(await kvGet(CACHE_ESTOQUE_KEY));
           setProdutos(cache);
@@ -360,10 +361,7 @@ export default function Estoque({ onCountChange }) {
 
         const agregados = agregarLotesPorProduto(lotes);
 
-        /* ========= Consumo/dia (previsão pela dieta mais recente por lote) =========
-           - Aplica somente para categoria "Cozinha" e unidade "kg" (para não mentir em mL/doses).
-           - Não baixa estoque aqui; é somente previsão.
-        */
+        /* ========= Consumo/dia (previsão pela dieta mais recente por lote) ========= */
         let consumoDiaPorProduto = {}; // {produto_id: kg/dia}
         try {
           const { data: dietasDb, error: eD } = await withFazendaId(
@@ -434,7 +432,7 @@ export default function Estoque({ onCountChange }) {
           return {
             ...p,
             compradoTotal,
-            quantidade: emEstoque, // mantém o campo que sua UI já usa (saldo)
+            quantidade: emEstoque,
             valorTotal: valorTotalRestante,
             validade: validadeMaisProxima,
 
@@ -450,9 +448,15 @@ export default function Estoque({ onCountChange }) {
           lista = lista.filter((p) => p.categoria === categoriaOpt.value);
         }
 
-        await updateCache(lista);
+        // ✅ Se o banco vier vazio, a UI DEVE ficar vazia (limpa os “fantasmas”)
+        await updateCache(Array.isArray(lista) ? lista : []);
       } catch (e) {
         console.error(e);
+        // fallback offline SOMENTE se banco falhar
+        try {
+          const cache = normalizeEstoqueCache(await kvGet(CACHE_ESTOQUE_KEY));
+          setProdutos(cache);
+        } catch {}
         setErro("Erro ao carregar estoque (Supabase).");
       } finally {
         setLoading(false);
@@ -463,7 +467,7 @@ export default function Estoque({ onCountChange }) {
   );
 
   useEffect(() => {
-    carregar();
+    carregar(categoriaSelecionada, { force: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoriaSelecionada?.value, fazendaAtualId]);
 
@@ -477,9 +481,9 @@ export default function Estoque({ onCountChange }) {
   }, [produtos, categoriaSelecionada]);
 
   const unidadeOptions = useMemo(() => {
-    const values = Array.from(
-      new Set((produtos || []).map((p) => p.unidade).filter(Boolean))
-    ).sort((a, b) => a.localeCompare(b));
+    const values = Array.from(new Set((produtos || []).map((p) => p.unidade).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b)
+    );
     return values;
   }, [produtos]);
 
@@ -539,9 +543,7 @@ export default function Estoque({ onCountChange }) {
           case "estoque":
             return (Number(a.quantidade || 0) - Number(b.quantidade || 0)) * dir;
           case "validade":
-            return (
-              (new Date(a.validade || 0).getTime() - new Date(b.validade || 0).getTime()) * dir
-            );
+            return (new Date(a.validade || 0).getTime() - new Date(b.validade || 0).getTime()) * dir;
           default:
             return 0;
         }
@@ -553,10 +555,7 @@ export default function Estoque({ onCountChange }) {
 
   const resumo = useMemo(() => {
     const total = produtosExibidos.length;
-    const valorTotal = produtosExibidos.reduce(
-      (acc, p) => acc + Number(p.valorTotal || 0),
-      0
-    );
+    const valorTotal = produtosExibidos.reduce((acc, p) => acc + Number(p.valorTotal || 0), 0);
     const abaixoMinimo = produtosExibidos.filter((p) => {
       const min = minimos[p.categoria] ?? 1;
       return Number(p.quantidade || 0) <= min;
@@ -622,6 +621,10 @@ export default function Estoque({ onCountChange }) {
     }
 
     if (resp.error) throw resp.error;
+
+    // ✅ garantia: após salvar no banco, “memo/cache” não pode segurar estado antigo
+    MEMO_ESTOQUE.lastAt = 0;
+
     return resp.data?.id;
   }
 
@@ -653,11 +656,10 @@ export default function Estoque({ onCountChange }) {
       return true;
     }
 
-    const { error } = await withFazendaId(
-      supabase.from("estoque_produtos").update(db),
-      requireFazendaId()
-    ).eq("id", id);
+    const { error } = await withFazendaId(supabase.from("estoque_produtos").update(db), requireFazendaId()).eq("id", id);
     if (error) throw error;
+
+    MEMO_ESTOQUE.lastAt = 0;
     return true;
   }
 
@@ -669,11 +671,10 @@ export default function Estoque({ onCountChange }) {
       return true;
     }
 
-    const { error } = await withFazendaId(
-      supabase.from("estoque_produtos").delete(),
-      requireFazendaId()
-    ).eq("id", id);
+    const { error } = await withFazendaId(supabase.from("estoque_produtos").delete(), requireFazendaId()).eq("id", id);
     if (error) throw error;
+
+    MEMO_ESTOQUE.lastAt = 0;
     return true;
   }
 
@@ -696,8 +697,7 @@ export default function Estoque({ onCountChange }) {
         const valorTotalAtual = Number(p.valorTotal || 0) + (Number.isFinite(valorTotal) ? valorTotal : 0);
         const validadeAtual = p.validade ? new Date(p.validade) : null;
         const validadeNova = validade ? new Date(validade) : null;
-        const validadeAtualOk =
-          validadeAtual && !Number.isNaN(validadeAtual.getTime()) ? validadeAtual : null;
+        const validadeAtualOk = validadeAtual && !Number.isNaN(validadeAtual.getTime()) ? validadeAtual : null;
         const validadeNovaOk = validadeNova && !Number.isNaN(validadeNova.getTime()) ? validadeNova : null;
         const validadeFinalDate =
           validadeAtualOk && validadeNovaOk
@@ -786,6 +786,8 @@ export default function Estoque({ onCountChange }) {
     } catch (e) {
       console.warn("Não foi possível registrar a compra no Financeiro (ok).", e);
     }
+
+    MEMO_ESTOQUE.lastAt = 0;
   }
 
   return (
@@ -803,21 +805,28 @@ export default function Estoque({ onCountChange }) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap" }}>
-            <button
-              className="botao-acao pequeno"
-              style={{ whiteSpace: "nowrap" }}
-              onClick={() => setMostrarCadastro(true)}
-            >
+            <button className="botao-acao pequeno" style={{ whiteSpace: "nowrap" }} onClick={() => setMostrarCadastro(true)}>
               + Novo Produto
             </button>
 
+            <button className="botao-cancelar pequeno" style={{ whiteSpace: "nowrap" }} onClick={() => setMostrarAjustes(true)}>
+              Ajustes
+            </button>
+
+            {/* ✅ botão opcional pra você “zerar visual” sem precisar mexer no banco */}
+            {/* Remova se não quiser */}
+            {/* 
             <button
               className="botao-cancelar pequeno"
               style={{ whiteSpace: "nowrap" }}
-              onClick={() => setMostrarAjustes(true)}
+              onClick={async () => {
+                await invalidarCacheEstoque();
+                await carregar(categoriaSelecionada, { force: true });
+              }}
             >
-              Ajustes
+              Limpar cache
             </button>
+            */}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
@@ -832,18 +841,15 @@ export default function Estoque({ onCountChange }) {
         </div>
 
         {erro && (
-          <div className="mb-3 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-2 rounded">
-            {erro}
-          </div>
+          <div className="mb-3 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-2 rounded">{erro}</div>
         )}
 
         <div className="st-filter-hint">
-          Dica: clique no título das colunas habilitadas para ordenar/filtrar. Clique novamente para
-          fechar.
+          Dica: clique no título das colunas habilitadas para ordenar/filtrar. Clique novamente para fechar.
         </div>
-        {atualizando && hasProdutos && (
-          <div className="text-xs text-slate-500 mb-2">Atualizando estoque...</div>
-        )}
+
+        {atualizando && hasProdutos && <div className="text-xs text-slate-500 mb-2">Atualizando estoque...</div>}
+
         <div className="st-table-container">
           <div className="st-table-wrap">
             <table
@@ -869,10 +875,7 @@ export default function Estoque({ onCountChange }) {
 
               <thead>
                 <tr>
-                  <th
-                    className="col-nome"
-                    onMouseEnter={() => setHoveredColKey("produto")}
-                  >
+                  <th className="col-nome" onMouseEnter={() => setHoveredColKey("produto")}>
                     <button
                       type="button"
                       onClick={() => toggleSort("produto")}
@@ -891,16 +894,12 @@ export default function Estoque({ onCountChange }) {
                     >
                       <span className="st-th-label">Nome Comercial</span>
                       {sortConfig.key === "produto" && sortConfig.direction && (
-                        <span style={{ fontSize: 12, opacity: 0.7 }}>
-                          {sortConfig.direction === "asc" ? "▲" : "▼"}
-                        </span>
+                        <span style={{ fontSize: 12, opacity: 0.7 }}>{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
                       )}
                     </button>
                   </th>
-                  <th
-                    className="col-categoria"
-                    style={{ position: "relative" }}
-                  >
+
+                  <th className="col-categoria" style={{ position: "relative" }}>
                     <button
                       type="button"
                       data-filter-trigger="true"
@@ -918,10 +917,7 @@ export default function Estoque({ onCountChange }) {
                       <span className="st-th-label">Categoria</span>
                     </button>
                     {openPopoverKey === "categoria" && (
-                      <div
-                        className="st-filter-popover"
-                        onClick={(event) => event.stopPropagation()}
-                      >
+                      <div className="st-filter-popover" onClick={(event) => event.stopPropagation()}>
                         <label className="st-filter__label">
                           Categoria
                           <select
@@ -929,9 +925,7 @@ export default function Estoque({ onCountChange }) {
                             value={categoriaSelecionada?.value || "Todos"}
                             onChange={(event) => {
                               const value = event.target.value;
-                              const opt =
-                                categoriasFixas.find((c) => c.value === value) ||
-                                categoriasFixas[0];
+                              const opt = categoriasFixas.find((c) => c.value === value) || categoriasFixas[0];
                               setCategoriaSelecionada(opt);
                             }}
                           >
@@ -945,13 +939,12 @@ export default function Estoque({ onCountChange }) {
                       </div>
                     )}
                   </th>
+
                   <th className="st-td-center col-comprado">
                     <span className="st-th-label">Comprado</span>
                   </th>
-                  <th
-                    className="st-td-center col-estoque"
-                    onMouseEnter={() => setHoveredColKey("estoque")}
-                  >
+
+                  <th className="st-td-center col-estoque" onMouseEnter={() => setHoveredColKey("estoque")}>
                     <button
                       type="button"
                       onClick={() => toggleSort("estoque")}
@@ -970,16 +963,12 @@ export default function Estoque({ onCountChange }) {
                     >
                       <span className="st-th-label">Em estoque</span>
                       {sortConfig.key === "estoque" && sortConfig.direction && (
-                        <span style={{ fontSize: 12, opacity: 0.7 }}>
-                          {sortConfig.direction === "asc" ? "▲" : "▼"}
-                        </span>
+                        <span style={{ fontSize: 12, opacity: 0.7 }}>{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
                       )}
                     </button>
                   </th>
-                  <th
-                    className="st-td-center col-unidade"
-                    style={{ position: "relative" }}
-                  >
+
+                  <th className="st-td-center col-unidade" style={{ position: "relative" }}>
                     <button
                       type="button"
                       data-filter-trigger="true"
@@ -997,10 +986,7 @@ export default function Estoque({ onCountChange }) {
                       <span className="st-th-label">Unid.</span>
                     </button>
                     {openPopoverKey === "unidade" && (
-                      <div
-                        className="st-filter-popover"
-                        onClick={(event) => event.stopPropagation()}
-                      >
+                      <div className="st-filter-popover" onClick={(event) => event.stopPropagation()}>
                         <label className="st-filter__label">
                           Unidade
                           <select
@@ -1024,10 +1010,8 @@ export default function Estoque({ onCountChange }) {
                       </div>
                     )}
                   </th>
-                  <th
-                    className="st-td-center col-validade"
-                    onMouseEnter={() => setHoveredColKey("validade")}
-                  >
+
+                  <th className="st-td-center col-validade" onMouseEnter={() => setHoveredColKey("validade")}>
                     <button
                       type="button"
                       onClick={() => toggleSort("validade")}
@@ -1046,12 +1030,11 @@ export default function Estoque({ onCountChange }) {
                     >
                       <span className="st-th-label">Validade</span>
                       {sortConfig.key === "validade" && sortConfig.direction && (
-                        <span style={{ fontSize: 12, opacity: 0.7 }}>
-                          {sortConfig.direction === "asc" ? "▲" : "▼"}
-                        </span>
+                        <span style={{ fontSize: 12, opacity: 0.7 }}>{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
                       )}
                     </button>
                   </th>
+
                   <th className="st-td-center col-consumo">
                     <span className="st-th-label">Consumo/dia (dieta)</span>
                   </th>
@@ -1109,12 +1092,11 @@ export default function Estoque({ onCountChange }) {
 
                         <td className="st-td-center">{p.categoria || "—"}</td>
                         <td className="st-td-center st-num">{formatQtd(p.compradoTotal)}</td>
+
                         <td
-                          className={`st-td-center st-num ${
-                            hoveredColKey === "estoque" ? "st-col-hover" : ""
-                          } ${rowHover ? "st-row-hover" : ""} ${
-                            rowHover && hoveredColKey === "estoque" ? "st-cell-hover" : ""
-                          }`}
+                          className={`st-td-center st-num ${hoveredColKey === "estoque" ? "st-col-hover" : ""} ${
+                            rowHover ? "st-row-hover" : ""
+                          } ${rowHover && hoveredColKey === "estoque" ? "st-cell-hover" : ""}`}
                           onMouseEnter={() => {
                             setHoveredRowId(rowId);
                             setHoveredColKey("estoque");
@@ -1122,13 +1104,13 @@ export default function Estoque({ onCountChange }) {
                         >
                           {formatQtd(p.quantidade)}
                         </td>
+
                         <td className="st-td-center">{p.unidade || "—"}</td>
+
                         <td
-                          className={`st-td-center ${
-                            hoveredColKey === "validade" ? "st-col-hover" : ""
-                          } ${rowHover ? "st-row-hover" : ""} ${
-                            rowHover && hoveredColKey === "validade" ? "st-cell-hover" : ""
-                          }`}
+                          className={`st-td-center ${hoveredColKey === "validade" ? "st-col-hover" : ""} ${
+                            rowHover ? "st-row-hover" : ""
+                          } ${rowHover && hoveredColKey === "validade" ? "st-cell-hover" : ""}`}
                           onMouseEnter={() => {
                             setHoveredRowId(rowId);
                             setHoveredColKey("validade");
@@ -1136,27 +1118,27 @@ export default function Estoque({ onCountChange }) {
                         >
                           {formatVal(p.validade)}
                         </td>
+
                         <td className="st-td-center st-num">
                           {p.consumoDiaKg != null ? `${formatQtd(p.consumoDiaKg)} kg/d` : "—"}
                         </td>
-                        <td className="st-td-center st-num">
-                          {p.prevTerminoDias != null ? `${p.prevTerminoDias} d` : "—"}
-                        </td>
+
+                        <td className="st-td-center st-num">{p.prevTerminoDias != null ? `${p.prevTerminoDias} d` : "—"}</td>
+
                         <td className="st-td-center">
                           <span className={`st-pill ${est.variant}`}>{est.label}</span>
                         </td>
+
                         <td className="st-td-center">
                           <span className={`st-pill ${val.variant}`}>{val.label}</span>
                         </td>
+
                         <td className="st-td-center">
                           {readOnly ? (
                             <span className="st-text">—</span>
                           ) : (
                             <div style={{ display: "inline-flex", gap: 8 }}>
-                              <button
-                                className="st-btn"
-                                onClick={() => setEditar({ abrir: true, item: p })}
-                              >
+                              <button className="st-btn" onClick={() => setEditar({ abrir: true, item: p })}>
                                 Editar
                               </button>
                               <button className="st-btn" onClick={() => setProdutoParaExcluir(p)}>
@@ -1170,6 +1152,7 @@ export default function Estoque({ onCountChange }) {
                   })
                 )}
               </tbody>
+
               <tfoot>
                 <tr className="st-summary-row">
                   <td colSpan={11}>
@@ -1186,15 +1169,12 @@ export default function Estoque({ onCountChange }) {
         </div>
 
         {/* ===================== MODAIS ===================== */}
-
         <ModalNovoProduto
           open={mostrarCadastro}
           onClose={() => setMostrarCadastro(false)}
-          onSaved={async (payload) => {
+          onSaved={async ({ produto, lote }) => {
             try {
               setErro("");
-
-              const { produto, lote } = splitPayload(payload);
 
               if (!produto?.nomeComercial || !produto?.categoria || !produto?.unidade) {
                 setErro("Preencha Nome, Categoria e Unidade.");
@@ -1202,13 +1182,19 @@ export default function Estoque({ onCountChange }) {
               }
 
               const novoId = await salvarNovoProduto(produto);
-              await criarEntradaLote(novoId, lote);
+
+              if (lote) {
+                await criarEntradaLote(novoId, lote);
+              }
 
               setMostrarCadastro(false);
-              await carregar(categoriaSelecionada);
+
+              // ✅ força sincronização com o banco (não deixa memo segurar)
+              MEMO_ESTOQUE.lastAt = 0;
+              await carregar(categoriaSelecionada, { force: true });
             } catch (e) {
               console.error(e);
-              setErro(e?.message ? String(e.message) : "Não foi possível salvar o produto.");
+              setErro("Não foi possível salvar o produto.");
             }
           }}
         />
@@ -1228,10 +1214,12 @@ export default function Estoque({ onCountChange }) {
               const { produto, lote } = splitPayload(payload);
 
               await salvarEdicaoProduto(editar.item.id, produto);
-              await criarEntradaLote(editar.item.id, lote); // se vier lote no editar -> reposição (compra)
+              await criarEntradaLote(editar.item.id, lote);
 
               setEditar({ abrir: false, item: null });
-              await carregar(categoriaSelecionada);
+
+              MEMO_ESTOQUE.lastAt = 0;
+              await carregar(categoriaSelecionada, { force: true });
             } catch (e) {
               console.error(e);
               setErro(e?.message ? String(e.message) : "Não foi possível salvar a edição.");
@@ -1258,9 +1246,13 @@ export default function Estoque({ onCountChange }) {
                       setErro("Produto sem ID para excluir.");
                       return;
                     }
+
                     await excluirProduto(produtoParaExcluir.id);
                     setProdutoParaExcluir(null);
-                    await carregar(categoriaSelecionada);
+
+                    // ✅ se você está “zerando testes”, isso garante limpar de verdade o cache local
+                    await invalidarCacheEstoque();
+                    await carregar(categoriaSelecionada, { force: true });
                   } catch (e) {
                     console.error(e);
                     setErro(e?.message ? String(e.message) : "Não foi possível excluir o produto.");
@@ -1387,10 +1379,8 @@ function uiToDbProduto(p) {
     apresentacao: String(p?.apresentacao || "").trim() || null,
 
     tipo_farmacia: String(p?.tipoFarmacia || "").trim() || null,
-    carencia_leite_dias:
-      p?.carenciaLeiteDias === "" || p?.carenciaLeiteDias == null ? null : Number(p.carenciaLeiteDias),
-    carencia_carne_dias:
-      p?.carenciaCarneDias === "" || p?.carenciaCarneDias == null ? null : Number(p.carenciaCarneDias),
+    carencia_leite_dias: p?.carenciaLeiteDias === "" || p?.carenciaLeiteDias == null ? null : Number(p.carenciaLeiteDias),
+    carencia_carne_dias: p?.carenciaCarneDias === "" || p?.carenciaCarneDias == null ? null : Number(p.carenciaCarneDias),
     sem_carencia_leite: !!p?.semCarenciaLeite,
     sem_carencia_carne: !!p?.semCarenciaCarne,
   };
