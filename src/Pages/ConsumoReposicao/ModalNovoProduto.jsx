@@ -149,6 +149,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
 
   const isFarmacia = form.categoria === "Farmácia";
   const isReproducao = form.categoria === "Reprodução";
+  const isCozinha = form.categoria === "Cozinha";
   const isAntibiotico = isFarmacia && form.subTipo === "Antibiótico";
 
   // Sugestões inteligentes (não trava nada)
@@ -278,6 +279,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
     const normalizedForm = {
       ...form,
       categoria: form.categoria || "Cozinha",
+      subTipo: isCozinha ? "" : form.subTipo,
     };
 
     return normalizeProdutoPayload(normalizedForm, isEdit);
@@ -767,22 +769,38 @@ function normalizeProdutoPayload(f, isEdit) {
     }
   }
 
+  const categoriaFinal = String(f.categoria || "Cozinha").trim() || "Cozinha";
+  const tipoEmbalagemFinal =
+    f.formaCompra === "EMBALADO" ? String(f.tipoEmbalagem || "").trim() : null;
+  const tamanhoPorEmbalagemFinal =
+    f.formaCompra === "EMBALADO"
+      ? f.reutilizavel
+        ? Math.max(1, toNum(f.tamanhoPorEmbalagem || 1))
+        : toNum(f.tamanhoPorEmbalagem)
+      : null;
+  const unidadeMedidaFinal = f.reutilizavel ? "uso" : String(f.unidadeMedida || "un").trim() || "un";
+  const usosPorUnidadeFinal = f.reutilizavel ? toNum(f.usosPorUnidade) : null;
+
   return {
     nome_comercial: String(f.nomeComercial || "").trim(),
-    categoria: String(f.categoria || "Cozinha").trim(),
-    sub_tipo: f.subTipo || "",
+    categoria: categoriaFinal,
+    sub_tipo: categoriaFinal === "Cozinha" ? null : f.subTipo || "",
     forma_compra: f.formaCompra || "",
-    tipo_embalagem: f.formaCompra === "EMBALADO" ? f.tipoEmbalagem || "" : null,
-    tamanho_por_embalagem:
-      f.formaCompra === "EMBALADO" && !f.reutilizavel ? f.tamanhoPorEmbalagem || "" : null,
-    unidade_medida: f.reutilizavel ? "" : f.unidadeMedida || "",
+    tipo_embalagem: tipoEmbalagemFinal,
+    tamanho_por_embalagem: tamanhoPorEmbalagemFinal,
+    unidade_medida: unidadeMedidaFinal,
     reutilizavel: !!f.reutilizavel,
-    usos_por_unidade: f.reutilizavel ? String(f.usosPorUnidade || "") : "",
+    usos_por_unidade: f.reutilizavel ? Math.max(2, usosPorUnidadeFinal || 0) : null,
     carencia_leite: f.carenciaLeiteDias || "",
     carencia_carne: f.carenciaCarneDias || "",
     sem_carencia_leite: !!f.semCarenciaLeite,
     sem_carencia_carne: !!f.semCarenciaCarne,
     ativo: isEdit && f.ativo === false ? false : true,
+    quantidade_total: quantidadeEntrada,
+    total_calculado: quantidadeEntrada,
+    data_compra: f.dataCompra || null,
+    validade: f.validadeEntrada || null,
+    valor_total: f.valorTotalEntrada !== "" ? Number(f.valorTotalEntrada) : null,
     _entrada: {
       quantidade: quantidadeEntrada,
       data_compra: f.dataCompra || null,

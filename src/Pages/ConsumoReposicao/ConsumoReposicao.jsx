@@ -24,6 +24,39 @@ function toNumber(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function numOrNull(v) {
+  if (v === null || v === undefined) return null;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+function numOrZero(v) {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function logSb(tag, error) {
+  console.error(tag, {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
+    raw: error,
+  });
+}
+
+function toISODateOnly(v) {
+  if (!v) return null;
+  if (typeof v === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    const br = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  }
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
 function pick(obj, ...keys) {
   for (const key of keys) {
     if (obj && obj[key] !== undefined && obj[key] !== null) return obj[key];
@@ -373,13 +406,13 @@ export default function ConsumoReposicao() {
       const { data: lotesData, error: lotesError } = await supabase
         .from("estoque_lotes")
         .select(
-          "id,fazenda_id,produto_id,data_compra,validade,quantidade_inicial,quantidade_atual,valor_total,observacoes,ativo,created_at"
+          "id,fazenda_id,produto_id,data_compra,validade,quantidade_inicial,quantidade_atual,valor_total,observacoes,ativo,created_at,updated_at"
         )
         .eq("fazenda_id", fazendaAtualId)
         .eq("ativo", true);
 
       if (lotesError) {
-        console.error("[estoque_lotes] error:", lotesError);
+        logSb("[estoque_lotes]", lotesError);
         throw lotesError;
       }
 
@@ -550,6 +583,8 @@ export default function ConsumoReposicao() {
         const sem_carencia_leite = !!pick(produtoPayload, "sem_carencia_leite", "semCarenciaLeite");
         const sem_carencia_carne = !!pick(produtoPayload, "sem_carencia_carne", "semCarenciaCarne");
         const ativo = pick(produtoPayload, "ativo") === false ? false : true;
+        const unidadeMedidaFinal =
+          String(unidade_medida || "").trim() || (reutilizavel ? "uso" : "un");
 
         // ✅ row pronto (tabela nova) - sempre snake_case
         const row = {
@@ -568,7 +603,7 @@ export default function ConsumoReposicao() {
               ? Number(tamanho_por_embalagem)
               : null,
 
-          unidade_medida: unidade_medida ?? null,
+          unidade_medida: unidadeMedidaFinal,
 
           reutilizavel,
           usos_por_unidade:
@@ -602,6 +637,10 @@ export default function ConsumoReposicao() {
           row.tamanho_por_embalagem = null;
         }
 
+        const { data: auth } = await supabase.auth.getUser();
+        const userId = auth?.user?.id || null;
+        let produtoRow = null;
+
         if (idEdicao) {
           const { data, error } = await supabase
             .from("estoque_produtos")
@@ -612,71 +651,90 @@ export default function ConsumoReposicao() {
             .single();
 
           if (error) {
-            console.error("[estoque_produtos] error:", error);
+            logSb("[estoque_produtos]", error);
             throw error;
           }
+          produtoRow = data;
         } else {
           const { data, error } = await supabase.from("estoque_produtos").insert(row).select("*").single();
           if (error) {
-            console.error("[estoque_produtos] error:", error);
+            logSb("[estoque_produtos]", error);
             throw error;
           }
+          produtoRow = data;
+        }
 
-          const { data: auth } = await supabase.auth.getUser();
-          const userId = auth?.user?.id || null;
+        const quantidadeTotal =
+          pick(produtoPayload, "quantidade_total", "quantidadeTotal") ??
+          entradaOpcional?.quantidade ??
+          null;
+        const dataCompraRaw =
+          pick(produtoPayload, "data_compra", "dataCompra") ?? entradaOpcional?.data_compra ?? null;
+        const validadeRaw =
+          pick(produtoPayload, "validade", "validadeEntrada") ?? entradaOpcional?.validade ?? null;
+        const valorTotalRaw =
+          pick(produtoPayload, "valor_total", "valorTotal") ?? entradaOpcional?.valor_total ?? null;
+        const observacoesRaw = pick(produtoPayload, "observacoes") ?? entradaOpcional?.observacoes ?? null;
 
-          const quantidadeEntrada = toNumber(entradaOpcional?.quantidade, 0);
+        const shouldCreateLote =
+          !!quantidadeTotal || !!dataCompraRaw || !!validadeRaw || !!valorTotalRaw;
 
-          if (quantidadeEntrada > 0) {
-            const loteRow = {
-              fazenda_id: fazendaAtualId,
-              user_id: userId,
-              produto_id: data.id,
-              data_compra: entradaOpcional?.data_compra || null,
-              validade: entradaOpcional?.validade || null,
-              quantidade_inicial: Number(quantidadeEntrada),
-              quantidade_atual: Number(quantidadeEntrada),
-              valor_total: entradaOpcional?.valor_total ?? null,
-              observacoes: entradaOpcional?.observacoes ?? null,
-              ativo: true,
-            };
+        if (shouldCreateLote) {
+          const dataCompraISO = toISODateOnly(dataCompraRaw);
+          const validadeISO = toISODateOnly(validadeRaw);
+          const quantidadeEntrada = numOrZero(quantidadeTotal);
 
-            const { data: loteCriado, error: errLote } = await supabase
-              .from("estoque_lotes")
-              .insert(loteRow)
-              .select("*")
-              .single();
+          const loteRow = {
+            fazenda_id: fazendaAtualId,
+            produto_id: produtoRow?.id,
+            data_compra: dataCompraISO,
+            validade: validadeISO,
+            quantidade_inicial: numOrZero(quantidadeEntrada),
+            quantidade_atual: numOrZero(quantidadeEntrada),
+            valor_total: numOrNull(valorTotalRaw),
+            observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
+            ativo: true,
+          };
+          if (userId) loteRow.user_id = userId;
 
-            if (errLote) {
-              console.error("[estoque_lotes] error:", errLote);
-              throw errLote;
-            }
+          const { data: lote, error: eL } = await supabase
+            .from("estoque_lotes")
+            .insert(loteRow)
+            .select("*")
+            .single();
 
-            const movRow = {
-              fazenda_id: fazendaAtualId,
-              user_id: userId,
-              produto_id: data.id,
-              lote_id: loteCriado.id,
-              tipo: "ENTRADA",
-              data_mov: entradaOpcional?.data_compra || new Date().toISOString().slice(0, 10),
-              quantidade: Number(quantidadeEntrada),
-              unidade_medida: data.unidade_medida || null,
-              valor_total: entradaOpcional?.valor_total ?? null,
-              observacoes: entradaOpcional?.observacoes ?? null,
-              meta: { origem: "cadastro_produto_modal" },
-            };
+          if (eL) {
+            logSb("[estoque_lotes]", eL);
+            throw eL;
+          }
+          if (!lote?.id) throw new Error("Lote não foi criado, não dá para registrar movimento.");
 
-            const { error: errMov } = await supabase.from("estoque_movimentos").insert(movRow);
+          const produtoReutilizavel = !!(produtoRow?.reutilizavel ?? reutilizavel);
+          const quantidadeMovBase = produtoReutilizavel
+            ? pick(produtoPayload, "total_calculado", "totalCalculado") ?? quantidadeTotal
+            : quantidadeTotal;
+          const unidadeMov =
+            (produtoRow?.unidade_medida || produtoPayload?.unidade_medida || "").trim() ||
+            (produtoReutilizavel ? "uso" : "un");
 
-            if (errMov) {
-              console.error("[estoque_movimentos] error:", errMov);
-              if (String(errMov?.message || "").toLowerCase().includes("enum")) {
-                console.error(
-                  "[estoque_movimentos] dica: verifique se o enum aceita o valor 'ENTRADA' para a coluna tipo."
-                );
-              }
-              throw errMov;
-            }
+          const movRow = {
+            fazenda_id: fazendaAtualId,
+            produto_id: produtoRow?.id,
+            lote_id: lote.id,
+            tipo: "ENTRADA",
+            data_mov: dataCompraISO || new Date().toISOString().slice(0, 10),
+            quantidade: numOrZero(quantidadeMovBase),
+            unidade_medida: unidadeMov,
+            valor_total: numOrNull(valorTotalRaw),
+            observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
+            meta: { origem: "cadastro_produto_modal" },
+          };
+          if (userId) movRow.user_id = userId;
+
+          const { error: eM } = await supabase.from("estoque_movimentos").insert(movRow);
+          if (eM) {
+            logSb("[estoque_movimentos]", eM);
+            throw eM;
           }
         }
 
@@ -684,6 +742,11 @@ export default function ConsumoReposicao() {
         setModalNovoProdutoOpen(false);
         setEditando(null);
       } catch (e) {
+        if (e?.code || e?.details || e?.hint) {
+          logSb("[salvar_produto]", e);
+        } else {
+          console.error(e);
+        }
         setErro(e?.message || "Erro ao salvar produto");
       }
     },
