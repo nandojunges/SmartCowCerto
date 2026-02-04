@@ -331,6 +331,11 @@ export default function Estoque({ onCountChange }) {
 
         if (errP) throw errP;
 
+        if (!Array.isArray(produtosDb) || produtosDb.length === 0) {
+          await updateCache([]);
+          return;
+        }
+
         const uiBase = (produtosDb || []).map(dbToUiProduto);
 
         // Lotes
