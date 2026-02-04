@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import { X, Package, Pill, FlaskConical, Info, Box, Calendar, DollarSign, AlertCircle } from "lucide-react";
+import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
 
 /* ===================== DESIGN SYSTEM ===================== */
 const theme = {
@@ -68,6 +70,7 @@ const rsStyles = {
 };
 
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
+  const { fazendaAtualId } = useFazenda();
   const isEdit = !!initial?.id;
   const [form, setForm] = useState(() => toForm(initial));
 
@@ -144,6 +147,43 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
     if (!open) return;
     setForm(toForm(initial));
   }, [initial, open]);
+
+  useEffect(() => {
+    let ativo = true;
+
+    if (!open || !initial?.id || !fazendaAtualId) return undefined;
+
+    const carregarUltimoLote = async () => {
+      const { data: lote, error } = await supabase
+        .from("estoque_lotes")
+        .select("id,produto_id,data_compra,validade,quantidade_inicial,valor_total,created_at,ativo")
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("produto_id", initial.id)
+        .eq("ativo", true)
+        .order("data_compra", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!ativo || error || !lote) return;
+
+      const qtdEmbalagensDerivada = derivarQtdEmbalagens({ produto: initial, lote });
+
+      setForm((f) => ({
+        ...f,
+        valorTotalEntrada: lote.valor_total !== null && lote.valor_total !== undefined ? String(lote.valor_total) : "",
+        dataCompra: isoToBR(lote.data_compra),
+        validadeEntrada: isoToBR(lote.validade),
+        qtdEmbalagens: qtdEmbalagensDerivada,
+      }));
+    };
+
+    carregarUltimoLote();
+
+    return () => {
+      ativo = false;
+    };
+  }, [open, initial?.id, fazendaAtualId, initial]);
 
   const menuPortalTarget = typeof document !== "undefined" ? document.body : null;
 
@@ -752,6 +792,35 @@ function toForm(initial) {
     // ativo (edição)
     ativo: pick(d, "ativo"),
   };
+}
+
+function isoToBR(iso) {
+  if (!iso) return "";
+  const dt = new Date(iso);
+  if (!Number.isFinite(dt.getTime())) return "";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yy = dt.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
+
+function derivarQtdEmbalagens({ produto, lote }) {
+  if (!produto || !lote) return "";
+  const qi = Number(lote.quantidade_inicial ?? 0);
+  if (!Number.isFinite(qi) || qi <= 0) return "";
+
+  if (produto.reutilizavel) {
+    const usos = Number(produto.usos_por_unidade ?? produto.usosPorUnidade ?? 0);
+    if (Number.isFinite(usos) && usos > 0) return String(Math.max(1, Math.round(qi / usos)));
+    return "";
+  }
+
+  if (produto.forma_compra === "EMBALADO" || produto.formaCompra === "EMBALADO") {
+    const tam = Number(produto.tamanho_por_embalagem ?? produto.tamanhoPorEmbalagem ?? 0);
+    if (Number.isFinite(tam) && tam > 0) return String(Math.max(1, Math.round(qi / tam)));
+  }
+
+  return "";
 }
 
 /**
