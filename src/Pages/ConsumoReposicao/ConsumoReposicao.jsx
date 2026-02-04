@@ -372,11 +372,16 @@ export default function ConsumoReposicao() {
 
       const { data: lotesData, error: lotesError } = await supabase
         .from("estoque_lotes")
-        .select(["id", "produto_id", "validade", "quantidade_atual", "quantidade_inicial", "ativo"].join(","))
+        .select(
+          "id,fazenda_id,produto_id,validade,unidade_medida,quantidade_inicial,quantidade_atual,ativo,created_at"
+        )
         .eq("fazenda_id", fazendaAtualId)
         .eq("ativo", true);
 
-      if (lotesError) throw lotesError;
+      if (lotesError) {
+        console.error("[estoque_lotes] error:", lotesError);
+        throw lotesError;
+      }
 
       const estoquePorProduto = {};
       const compradoPorProduto = {};
@@ -592,11 +597,10 @@ export default function ConsumoReposicao() {
 
           const quantidadeEntrada = toNumber(entradaOpcional?.quantidade, 0);
           const valorTotalEntrada = toNumber(entradaOpcional?.valor_total, 0);
-          const temEntrada =
-            quantidadeEntrada > 0 || valorTotalEntrada > 0 || !!entradaOpcional?.validade || !!entradaOpcional?.data_compra;
 
-          if (temEntrada && quantidadeEntrada > 0) {
+          if (quantidadeEntrada > 0) {
             const unidadeLote = entradaOpcional?.unidade || row.unidade_medida || null;
+
             const { data: loteData, error: loteError } = await supabase
               .from("estoque_lotes")
               .insert({
@@ -612,7 +616,11 @@ export default function ConsumoReposicao() {
               .select("*")
               .single();
 
-            if (loteError) throw loteError;
+            if (loteError) {
+              console.error("[estoque_lotes] error:", loteError);
+              setErro(loteError?.message || "Erro ao criar lote inicial");
+              throw loteError;
+            }
 
             const valorTotalFinal = valorTotalEntrada > 0 ? valorTotalEntrada : null;
             const valorUnitario =
@@ -631,7 +639,11 @@ export default function ConsumoReposicao() {
               observacao: "Entrada inicial via cadastro do produto",
             });
 
-            if (movimentoError) throw movimentoError;
+            if (movimentoError) {
+              console.error("[estoque_movimentos] error:", movimentoError);
+              setErro(movimentoError?.message || "Erro ao criar movimento inicial");
+              throw movimentoError;
+            }
           }
         }
 

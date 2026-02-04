@@ -361,23 +361,15 @@ export default function Estoque({ onCountChange }) {
             supabase
               .from("estoque_lotes")
               .select(
-                `
-                id,
-                produto_id,
-                data_entrada,
-                validade,
-                data_validade,
-                quantidade_inicial,
-                quantidade_atual,
-                quantidade,
-                valor_total,
-                valor_total_pago
-              `
+                "id,fazenda_id,produto_id,validade,unidade_medida,quantidade_inicial,quantidade_atual,ativo,created_at"
               ),
             fazId
           ).in("produto_id", ids);
 
-          if (errL) throw errL;
+          if (errL) {
+            console.error("[estoque_lotes] error:", errL);
+            throw errL;
+          }
           lotes = Array.isArray(lotesDb) ? lotesDb : [];
         }
 
