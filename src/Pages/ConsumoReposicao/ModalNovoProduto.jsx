@@ -282,7 +282,15 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       }
     }
 
-    return normalizeProdutoPayload(form, isEdit);
+    const entradaOpcional = {
+      quantidade: Number(totalCalculado) || null,
+      unidade: unidadeFinal || null,
+      valor_total: Number(form.valorTotalEntrada) || null,
+      data_compra: form.dataCompra || null,
+      validade: form.validadeEntrada || null,
+    };
+
+    return { produto: normalizeProdutoPayload(form, isEdit), entradaOpcional };
   };
 
   if (!open) return null;
@@ -651,8 +659,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
             type="button"
             style={btnPrimary}
             onClick={() => {
-              const payload = validar();
-              if (payload) onSaved?.(payload);
+              const out = validar();
+              if (out) onSaved?.(out);
             }}
           >
             {isEdit ? "Salvar Alterações" : "Cadastrar Produto"}

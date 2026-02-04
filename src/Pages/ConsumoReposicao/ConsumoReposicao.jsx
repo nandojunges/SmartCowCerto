@@ -370,6 +370,39 @@ export default function ConsumoReposicao() {
 
       if (error) throw error;
 
+      const { data: lotesData, error: lotesError } = await supabase
+        .from("estoque_lotes")
+        .select(["id", "produto_id", "validade", "quantidade_atual", "quantidade_inicial", "ativo"].join(","))
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("ativo", true);
+
+      if (lotesError) throw lotesError;
+
+      const estoquePorProduto = {};
+      const compradoPorProduto = {};
+      const validadePorProduto = {};
+      const hoje = new Date().toISOString().slice(0, 10);
+
+      for (const lote of lotesData || []) {
+        const produtoId = lote.produto_id;
+        if (!produtoId) continue;
+
+        const qtdAtual = toNumber(lote.quantidade_atual, 0);
+        const qtdInicial = toNumber(lote.quantidade_inicial, 0);
+
+        estoquePorProduto[produtoId] = toNumber(estoquePorProduto[produtoId], 0) + qtdAtual;
+        compradoPorProduto[produtoId] = toNumber(compradoPorProduto[produtoId], 0) + qtdInicial;
+
+        if (lote.validade) {
+          const validade = String(lote.validade).slice(0, 10);
+          if (validade >= hoje) {
+            if (!validadePorProduto[produtoId] || validade < validadePorProduto[produtoId]) {
+              validadePorProduto[produtoId] = validade;
+            }
+          }
+        }
+      }
+
       const adaptados = (data || []).map((row) => {
         return {
           id: row.id,
@@ -377,10 +410,9 @@ export default function ConsumoReposicao() {
           categoria: row.categoria ?? "—",
           unidade: row.unidade_medida ?? "—",
 
-          // ainda não ligado a lotes/movimentos
-          comprado: "—",
-          estoque: "—",
-          validade: "—",
+          comprado: toNumber(compradoPorProduto[row.id], 0),
+          estoque: toNumber(estoquePorProduto[row.id], 0),
+          validade: validadePorProduto[row.id] || "—",
           consumo: "—",
           prevTermino: "—",
           alertaEstoque: "OK",
@@ -479,20 +511,23 @@ export default function ConsumoReposicao() {
 
         const idEdicao = editando?.id ?? null;
 
-        const nome = pick(produtoIn, "nome_comercial", "nomeComercial");
-        const categoriaProduto = pick(produtoIn, "categoria");
-        const sub_tipo = pick(produtoIn, "sub_tipo", "subTipo");
-        const forma_compra = pick(produtoIn, "forma_compra", "formaCompra");
-        const tipo_embalagem = pick(produtoIn, "tipo_embalagem", "tipoEmbalagem");
-        const tamanho_por_embalagem = pick(produtoIn, "tamanho_por_embalagem", "tamanhoPorEmbalagem");
-        const unidade_medida = pick(produtoIn, "unidade_medida", "unidadeMedida");
-        const reutilizavel = !!pick(produtoIn, "reutilizavel");
-        const usos_por_unidade = pick(produtoIn, "usos_por_unidade", "usosPorUnidade");
-        const carencia_leite = pick(produtoIn, "carencia_leite", "carenciaLeiteDias", "carenciaLeite");
-        const carencia_carne = pick(produtoIn, "carencia_carne", "carenciaCarneDias", "carenciaCarne");
-        const sem_carencia_leite = !!pick(produtoIn, "sem_carencia_leite", "semCarenciaLeite");
-        const sem_carencia_carne = !!pick(produtoIn, "sem_carencia_carne", "semCarenciaCarne");
-        const ativo = pick(produtoIn, "ativo") === false ? false : true;
+        const produtoPayload = produtoIn?.produto ? produtoIn.produto : produtoIn;
+        const entradaOpcional = produtoIn?.produto ? produtoIn.entradaOpcional : null;
+
+        const nome = pick(produtoPayload, "nome_comercial", "nomeComercial");
+        const categoriaProduto = pick(produtoPayload, "categoria");
+        const sub_tipo = pick(produtoPayload, "sub_tipo", "subTipo");
+        const forma_compra = pick(produtoPayload, "forma_compra", "formaCompra");
+        const tipo_embalagem = pick(produtoPayload, "tipo_embalagem", "tipoEmbalagem");
+        const tamanho_por_embalagem = pick(produtoPayload, "tamanho_por_embalagem", "tamanhoPorEmbalagem");
+        const unidade_medida = pick(produtoPayload, "unidade_medida", "unidadeMedida");
+        const reutilizavel = !!pick(produtoPayload, "reutilizavel");
+        const usos_por_unidade = pick(produtoPayload, "usos_por_unidade", "usosPorUnidade");
+        const carencia_leite = pick(produtoPayload, "carencia_leite", "carenciaLeiteDias", "carenciaLeite");
+        const carencia_carne = pick(produtoPayload, "carencia_carne", "carenciaCarneDias", "carenciaCarne");
+        const sem_carencia_leite = !!pick(produtoPayload, "sem_carencia_leite", "semCarenciaLeite");
+        const sem_carencia_carne = !!pick(produtoPayload, "sem_carencia_carne", "semCarenciaCarne");
+        const ativo = pick(produtoPayload, "ativo") === false ? false : true;
 
         // ✅ row pronto (tabela nova) - sempre snake_case
         const row = {
@@ -551,50 +586,63 @@ export default function ConsumoReposicao() {
 
           if (error) throw error;
 
-          setProdutos((prev) =>
-            prev.map((p) =>
-              p.id === idEdicao
-                ? {
-                    ...p,
-                    nome: data.nome_comercial,
-                    categoria: data.categoria,
-                    unidade: data.unidade_medida,
-                    _raw: data,
-                  }
-                : p
-            )
-          );
         } else {
           const { data, error } = await supabase.from("estoque_produtos").insert(row).select("*").single();
           if (error) throw error;
 
-          setProdutos((prev) =>
-            [
-              ...prev,
-              {
-                id: data.id,
-                nome: data.nome_comercial,
-                categoria: data.categoria,
-                unidade: data.unidade_medida,
-                comprado: "—",
-                estoque: "—",
-                validade: "—",
-                consumo: "—",
-                prevTermino: "—",
-                alertaEstoque: "OK",
-                _raw: data,
-              },
-            ].sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"))
-          );
+          const quantidadeEntrada = toNumber(entradaOpcional?.quantidade, 0);
+          const valorTotalEntrada = toNumber(entradaOpcional?.valor_total, 0);
+          const temEntrada =
+            quantidadeEntrada > 0 || valorTotalEntrada > 0 || !!entradaOpcional?.validade || !!entradaOpcional?.data_compra;
+
+          if (temEntrada && quantidadeEntrada > 0) {
+            const unidadeLote = entradaOpcional?.unidade || row.unidade_medida || null;
+            const { data: loteData, error: loteError } = await supabase
+              .from("estoque_lotes")
+              .insert({
+                fazenda_id: fazendaAtualId,
+                produto_id: data.id,
+                validade: entradaOpcional?.validade || null,
+                unidade_medida: unidadeLote,
+                quantidade_inicial: quantidadeEntrada,
+                quantidade_atual: quantidadeEntrada,
+                ativo: true,
+                observacao: "Entrada inicial via cadastro do produto",
+              })
+              .select("*")
+              .single();
+
+            if (loteError) throw loteError;
+
+            const valorTotalFinal = valorTotalEntrada > 0 ? valorTotalEntrada : null;
+            const valorUnitario =
+              valorTotalFinal && quantidadeEntrada > 0 ? Number((valorTotalFinal / quantidadeEntrada).toFixed(6)) : null;
+            const dataMovimento = entradaOpcional?.data_compra || new Date().toISOString().slice(0, 10);
+
+            const { error: movimentoError } = await supabase.from("estoque_movimentos").insert({
+              fazenda_id: fazendaAtualId,
+              produto_id: data.id,
+              lote_id: loteData.id,
+              tipo: "ENTRADA",
+              data_movimento: dataMovimento,
+              quantidade: quantidadeEntrada,
+              valor_total: valorTotalFinal,
+              valor_unitario: valorUnitario,
+              observacao: "Entrada inicial via cadastro do produto",
+            });
+
+            if (movimentoError) throw movimentoError;
+          }
         }
 
+        await carregarProdutos();
         setModalNovoProdutoOpen(false);
         setEditando(null);
       } catch (e) {
         setErro(e?.message || "Erro ao salvar produto");
       }
     },
-    [fazendaAtualId, editando]
+    [fazendaAtualId, editando, carregarProdutos]
   );
 
   return (
