@@ -332,10 +332,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
     const buscarLote = async (orderBy) => {
       const { data, error } = await supabase
         .from("estoque_lotes")
-        .select("id,produto_id,data_compra,validade,quantidade_inicial,valor_total,created_at,ativo")
-        .eq("fazenda_id", fazendaAtualId)
+        .select("id, created_at, validade, quantidade_inicial, quantidade_atual, valor_total")
         .eq("produto_id", initial.id)
-        .eq("ativo", true)
         .order(orderBy, { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle();
@@ -346,7 +344,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
 
     const carregarUltimoLote = async () => {
       const primeiro = await buscarLote("created_at");
-      const lote = primeiro.data ? primeiro.data : (await buscarLote("data_compra")).data;
+      const lote = primeiro.data;
 
       if (!ativo) return;
       if (!lote) {
@@ -359,8 +357,9 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       setLoteEditId(lote.id || null);
       setForm((f) => ({
         ...f,
+        quantidadeTotal: lote.quantidade_inicial !== null && lote.quantidade_inicial !== undefined ? String(lote.quantidade_inicial) : "",
         valorTotalEntrada: lote.valor_total !== null && lote.valor_total !== undefined ? String(lote.valor_total) : "",
-        dataCompra: toISODateOnly(lote.data_compra),
+        dataCompra: lote.created_at ? toISODateOnly(lote.created_at) : "",
         validadeEntrada: toISODateOnly(lote.validade),
         qtdEmbalagens: qtdEmbalagensDerivada,
       }));
