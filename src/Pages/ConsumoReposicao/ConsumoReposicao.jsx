@@ -373,7 +373,7 @@ export default function ConsumoReposicao() {
       const { data: lotesData, error: lotesError } = await supabase
         .from("estoque_lotes")
         .select(
-          "id,fazenda_id,produto_id,validade,unidade_medida,quantidade_inicial,quantidade_atual,ativo,created_at"
+          "id,fazenda_id,produto_id,data_compra,validade,quantidade_inicial,quantidade_atual,valor_total,observacoes,ativo,created_at"
         )
         .eq("fazenda_id", fazendaAtualId)
         .eq("ativo", true);
@@ -383,9 +383,7 @@ export default function ConsumoReposicao() {
         throw lotesError;
       }
 
-      const estoquePorProduto = {};
-      const compradoPorProduto = {};
-      const validadePorProduto = {};
+      const lotesMap = {};
       const hoje = new Date().toISOString().slice(0, 10);
 
       for (const lote of lotesData || []) {
@@ -395,29 +393,45 @@ export default function ConsumoReposicao() {
         const qtdAtual = toNumber(lote.quantidade_atual, 0);
         const qtdInicial = toNumber(lote.quantidade_inicial, 0);
 
-        estoquePorProduto[produtoId] = toNumber(estoquePorProduto[produtoId], 0) + qtdAtual;
-        compradoPorProduto[produtoId] = toNumber(compradoPorProduto[produtoId], 0) + qtdInicial;
+        if (!lotesMap[produtoId]) {
+          lotesMap[produtoId] = {
+            comprado: 0,
+            estoque: 0,
+            validadeFuturaMin: null,
+            validadePassadaMin: null,
+            lotes: [],
+          };
+        }
+
+        lotesMap[produtoId].comprado += qtdInicial;
+        lotesMap[produtoId].estoque += qtdAtual;
+        lotesMap[produtoId].lotes.push(lote);
 
         if (lote.validade) {
           const validade = String(lote.validade).slice(0, 10);
           if (validade >= hoje) {
-            if (!validadePorProduto[produtoId] || validade < validadePorProduto[produtoId]) {
-              validadePorProduto[produtoId] = validade;
+            if (!lotesMap[produtoId].validadeFuturaMin || validade < lotesMap[produtoId].validadeFuturaMin) {
+              lotesMap[produtoId].validadeFuturaMin = validade;
             }
+          } else if (!lotesMap[produtoId].validadePassadaMin || validade < lotesMap[produtoId].validadePassadaMin) {
+            lotesMap[produtoId].validadePassadaMin = validade;
           }
         }
       }
 
       const adaptados = (data || []).map((row) => {
+        const lotesInfo = lotesMap[row.id] || {};
+        const validadeMin = lotesInfo.validadeFuturaMin || lotesInfo.validadePassadaMin || null;
+
         return {
           id: row.id,
           nome: row.nome_comercial ?? "—",
           categoria: row.categoria ?? "—",
           unidade: row.unidade_medida ?? "—",
 
-          comprado: toNumber(compradoPorProduto[row.id], 0),
-          estoque: toNumber(estoquePorProduto[row.id], 0),
-          validade: validadePorProduto[row.id] || "—",
+          comprado: toNumber(lotesInfo.comprado, 0),
+          estoque: toNumber(lotesInfo.estoque, 0),
+          validade: validadeMin || "—",
           consumo: "—",
           prevTermino: "—",
           alertaEstoque: "OK",
@@ -427,7 +441,9 @@ export default function ConsumoReposicao() {
       });
 
       setProdutos(adaptados);
+      setErro("");
     } catch (e) {
+      console.error("[estoque_produtos] error:", e);
       setErro(e?.message || "Erro ao carregar estoque");
     } finally {
       setCarregando(false);
@@ -517,7 +533,8 @@ export default function ConsumoReposicao() {
         const idEdicao = editando?.id ?? null;
 
         const produtoPayload = produtoIn?.produto ? produtoIn.produto : produtoIn;
-        const entradaOpcional = produtoIn?.produto ? produtoIn.entradaOpcional : null;
+        const entradaOpcional =
+          produtoIn?._entrada || (produtoIn?.produto ? produtoIn.entradaOpcional : null) || produtoPayload?._entrada;
 
         const nome = pick(produtoPayload, "nome_comercial", "nomeComercial");
         const categoriaProduto = pick(produtoPayload, "categoria");
@@ -589,60 +606,71 @@ export default function ConsumoReposicao() {
             .select("*")
             .single();
 
-          if (error) throw error;
-
+          if (error) {
+            console.error("[estoque_produtos] error:", error);
+            throw error;
+          }
         } else {
           const { data, error } = await supabase.from("estoque_produtos").insert(row).select("*").single();
-          if (error) throw error;
+          if (error) {
+            console.error("[estoque_produtos] error:", error);
+            throw error;
+          }
+
+          const { data: auth } = await supabase.auth.getUser();
+          const userId = auth?.user?.id || null;
 
           const quantidadeEntrada = toNumber(entradaOpcional?.quantidade, 0);
-          const valorTotalEntrada = toNumber(entradaOpcional?.valor_total, 0);
 
           if (quantidadeEntrada > 0) {
-            const unidadeLote = entradaOpcional?.unidade || row.unidade_medida || null;
+            const loteRow = {
+              fazenda_id: fazendaAtualId,
+              user_id: userId,
+              produto_id: data.id,
+              data_compra: entradaOpcional?.data_compra || null,
+              validade: entradaOpcional?.validade || null,
+              quantidade_inicial: Number(quantidadeEntrada),
+              quantidade_atual: Number(quantidadeEntrada),
+              valor_total: entradaOpcional?.valor_total ?? null,
+              observacoes: entradaOpcional?.observacoes ?? null,
+              ativo: true,
+            };
 
-            const { data: loteData, error: loteError } = await supabase
+            const { data: loteCriado, error: errLote } = await supabase
               .from("estoque_lotes")
-              .insert({
-                fazenda_id: fazendaAtualId,
-                produto_id: data.id,
-                validade: entradaOpcional?.validade || null,
-                unidade_medida: unidadeLote,
-                quantidade_inicial: quantidadeEntrada,
-                quantidade_atual: quantidadeEntrada,
-                ativo: true,
-                observacao: "Entrada inicial via cadastro do produto",
-              })
+              .insert(loteRow)
               .select("*")
               .single();
 
-            if (loteError) {
-              console.error("[estoque_lotes] error:", loteError);
-              setErro(loteError?.message || "Erro ao criar lote inicial");
-              throw loteError;
+            if (errLote) {
+              console.error("[estoque_lotes] error:", errLote);
+              throw errLote;
             }
 
-            const valorTotalFinal = valorTotalEntrada > 0 ? valorTotalEntrada : null;
-            const valorUnitario =
-              valorTotalFinal && quantidadeEntrada > 0 ? Number((valorTotalFinal / quantidadeEntrada).toFixed(6)) : null;
-            const dataMovimento = entradaOpcional?.data_compra || new Date().toISOString().slice(0, 10);
-
-            const { error: movimentoError } = await supabase.from("estoque_movimentos").insert({
+            const movRow = {
               fazenda_id: fazendaAtualId,
+              user_id: userId,
               produto_id: data.id,
-              lote_id: loteData.id,
+              lote_id: loteCriado.id,
               tipo: "ENTRADA",
-              data_movimento: dataMovimento,
-              quantidade: quantidadeEntrada,
-              valor_total: valorTotalFinal,
-              valor_unitario: valorUnitario,
-              observacao: "Entrada inicial via cadastro do produto",
-            });
+              data_mov: entradaOpcional?.data_compra || new Date().toISOString().slice(0, 10),
+              quantidade: Number(quantidadeEntrada),
+              unidade_medida: data.unidade_medida || null,
+              valor_total: entradaOpcional?.valor_total ?? null,
+              observacoes: entradaOpcional?.observacoes ?? null,
+              meta: { origem: "cadastro_produto_modal" },
+            };
 
-            if (movimentoError) {
-              console.error("[estoque_movimentos] error:", movimentoError);
-              setErro(movimentoError?.message || "Erro ao criar movimento inicial");
-              throw movimentoError;
+            const { error: errMov } = await supabase.from("estoque_movimentos").insert(movRow);
+
+            if (errMov) {
+              console.error("[estoque_movimentos] error:", errMov);
+              if (String(errMov?.message || "").toLowerCase().includes("enum")) {
+                console.error(
+                  "[estoque_movimentos] dica: verifique se o enum aceita o valor 'ENTRADA' para a coluna tipo."
+                );
+              }
+              throw errMov;
             }
           }
         }
