@@ -1,3 +1,4 @@
+// src/Pages/ConsumoReposicao/ConsumoReposicao.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // Subpáginas reais do teu sistema
@@ -7,10 +8,21 @@ import Lotes from "./Lotes";
 import Limpeza from "./Limpeza";
 import CalendarioSanitario from "./CalendarioSanitario";
 
-// ✅ IMPORTA O MODAL (ajuste o path se estiver diferente)
+// ✅ Modal de cadastro/edição de produto
 import ModalNovoProduto from "./ModalNovoProduto";
 
+// ✅ Supabase + escopo de fazenda (padrão do teu sistema)
+import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
+
 const LS_LAST_TAB = "consumo:subabas:last";
+
+/* ========================= Helpers ========================= */
+function toNumber(v, fallback = 0) {
+  if (v === null || v === undefined || v === "") return fallback;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : fallback;
+}
 
 /* ========================= Tabs Modernas ========================= */
 function ModernTabs({ selected, setSelected, contadores }) {
@@ -42,12 +54,7 @@ function ModernTabs({ selected, setSelected, contadores }) {
   );
 
   return (
-    <div
-      style={styles.tabsContainer}
-      role="tablist"
-      aria-label="Sub-abas de consumo e reposição"
-      onKeyDown={onKey}
-    >
+    <div style={styles.tabsContainer} role="tablist" aria-label="Sub-abas de consumo e reposição" onKeyDown={onKey}>
       <div style={styles.tabsWrapper}>
         {tabs.map((t) => {
           const active = selected === t.id;
@@ -70,12 +77,7 @@ function ModernTabs({ selected, setSelected, contadores }) {
               <span style={styles.tabLabel}>{t.label}</span>
 
               {count !== null && count !== undefined && (
-                <span
-                  style={{
-                    ...styles.badge,
-                    ...(active ? styles.badgeActive : styles.badgeInactive),
-                  }}
-                >
+                <span style={{ ...styles.badge, ...(active ? styles.badgeActive : styles.badgeInactive) }}>
                   {count}
                 </span>
               )}
@@ -89,68 +91,37 @@ function ModernTabs({ selected, setSelected, contadores }) {
   );
 }
 
-/* ========================= Exemplo de Tabela Estilizada (Estoque) ========================= */
-/**
- * ✅ IMPORTANTE:
- * - Esse componente é SÓ o layout de exemplo.
- * - Aqui foi conectado o botão "+ Novo Produto" pra abrir o ModalNovoProduto.
- * - No teu Estoque.jsx real, você vai aplicar o mesmo padrão.
- */
-function ExemploTabelaModerna({ onNovoProduto }) {
-  const produtos = [
-    {
-      nome: "Ração 26%",
-      categoria: "Cozinha",
-      comprado: 5000,
-      estoque: 5000,
-      unidade: "kg",
-      validade: "30/01/2026",
-      consumo: "19 kg/d",
-      prevTermino: "263 d",
-      alertaEstoque: "OK",
-      alertaValidade: "Vencido",
-    },
-    {
-      nome: "Silagem de Milho",
-      categoria: "Cozinha",
-      comprado: 1000000,
-      estoque: 1000000,
-      unidade: "kg",
-      validade: "31/12/2029",
-      consumo: "60 kg/d",
-      prevTermino: "16666 d",
-      alertaEstoque: "OK",
-      alertaValidade: "OK",
-    },
-    {
-      nome: "Sincrocio",
-      categoria: "Farmácia",
-      comprado: 50,
-      estoque: 50,
-      unidade: "mL",
-      validade: "25/12/2025",
-      consumo: "—",
-      prevTermino: "—",
-      alertaEstoque: "OK",
-      alertaValidade: "Vencido",
-    },
-    {
-      nome: "Singrogest",
-      categoria: "Farmácia",
-      comprado: 50,
-      estoque: 50,
-      unidade: "mL",
-      validade: "29/12/2025",
-      consumo: "—",
-      prevTermino: "—",
-      alertaEstoque: "OK",
-      alertaValidade: "Vencido",
-    },
-  ];
+/* ========================= Tabela Estoque (real) ========================= */
+function TabelaEstoque({
+  produtos,
+  carregando,
+  erro,
+  busca,
+  setBusca,
+  categoria,
+  setCategoria,
+  categoriasDisponiveis,
+  onNovoProduto,
+  onEditarProduto,
+  onExcluirProduto,
+}) {
+  const produtosFiltrados = useMemo(() => {
+    const b = (busca || "").toLowerCase().trim();
+    return (produtos || []).filter((p) => {
+      const okBusca =
+        !b ||
+        String(p.nome || "").toLowerCase().includes(b) ||
+        String(p.categoria || "").toLowerCase().includes(b);
+
+      const okCat = categoria === "Todos" ? true : p.categoria === categoria;
+      return okBusca && okCat;
+    });
+  }, [produtos, busca, categoria]);
 
   const formatNumber = (num) => {
     if (num === "—") return "—";
-    return Number(num).toLocaleString("pt-BR");
+    const n = toNumber(num, 0);
+    return n.toLocaleString("pt-BR");
   };
 
   return (
@@ -158,9 +129,7 @@ function ExemploTabelaModerna({ onNovoProduto }) {
       <div style={styles.tableHeader}>
         <div>
           <h2 style={styles.tableTitle}>Gerenciamento de Estoque</h2>
-          <p style={styles.tableSubtitle}>
-            Visualize e gerencie todos os produtos do seu estoque
-          </p>
+          <p style={styles.tableSubtitle}>Visualize e gerencie todos os produtos do seu estoque</p>
         </div>
 
         <div style={styles.headerActions}>
@@ -168,12 +137,7 @@ function ExemploTabelaModerna({ onNovoProduto }) {
             Ajustes
           </button>
 
-          {/* ✅ AQUI estava o problema: antes não tinha onClick */}
-          <button
-            type="button"
-            style={styles.primaryButton}
-            onClick={onNovoProduto}
-          >
+          <button type="button" style={styles.primaryButton} onClick={onNovoProduto}>
             + Novo Produto
           </button>
         </div>
@@ -183,20 +147,34 @@ function ExemploTabelaModerna({ onNovoProduto }) {
         <input
           type="text"
           placeholder="Buscar produto..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
           style={styles.searchInput}
         />
-        <select style={styles.filterSelect}>
-          <option>Todos</option>
-          <option>Cozinha</option>
-          <option>Farmácia</option>
+
+        <select value={categoria} onChange={(e) => setCategoria(e.target.value)} style={styles.filterSelect}>
+          <option value="Todos">Todos</option>
+          {categoriasDisponiveis.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
         </select>
       </div>
+
+      {erro ? (
+        <div style={{ padding: 16, color: "#b91c1c", background: "#fee2e2", borderRadius: 12, marginBottom: 16 }}>
+          {erro}
+        </div>
+      ) : null}
+
+      {carregando ? <div style={{ padding: 16, color: "#64748b" }}>Carregando estoque...</div> : null}
 
       <div style={styles.tableWrapper}>
         <table style={styles.table}>
           <thead>
             <tr style={styles.theadRow}>
-              <th style={{ ...styles.th, width: "20%" }}>Nome Comercial</th>
+              <th style={{ ...styles.th, width: "22%" }}>Nome Comercial</th>
               <th style={styles.th}>Categoria</th>
               <th style={{ ...styles.th, textAlign: "right" }}>Comprado</th>
               <th style={{ ...styles.th, textAlign: "right" }}>Em estoque</th>
@@ -211,107 +189,78 @@ function ExemploTabelaModerna({ onNovoProduto }) {
           </thead>
 
           <tbody>
-            {produtos.map((prod, idx) => (
-              <tr key={idx} style={styles.tr}>
-                <td style={{ ...styles.td, fontWeight: 600, color: "#1e293b" }}>
-                  {prod.nome}
-                </td>
-
-                <td style={styles.td}>
-                  <span
-                    style={{
-                      ...styles.categoryBadge,
-                      backgroundColor:
-                        prod.categoria === "Cozinha" ? "#fef3c7" : "#dbeafe",
-                      color:
-                        prod.categoria === "Cozinha" ? "#92400e" : "#1e40af",
-                    }}
-                  >
-                    {prod.categoria}
-                  </span>
-                </td>
-
-                <td
-                  style={{
-                    ...styles.td,
-                    textAlign: "right",
-                    fontFamily: "monospace",
-                    fontSize: "0.9em",
-                  }}
-                >
-                  {formatNumber(prod.comprado)}
-                </td>
-
-                <td
-                  style={{
-                    ...styles.td,
-                    textAlign: "right",
-                    fontFamily: "monospace",
-                    fontSize: "0.9em",
-                    fontWeight: 600,
-                  }}
-                >
-                  {formatNumber(prod.estoque)}
-                </td>
-
-                <td style={styles.td}>
-                  <span style={styles.unitBadge}>{prod.unidade}</span>
-                </td>
-
-                <td style={styles.td}>{prod.validade}</td>
-
-                <td style={{ ...styles.td, textAlign: "right", color: "#64748b" }}>
-                  {prod.consumo}
-                </td>
-
-                <td style={{ ...styles.td, color: "#64748b" }}>{prod.prevTermino}</td>
-
-                <td style={{ ...styles.td, textAlign: "center" }}>
-                  <span
-                    style={{
-                      ...styles.statusBadge,
-                      backgroundColor:
-                        prod.alertaEstoque === "OK" ? "#dcfce7" : "#fee2e2",
-                      color: prod.alertaEstoque === "OK" ? "#166534" : "#991b1b",
-                    }}
-                  >
-                    {prod.alertaEstoque === "OK" ? "✓" : "!"} {prod.alertaEstoque}
-                  </span>
-                </td>
-
-                <td style={{ ...styles.td, textAlign: "center" }}>
-                  <span
-                    style={{
-                      ...styles.statusBadge,
-                      backgroundColor:
-                        prod.alertaValidade === "OK" ? "#dcfce7" : "#fee2e2",
-                      color: prod.alertaValidade === "OK" ? "#166534" : "#991b1b",
-                      border:
-                        prod.alertaValidade === "Vencido"
-                          ? "1px solid #fecaca"
-                          : "1px solid transparent",
-                    }}
-                  >
-                    {prod.alertaValidade === "OK" ? "✓ OK" : "⚠ Vencido"}
-                  </span>
-                </td>
-
-                <td style={{ ...styles.td, textAlign: "center" }}>
-                  <div style={styles.actionButtons}>
-                    <button type="button" style={styles.iconButton} title="Editar">
-                      ✏️
-                    </button>
-                    <button
-                      type="button"
-                      style={{ ...styles.iconButton, color: "#ef4444" }}
-                      title="Excluir"
-                    >
-                      🗑️
-                    </button>
-                  </div>
+            {produtosFiltrados.length === 0 ? (
+              <tr>
+                <td colSpan={11} style={{ ...styles.td, color: "#64748b" }}>
+                  Nenhum produto encontrado.
                 </td>
               </tr>
-            ))}
+            ) : (
+              produtosFiltrados.map((prod) => (
+                <tr key={prod.id} style={styles.tr}>
+                  <td style={{ ...styles.td, fontWeight: 600, color: "#1e293b" }}>{prod.nome}</td>
+
+                  <td style={styles.td}>
+                    <span style={{ ...styles.categoryBadge, backgroundColor: "#eef2ff", color: "#1e40af" }}>
+                      {prod.categoria || "—"}
+                    </span>
+                  </td>
+
+                  <td style={{ ...styles.td, textAlign: "right", fontFamily: "monospace", fontSize: "0.9em" }}>
+                    {formatNumber(prod.comprado)}
+                  </td>
+
+                  <td
+                    style={{
+                      ...styles.td,
+                      textAlign: "right",
+                      fontFamily: "monospace",
+                      fontSize: "0.9em",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {formatNumber(prod.estoque)}
+                  </td>
+
+                  <td style={styles.td}>
+                    <span style={styles.unitBadge}>{prod.unidade || "—"}</span>
+                  </td>
+
+                  <td style={styles.td}>{prod.validade || "—"}</td>
+
+                  <td style={{ ...styles.td, textAlign: "right", color: "#64748b" }}>{prod.consumo || "—"}</td>
+
+                  <td style={{ ...styles.td, color: "#64748b" }}>{prod.prevTermino || "—"}</td>
+
+                  <td style={{ ...styles.td, textAlign: "center" }}>
+                    <span style={{ ...styles.statusBadge, backgroundColor: "#dcfce7", color: "#166534" }}>
+                      ✓ {prod.alertaEstoque || "OK"}
+                    </span>
+                  </td>
+
+                  <td style={{ ...styles.td, textAlign: "center" }}>
+                    <span style={{ ...styles.statusBadge, backgroundColor: "#dcfce7", color: "#166534" }}>✓ OK</span>
+                  </td>
+
+                  <td style={{ ...styles.td, textAlign: "center" }}>
+                    <div style={styles.actionButtons}>
+                      <button type="button" style={styles.iconButton} title="Editar" onClick={() => onEditarProduto(prod)}>
+                        ✏️
+                      </button>
+
+                      <button
+                        type="button"
+                        style={{ ...styles.iconButton, color: "#ef4444" }}
+                        title="Excluir"
+                        onClick={() => onExcluirProduto(prod)}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -319,28 +268,8 @@ function ExemploTabelaModerna({ onNovoProduto }) {
       <div style={styles.tableFooter}>
         <div style={styles.footerStats}>
           <span style={styles.statItem}>
-            <strong>Total de itens:</strong> 4
+            <strong>Total de itens:</strong> {produtosFiltrados.length}
           </span>
-          <span style={styles.statDivider}>|</span>
-          <span style={styles.statItem}>
-            <strong>Valor total:</strong>{" "}
-            <span style={{ color: "#059669", fontWeight: 600 }}>R$ 90.100,00</span>
-          </span>
-          <span style={styles.statDivider}>|</span>
-          <span style={styles.statItem}>
-            <strong>Itens abaixo do mínimo:</strong>{" "}
-            <span style={{ color: "#dc2626", fontWeight: 600 }}>0</span>
-          </span>
-        </div>
-
-        <div style={styles.pagination}>
-          <button type="button" style={styles.paginationBtn} disabled>
-            ← Anterior
-          </button>
-          <span style={styles.pageInfo}>Página 1 de 1</span>
-          <button type="button" style={styles.paginationBtn} disabled>
-            Próxima →
-          </button>
         </div>
       </div>
     </div>
@@ -349,6 +278,8 @@ function ExemploTabelaModerna({ onNovoProduto }) {
 
 /* ========================= Página Principal ========================= */
 export default function ConsumoReposicao() {
+  const { fazendaAtualId } = useFazenda();
+
   const [tab, setTab] = useState(() => {
     try {
       return localStorage.getItem(LS_LAST_TAB) || "estoque";
@@ -363,18 +294,18 @@ export default function ConsumoReposicao() {
     } catch {}
   }, [tab]);
 
-  const [counts] = useState({
-    estoque: 4,
-    lotes: 12,
-    dieta: 3,
-    limpeza: 8,
-    calendario: 5,
-  });
+  // ✅ Estoque (real)
+  const [produtos, setProdutos] = useState([]);
+  const [busca, setBusca] = useState("");
+  const [categoria, setCategoria] = useState("Todos");
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
 
-  // ✅ STATE DO MODAL
+  // ✅ Modal
   const [modalNovoProdutoOpen, setModalNovoProdutoOpen] = useState(false);
+  const [editando, setEditando] = useState(null); // raw row do banco (estoque_produtos)
 
-  // ✅ evita injetar CSS repetido (era um bug comum no teu snippet)
+  // ✅ evita injetar CSS repetido
   const injectedRef = useRef(false);
   useEffect(() => {
     if (injectedRef.current) return;
@@ -390,28 +321,256 @@ export default function ConsumoReposicao() {
     document.head.appendChild(styleSheet);
 
     return () => {
-      // opcional: remover ao desmontar
       if (styleSheet?.parentNode) styleSheet.parentNode.removeChild(styleSheet);
     };
   }, []);
 
-  // ✅ CALLBACK DO BOTÃO
+  // ✅ Buscar produtos do banco (tabela nova)
+  const carregarProdutos = useCallback(async () => {
+    if (!fazendaAtualId) return;
+
+    setCarregando(true);
+    setErro("");
+
+    try {
+      const { data, error } = await supabase
+        .from("estoque_produtos")
+        .select(
+          [
+            "id",
+            "fazenda_id",
+            "nome_comercial",
+            "categoria",
+            "sub_tipo",
+            "forma_compra",
+            "tipo_embalagem",
+            "tamanho_por_embalagem",
+            "unidade_medida",
+            "reutilizavel",
+            "usos_por_unidade",
+            // ✅ nomes corretos do teu schema novo:
+            "carencia_leite",
+            "carencia_carne",
+            "sem_carencia_leite",
+            "sem_carencia_carne",
+            "ativo",
+            "created_at",
+            "updated_at",
+          ].join(",")
+        )
+        .eq("fazenda_id", fazendaAtualId)
+        .order("nome_comercial", { ascending: true });
+
+      if (error) throw error;
+
+      const adaptados = (data || []).map((row) => {
+        return {
+          id: row.id,
+          nome: row.nome_comercial ?? "—",
+          categoria: row.categoria ?? "—",
+          unidade: row.unidade_medida ?? "—",
+
+          // ainda não ligado a lotes/movimentos
+          comprado: "—",
+          estoque: "—",
+          validade: "—",
+          consumo: "—",
+          prevTermino: "—",
+          alertaEstoque: "OK",
+
+          _raw: row,
+        };
+      });
+
+      setProdutos(adaptados);
+    } catch (e) {
+      setErro(e?.message || "Erro ao carregar estoque");
+    } finally {
+      setCarregando(false);
+    }
+  }, [fazendaAtualId]);
+
+  useEffect(() => {
+    carregarProdutos();
+  }, [carregarProdutos]);
+
+  const categoriasDisponiveis = useMemo(() => {
+    const set = new Set();
+    for (const p of produtos) {
+      if (p?.categoria && p.categoria !== "—") set.add(p.categoria);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [produtos]);
+
+  // Contadores nas abas
+  const counts = useMemo(
+    () => ({
+      estoque: produtos.length,
+      lotes: null,
+      dieta: null,
+      limpeza: null,
+      calendario: null,
+    }),
+    [produtos.length]
+  );
+
+  // ✅ Abrir/Fechar modal
   const abrirNovoProduto = useCallback(() => {
+    setEditando(null);
     setModalNovoProdutoOpen(true);
   }, []);
 
   const fecharNovoProduto = useCallback(() => {
     setModalNovoProdutoOpen(false);
+    setEditando(null);
   }, []);
 
-  // ✅ Aqui você decide o que fazer quando salvar (por enquanto só fecha)
-  const onSavedProduto = useCallback((payload) => {
-    console.log("Produto/Lote salvo:", payload);
-    setModalNovoProdutoOpen(false);
-
-    // Se teu Estoque.jsx tem um refetch, aqui você chamaria (ou passaria via props/context)
-    // ex: refreshEstoque();
+  const editarProduto = useCallback((prod) => {
+    setEditando(prod?._raw || null);
+    setModalNovoProdutoOpen(true);
   }, []);
+
+  // ✅ Excluir produto
+  const excluirProduto = useCallback(
+    async (prod) => {
+      if (!prod?.id) return;
+      const ok = window.confirm(`Excluir "${prod.nome}"?`);
+      if (!ok) return;
+
+      try {
+        setErro("");
+        const { error } = await supabase
+          .from("estoque_produtos")
+          .delete()
+          .eq("id", prod.id)
+          .eq("fazenda_id", fazendaAtualId);
+
+        if (error) throw error;
+
+        setProdutos((prev) => prev.filter((p) => p.id !== prod.id));
+      } catch (e) {
+        setErro(e?.message || "Erro ao excluir produto");
+      }
+    },
+    [fazendaAtualId]
+  );
+
+  /**
+   * ✅ SALVAR NO BANCO (insert/update)
+   * ModalNovoProduto envia SOMENTE o catálogo (estoque_produtos) em snake_case.
+   * IMPORTANTE: o Modal não manda id; então aqui usamos editando?.id para update.
+   */
+  const onSavedProduto = useCallback(
+    async (produtoIn) => {
+      if (!fazendaAtualId) return;
+
+      try {
+        setErro("");
+
+        const idEdicao = editando?.id ?? null;
+
+        // ✅ row pronto (tabela nova)
+        const row = {
+          fazenda_id: fazendaAtualId,
+
+          nome_comercial: String(produtoIn?.nome_comercial || "").trim(),
+          categoria: String(produtoIn?.categoria || "").trim(),
+          sub_tipo: produtoIn?.sub_tipo ?? null,
+
+          forma_compra: produtoIn?.forma_compra ?? null,
+          tipo_embalagem: produtoIn?.tipo_embalagem ?? null,
+          tamanho_por_embalagem:
+            produtoIn?.tamanho_por_embalagem === null || produtoIn?.tamanho_por_embalagem === undefined
+              ? null
+              : Number(produtoIn.tamanho_por_embalagem) > 0
+              ? Number(produtoIn.tamanho_por_embalagem)
+              : null,
+
+          unidade_medida: produtoIn?.unidade_medida ?? null,
+
+          reutilizavel: !!produtoIn?.reutilizavel,
+          usos_por_unidade:
+            produtoIn?.usos_por_unidade === null || produtoIn?.usos_por_unidade === undefined
+              ? null
+              : Number(produtoIn.usos_por_unidade) >= 2
+              ? Number(produtoIn.usos_por_unidade)
+              : null,
+
+          // ✅ schema novo: carencia_leite / carencia_carne (não _dias)
+          carencia_leite:
+            produtoIn?.carencia_leite === null || produtoIn?.carencia_leite === undefined
+              ? null
+              : Number(produtoIn.carencia_leite),
+          carencia_carne:
+            produtoIn?.carencia_carne === null || produtoIn?.carencia_carne === undefined
+              ? null
+              : Number(produtoIn.carencia_carne),
+
+          sem_carencia_leite: !!produtoIn?.sem_carencia_leite,
+          sem_carencia_carne: !!produtoIn?.sem_carencia_carne,
+
+          ativo: produtoIn?.ativo === false ? false : true,
+        };
+
+        if (!row.nome_comercial) throw new Error("Nome do produto é obrigatório.");
+        if (!row.categoria) throw new Error("Categoria do produto é obrigatória.");
+
+        if (idEdicao) {
+          const { data, error } = await supabase
+            .from("estoque_produtos")
+            .update(row)
+            .eq("id", idEdicao)
+            .eq("fazenda_id", fazendaAtualId)
+            .select("*")
+            .single();
+
+          if (error) throw error;
+
+          setProdutos((prev) =>
+            prev.map((p) =>
+              p.id === idEdicao
+                ? {
+                    ...p,
+                    nome: data.nome_comercial,
+                    categoria: data.categoria,
+                    unidade: data.unidade_medida,
+                    _raw: data,
+                  }
+                : p
+            )
+          );
+        } else {
+          const { data, error } = await supabase.from("estoque_produtos").insert(row).select("*").single();
+          if (error) throw error;
+
+          setProdutos((prev) =>
+            [
+              ...prev,
+              {
+                id: data.id,
+                nome: data.nome_comercial,
+                categoria: data.categoria,
+                unidade: data.unidade_medida,
+                comprado: "—",
+                estoque: "—",
+                validade: "—",
+                consumo: "—",
+                prevTermino: "—",
+                alertaEstoque: "OK",
+                _raw: data,
+              },
+            ].sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"))
+          );
+        }
+
+        setModalNovoProdutoOpen(false);
+        setEditando(null);
+      } catch (e) {
+        setErro(e?.message || "Erro ao salvar produto");
+      }
+    },
+    [fazendaAtualId, editando]
+  );
 
   return (
     <div style={styles.page}>
@@ -421,15 +580,25 @@ export default function ConsumoReposicao() {
         <div style={styles.content}>
           {tab === "estoque" && (
             <div id="pane-estoque" role="tabpanel" aria-labelledby="estoque">
-              {/* ✅ EXEMPLO: agora o botão abre o modal */}
-              <ExemploTabelaModerna onNovoProduto={abrirNovoProduto} />
+              <TabelaEstoque
+                produtos={produtos}
+                carregando={carregando}
+                erro={erro}
+                busca={busca}
+                setBusca={setBusca}
+                categoria={categoria}
+                setCategoria={setCategoria}
+                categoriasDisponiveis={categoriasDisponiveis}
+                onNovoProduto={abrirNovoProduto}
+                onEditarProduto={editarProduto}
+                onExcluirProduto={excluirProduto}
+              />
 
-              {/* ✅ MODAL CONECTADO */}
               <ModalNovoProduto
                 open={modalNovoProdutoOpen}
                 onClose={fecharNovoProduto}
                 onSaved={onSavedProduto}
-                initial={null}
+                initial={editando}
               />
             </div>
           )}
@@ -468,23 +637,13 @@ const styles = {
   page: {
     minHeight: "100vh",
     backgroundColor: "#f8fafc",
-    fontFamily:
-      "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     padding: "24px",
     boxSizing: "border-box",
   },
+  container: { maxWidth: "1400px", margin: "0 auto" },
 
-  container: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-  },
-
-  // Tabs
-  tabsContainer: {
-    marginBottom: "24px",
-    position: "relative",
-  },
-
+  tabsContainer: { marginBottom: "24px", position: "relative" },
   tabsWrapper: {
     display: "flex",
     gap: "4px",
@@ -494,7 +653,6 @@ const styles = {
     width: "fit-content",
     border: "1px solid #e2e8f0",
   },
-
   tab: {
     position: "relative",
     display: "flex",
@@ -510,27 +668,14 @@ const styles = {
     whiteSpace: "nowrap",
     background: "transparent",
   },
-
-  tabInactive: {
-    backgroundColor: "transparent",
-    color: "#64748b",
-  },
-
+  tabInactive: { backgroundColor: "transparent", color: "#64748b" },
   tabActive: {
     backgroundColor: "#ffffff",
     color: "#0f172a",
-    boxShadow:
-      "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
   },
-
-  tabIcon: {
-    fontSize: "16px",
-  },
-
-  tabLabel: {
-    fontSize: "14px",
-  },
-
+  tabIcon: { fontSize: "16px" },
+  tabLabel: { fontSize: "14px" },
   badge: {
     display: "inline-flex",
     alignItems: "center",
@@ -542,17 +687,8 @@ const styles = {
     fontSize: "12px",
     fontWeight: 600,
   },
-
-  badgeInactive: {
-    backgroundColor: "#e2e8f0",
-    color: "#64748b",
-  },
-
-  badgeActive: {
-    backgroundColor: "#3b82f6",
-    color: "#ffffff",
-  },
-
+  badgeInactive: { backgroundColor: "#e2e8f0", color: "#64748b" },
+  badgeActive: { backgroundColor: "#3b82f6", color: "#ffffff" },
   activeIndicator: {
     position: "absolute",
     bottom: "-4px",
@@ -564,46 +700,19 @@ const styles = {
     backgroundColor: "#3b82f6",
   },
 
-  // Content
   content: {
     backgroundColor: "#ffffff",
     borderRadius: "16px",
     border: "1px solid #e2e8f0",
-    boxShadow:
-      "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
     overflow: "hidden",
   },
 
-  // Tabela Moderna
-  tableContainer: {
-    padding: "24px",
-  },
-
-  tableHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: "24px",
-  },
-
-  tableTitle: {
-    fontSize: "20px",
-    fontWeight: 600,
-    color: "#0f172a",
-    margin: "0 0 4px 0",
-  },
-
-  tableSubtitle: {
-    fontSize: "14px",
-    color: "#64748b",
-    margin: 0,
-  },
-
-  headerActions: {
-    display: "flex",
-    gap: "12px",
-  },
-
+  tableContainer: { padding: "24px" },
+  tableHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" },
+  tableTitle: { fontSize: "20px", fontWeight: 600, color: "#0f172a", margin: "0 0 4px 0" },
+  tableSubtitle: { fontSize: "14px", color: "#64748b", margin: 0 },
+  headerActions: { display: "flex", gap: "12px" },
   primaryButton: {
     padding: "10px 16px",
     backgroundColor: "#3b82f6",
@@ -616,7 +725,6 @@ const styles = {
     transition: "all 0.2s",
     boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
   },
-
   secondaryButton: {
     padding: "10px 16px",
     backgroundColor: "#ffffff",
@@ -638,7 +746,6 @@ const styles = {
     borderRadius: "12px",
     border: "1px solid #e2e8f0",
   },
-
   searchInput: {
     flex: 1,
     maxWidth: "300px",
@@ -649,7 +756,6 @@ const styles = {
     outline: "none",
     transition: "border-color 0.2s",
   },
-
   filterSelect: {
     padding: "8px 12px",
     border: "1px solid #d1d5db",
@@ -659,24 +765,9 @@ const styles = {
     cursor: "pointer",
   },
 
-  tableWrapper: {
-    overflowX: "auto",
-    borderRadius: "12px",
-    border: "1px solid #e2e8f0",
-  },
-
-  table: {
-    width: "100%",
-    borderCollapse: "separate",
-    borderSpacing: 0,
-    fontSize: "14px",
-  },
-
-  theadRow: {
-    backgroundColor: "#f8fafc",
-    borderBottom: "2px solid #e2e8f0",
-  },
-
+  tableWrapper: { overflowX: "auto", borderRadius: "12px", border: "1px solid #e2e8f0" },
+  table: { width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "14px" },
+  theadRow: { backgroundColor: "#f8fafc", borderBottom: "2px solid #e2e8f0" },
   th: {
     padding: "14px 16px",
     textAlign: "left",
@@ -687,27 +778,10 @@ const styles = {
     letterSpacing: "0.05em",
     whiteSpace: "nowrap",
   },
+  tr: { transition: "background-color 0.15s", borderBottom: "1px solid #e2e8f0" },
+  td: { padding: "16px", color: "#334155", borderBottom: "1px solid #e2e8f0", verticalAlign: "middle" },
 
-  tr: {
-    transition: "background-color 0.15s",
-    borderBottom: "1px solid #e2e8f0",
-  },
-
-  td: {
-    padding: "16px",
-    color: "#334155",
-    borderBottom: "1px solid #e2e8f0",
-    verticalAlign: "middle",
-  },
-
-  categoryBadge: {
-    display: "inline-flex",
-    padding: "4px 10px",
-    borderRadius: "9999px",
-    fontSize: "12px",
-    fontWeight: 500,
-  },
-
+  categoryBadge: { display: "inline-flex", padding: "4px 10px", borderRadius: "9999px", fontSize: "12px", fontWeight: 500 },
   unitBadge: {
     display: "inline-flex",
     padding: "2px 8px",
@@ -718,7 +792,6 @@ const styles = {
     color: "#64748b",
     border: "1px solid #e2e8f0",
   },
-
   statusBadge: {
     display: "inline-flex",
     alignItems: "center",
@@ -729,12 +802,7 @@ const styles = {
     fontWeight: 600,
   },
 
-  actionButtons: {
-    display: "flex",
-    gap: "8px",
-    justifyContent: "center",
-  },
-
+  actionButtons: { display: "flex", gap: "8px", justifyContent: "center" },
   iconButton: {
     padding: "6px",
     backgroundColor: "transparent",
@@ -753,44 +821,6 @@ const styles = {
     paddingTop: "24px",
     borderTop: "1px solid #e2e8f0",
   },
-
-  footerStats: {
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-    fontSize: "14px",
-    color: "#64748b",
-  },
-
-  statItem: {
-    display: "flex",
-    gap: "4px",
-  },
-
-  statDivider: {
-    color: "#cbd5e1",
-  },
-
-  pagination: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-
-  paginationBtn: {
-    padding: "8px 12px",
-    backgroundColor: "#ffffff",
-    border: "1px solid #d1d5db",
-    borderRadius: "6px",
-    fontSize: "14px",
-    color: "#374151",
-    cursor: "pointer",
-    transition: "all 0.2s",
-    opacity: 0.75,
-  },
-
-  pageInfo: {
-    fontSize: "14px",
-    color: "#64748b",
-  },
+  footerStats: { display: "flex", alignItems: "center", gap: "16px", fontSize: "14px", color: "#64748b" },
+  statItem: { display: "flex", gap: "4px" },
 };
