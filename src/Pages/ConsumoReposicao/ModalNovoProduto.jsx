@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
-import { X, Package, Pill, FlaskConical, AlertCircle, Info, Layers, Beaker, Box } from "lucide-react";
+import { X, Package, Pill, FlaskConical, Info, Box, Calendar, DollarSign, AlertCircle } from "lucide-react";
 
 /* ===================== DESIGN SYSTEM ===================== */
 const theme = {
@@ -17,12 +17,18 @@ const theme = {
       800: "#1e293b",
       900: "#0f172a",
     },
-    indigo: { 50: "#eef2ff", 100: "#e0e7ff", 500: "#6366f1", 600: "#4f46e5", 700: "#4338ca" },
+    indigo: {
+      50: "#eef2ff",
+      100: "#e0e7ff",
+      500: "#6366f1",
+      600: "#4f46e5",
+      700: "#4338ca",
+    },
     success: "#059669",
     warning: "#d97706",
     danger: "#dc2626",
   },
-  radius: { sm: "4px", md: "6px", lg: "8px" },
+  radius: { sm: "4px", md: "6px", lg: "10px" },
 };
 
 const rsStyles = {
@@ -50,7 +56,11 @@ const rsStyles = {
   option: (base, state) => ({
     ...base,
     fontSize: 13,
-    background: state.isSelected ? theme.colors.indigo[50] : state.isFocused ? theme.colors.slate[50] : "transparent",
+    background: state.isSelected
+      ? theme.colors.indigo[50]
+      : state.isFocused
+      ? theme.colors.slate[50]
+      : "transparent",
     color: state.isSelected ? theme.colors.indigo[700] : theme.colors.slate[700],
     fontWeight: state.isSelected ? 600 : 400,
     cursor: "pointer",
@@ -59,306 +69,224 @@ const rsStyles = {
 
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
   const isEdit = !!initial?.id;
-
   const [form, setForm] = useState(() => toForm(initial));
-  const [modoControle, setModoControle] = useState(null); // 'solido_fracionado' | 'liquido_volume' | 'unidade_integral' | 'peso'
 
   /* ===================== LOOKUPS ===================== */
   const categorias = useMemo(
     () => [
       { value: "Farmácia", label: "Farmácia", icon: Pill },
       { value: "Reprodução", label: "Reprodução", icon: FlaskConical },
-      { value: "Cozinha", label: "Cozinha", icon: Package },
+      { value: "Ração/Concentrado", label: "Rações e Concentrados", icon: Package },
+      { value: "Mineral/Aditivo", label: "Minerais e Aditivos", icon: Package },
       { value: "Higiene", label: "Higiene e Limpeza", icon: Package },
       { value: "Materiais", label: "Materiais Gerais", icon: Box },
+      { value: "Cozinha", label: "Cozinha", icon: Package },
     ],
     []
   );
 
-  // ✅ Farmácia: “Hormônio” é o tipo, e a apresentação define se é líquido ou dispositivo
-  const tiposFarmacia = useMemo(
+  const subtiposFarmacia = useMemo(
     () => [
       { value: "Antibiótico", label: "Antibiótico" },
       { value: "Anti-inflamatório", label: "Anti-inflamatório" },
       { value: "Vacina", label: "Vacina" },
       { value: "Antiparasitário", label: "Antiparasitário" },
-      { value: "Hormônio", label: "Hormônio (líquido ou dispositivo)" },
+      { value: "Hormônio", label: "Hormônio" },
+      { value: "Outros", label: "Outros" },
     ],
     []
   );
 
-  const apresentacoesHormonio = useMemo(
+  const subtiposRepro = useMemo(
     () => [
-      { value: "LIQUIDO", label: "Injetável (líquido) — controla por mL/L" },
-      { value: "DISPOSITIVO", label: "Dispositivo/Implante — controla por usos/reutilizações" },
+      { value: "Sêmen", label: "Sêmen (Palheta)" },
+      { value: "Embrião", label: "Embrião" },
+      { value: "Material", label: "Material de IA/Coleta" },
     ],
     []
   );
 
-  const tiposReproducao = useMemo(
+  const formasCompra = useMemo(
     () => [
-      { value: "Semen", label: "Sêmen (Palheta)" },
-      { value: "Embriao", label: "Embrião" },
-      { value: "Material", label: "Material de coleta/IA" },
+      { value: "EMBALADO", label: "Embalado (frasco/saco/caixa/galão...)" },
+      { value: "A_GRANEL", label: "A granel (peso/volume total)" },
     ],
     []
   );
 
-  const modosControleDefinicoes = useMemo(
-    () => ({
-      solido_fracionado: {
-        titulo: "Sólido Fracionado",
-        desc: "Para dispositivos/implantes que rendem múltiplos usos (ou reutilizações)",
-        exemplo: "Ex: Dispositivo (1 unidade = 3 usos)",
-        icon: Layers,
-        unidades: ["un", "dispositivo", "implante"],
-      },
-      liquido_volume: {
-        titulo: "Líquido por Volume",
-        desc: "Estoque controlado por mL/L. A dose é definida no protocolo/evento na hora de aplicar.",
-        exemplo: "Ex: Benzoato 50mL — desconto varia por protocolo (2mL, 5mL, 20mL...)",
-        icon: Beaker,
-        unidades: ["ml", "litro"],
-      },
-      unidade_integral: {
-        titulo: "Unidade Integral",
-        desc: "Cada aplicação consome 1 unidade completa do estoque",
-        exemplo: "Ex: Sêmen (1 dose), vacina dose única, luvas (1 par)",
-        icon: Box,
-        unidades: ["dose", "un", "frasco", "ampola"],
-      },
-      peso: {
-        titulo: "Controle por Peso",
-        desc: "Para produtos em pó/premix/mineral controlados em g/kg/mg",
-        exemplo: "Ex: Mineral 25kg — desconto (g) varia por dieta/lote",
-        icon: Package,
-        unidades: ["g", "kg", "mg"],
-      },
-    }),
+  const unidadesMedida = useMemo(
+    () => [
+      { value: "un", label: "Unidade (un)" },
+      { value: "dose", label: "Dose" },
+      { value: "ml", label: "mL" },
+      { value: "L", label: "Litro (L)" },
+      { value: "g", label: "g" },
+      { value: "kg", label: "kg" },
+    ],
+    []
+  );
+
+  const tiposEmbalagem = useMemo(
+    () => [
+      { value: "frasco", label: "Frasco" },
+      { value: "ampola", label: "Ampola" },
+      { value: "caixa", label: "Caixa" },
+      { value: "saco", label: "Saco" },
+      { value: "balde", label: "Balde" },
+      { value: "galao", label: "Galão" },
+      { value: "tonel", label: "Tonel" },
+      { value: "unidade", label: "Unidade" },
+      { value: "palheta", label: "Palheta" },
+    ],
     []
   );
 
   /* ===================== OPEN / INIT ===================== */
   useEffect(() => {
     if (!open) return;
-
-    const inicial = toForm(initial);
-    setForm(inicial);
-
-    // Detecta modo por dados
-    if (inicial.modoControle) setModoControle(inicial.modoControle);
-    else setModoControle(null);
+    setForm(toForm(initial));
   }, [initial, open]);
-
-  const isFarmacia = form.categoria === "Farmácia";
-  const isReproducao = form.categoria === "Reprodução";
-  const isAntibiotico = form.tipoFarmacia === "Antibiótico";
-
-  const isHormonio = isFarmacia && form.tipoFarmacia === "Hormônio";
-  const hormonioLiquido = isHormonio && form.apresentacaoHormonio === "LIQUIDO";
-  const hormonioDispositivo = isHormonio && form.apresentacaoHormonio === "DISPOSITIVO";
-
-  // ✅ Reprodução: sempre por dose
-  const isReproDose = isReproducao && !!form.tipoReproducao;
-
-  /* ===================== AUTO MODO CONTROLE ===================== */
-  useEffect(() => {
-    if (!open) return;
-
-    // 1) Reprodução: trava em dose
-    if (isReproDose && !isEdit) {
-      setModoControle("unidade_integral");
-      setForm((f) => ({
-        ...f,
-        modoControle: "unidade_integral",
-        unidade: "dose",
-      }));
-      return;
-    }
-
-    // 2) Farmácia: se hormônio, depende da apresentação
-    if (isHormonio && !isEdit) {
-      if (hormonioLiquido) {
-        setModoControle("liquido_volume");
-        setForm((f) => ({
-          ...f,
-          modoControle: "liquido_volume",
-          unidade: "ml",
-          unidadeVolume: f.unidadeVolume || "ml",
-        }));
-        return;
-      }
-      if (hormonioDispositivo) {
-        setModoControle("solido_fracionado");
-        setForm((f) => ({
-          ...f,
-          modoControle: "solido_fracionado",
-          unidade: "un",
-          usosPorUnidade: Number(f.usosPorUnidade) >= 2 ? f.usosPorUnidade : "3",
-        }));
-        return;
-      }
-    }
-
-    // 3) Farmácia: demais tipos (vacina/antibiótico etc.)
-    // - vacinas geralmente unidade integral
-    // - antibiótico pode ser unidade integral (bisnaga/frasco) ou líquido (se tu quiser depois, mas não vamos forçar)
-    if (isFarmacia && form.tipoFarmacia && !isEdit && !isHormonio) {
-      if (form.tipoFarmacia === "Vacina") {
-        setModoControle("unidade_integral");
-        setForm((f) => ({ ...f, modoControle: "unidade_integral", unidade: f.unidade || "dose" }));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, form.categoria, form.tipoReproducao, form.tipoFarmacia, form.apresentacaoHormonio]);
-
-  if (!open) return null;
-
-  /* ===================== VALIDAR ===================== */
-  const validar = () => {
-    if (!form.nomeComercial || !form.categoria) {
-      alert("Preencha nome e categoria.");
-      return null;
-    }
-
-    // Farmácia exige tipo
-    if (isFarmacia && !form.tipoFarmacia) {
-      alert("Selecione o tipo farmacêutico.");
-      return null;
-    }
-
-    // Reprodução exige tipo
-    if (isReproducao && !form.tipoReproducao) {
-      alert("Selecione o tipo de material (sêmen/embrião/etc.).");
-      return null;
-    }
-
-    // Hormônio exige apresentação
-    if (isHormonio && !form.apresentacaoHormonio) {
-      alert("Selecione se o hormônio é líquido ou dispositivo/implante.");
-      return null;
-    }
-
-    if (!modoControle) {
-      alert("Selecione um modo de controle de estoque.");
-      return null;
-    }
-
-    // ✅ Regras por modo
-    if (modoControle === "solido_fracionado") {
-      if (!form.usosPorUnidade || Number(form.usosPorUnidade) < 2) {
-        alert("Para dispositivo/implante, informe quantos usos/reutilizações por unidade (mínimo 2).");
-        return null;
-      }
-      // pesoDose é opcional (pode ter implante 1.9g, mas nem sempre você quer obrigar)
-    }
-
-    if (modoControle === "liquido_volume") {
-      if (!form.volumeTotal) {
-        alert("Informe o volume total do frasco (ex: 50 mL).");
-        return null;
-      }
-      if (Number(form.volumeTotal) <= 0) {
-        alert("O volume total deve ser maior que zero.");
-        return null;
-      }
-      // ✅ NÃO valida “dosagem por uso” porque isso será definido nos protocolos/eventos
-    }
-
-    if (modoControle === "peso") {
-      if (!form.pesoTotal || Number(form.pesoTotal) <= 0) {
-        alert("Informe o peso total por unidade (ex: 25 kg).");
-        return null;
-      }
-      // dosagemPeso NÃO é obrigatória (varia por dieta)
-    }
-
-    // Entrada inicial
-    if (!isEdit) {
-      if (!form.qtdEntrada || Number(form.qtdEntrada) <= 0) {
-        alert("Informe a quantidade inicial de entrada.");
-        return null;
-      }
-      if (form.valorTotalEntrada === "" || Number(form.valorTotalEntrada) < 0) {
-        alert("Informe o valor total da entrada (R$).");
-        return null;
-      }
-    }
-
-    return normalizePayload({ ...form, modoControle }, isEdit);
-  };
-
-  /* ===================== UI HELPERS ===================== */
-  const ModoCard = ({ modo, active, onClick }) => {
-    const definicao = modosControleDefinicoes[modo];
-    const Icon = definicao.icon;
-
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-start",
-          gap: "12px",
-          padding: "16px",
-          borderRadius: theme.radius.lg,
-          border: "2px solid",
-          borderColor: active ? theme.colors.indigo[500] : theme.colors.slate[200],
-          background: active ? theme.colors.indigo[50] : "#fff",
-          cursor: "pointer",
-          textAlign: "left",
-          width: "100%",
-          transition: "all 0.2s",
-        }}
-      >
-        <div
-          style={{
-            width: "40px",
-            height: "40px",
-            borderRadius: theme.radius.md,
-            background: active ? theme.colors.indigo[100] : theme.colors.slate[100],
-            color: active ? theme.colors.indigo[600] : theme.colors.slate[500],
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Icon size={20} />
-        </div>
-        <div>
-          <div style={{ fontSize: "14px", fontWeight: 700, color: active ? theme.colors.indigo[900] : theme.colors.slate[800] }}>
-            {definicao.titulo}
-          </div>
-          <div style={{ fontSize: "12px", color: theme.colors.slate[500], marginTop: "4px", lineHeight: 1.4 }}>
-            {definicao.desc}
-          </div>
-          <div style={{ fontSize: "11px", color: active ? theme.colors.indigo[600] : theme.colors.slate[400], marginTop: "8px", fontStyle: "italic" }}>
-            {definicao.exemplo}
-          </div>
-        </div>
-      </button>
-    );
-  };
 
   const menuPortalTarget = typeof document !== "undefined" ? document.body : null;
 
-  // ✅ Mostra seleção de modo só quando o modo não está “travado” pelo tipo
-  const modoTravadoPorTipo =
-    (isReproDose) ||
-    (isHormonio && !!form.apresentacaoHormonio) ||
-    (isFarmacia && form.tipoFarmacia === "Vacina");
+  const isFarmacia = form.categoria === "Farmácia";
+  const isReproducao = form.categoria === "Reprodução";
+  const isAntibiotico = isFarmacia && form.subTipo === "Antibiótico";
 
-  const mostrarSelecaoModo =
-    !!form.categoria &&
-    !isEdit &&
-    !modoTravadoPorTipo &&
-    (!isFarmacia || !!form.tipoFarmacia || !isFarmacia) &&
-    (form.categoria === "Cozinha" || form.categoria === "Higiene" || form.categoria === "Materiais" || (isFarmacia && !isHormonio && !!form.tipoFarmacia));
+  // Sugestões inteligentes (não trava nada)
+  useEffect(() => {
+    if (!open) return;
 
-  // ✅ Para Farmácia (não hormônio) a pessoa pode escolher (se quiser) modo manualmente — mas aqui eu deixo liberar via cards.
-  // Se tu quiser travar mais coisas depois (ex antibiótico sempre unidade), a gente trava.
+    if (!isEdit && isReproducao) {
+      setForm((f) => ({
+        ...f,
+        subTipo: f.subTipo || "Sêmen",
+        formaCompra: f.formaCompra || "EMBALADO",
+        unidadeMedida: f.unidadeMedida || "dose",
+        tipoEmbalagem: f.tipoEmbalagem || "palheta",
+        tamanhoPorEmbalagem: f.tamanhoPorEmbalagem || "1",
+      }));
+    }
+
+    if (!isEdit && isFarmacia && form.subTipo === "Hormônio") {
+      setForm((f) => ({
+        ...f,
+        formaCompra: f.formaCompra || "EMBALADO",
+        tipoEmbalagem: f.tipoEmbalagem || "frasco",
+        unidadeMedida: f.unidadeMedida || "ml",
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, form.categoria, form.subTipo]);
+
+  /* ===================== CALC ===================== */
+  const totalCalculado = useMemo(() => {
+    if (form.reutilizavel) {
+      const qtdEmb = toNum(form.qtdEmbalagens);
+      const usos = toNum(form.usosPorUnidade);
+      return Math.max(0, qtdEmb * usos);
+    }
+
+    if (form.formaCompra === "A_GRANEL") {
+      return Math.max(0, toNum(form.quantidadeTotal));
+    }
+
+    const qtd = toNum(form.qtdEmbalagens);
+    const tam = toNum(form.tamanhoPorEmbalagem);
+    return Math.max(0, qtd * tam);
+  }, [
+    form.formaCompra,
+    form.qtdEmbalagens,
+    form.tamanhoPorEmbalagem,
+    form.quantidadeTotal,
+    form.reutilizavel,
+    form.usosPorUnidade,
+  ]);
+
+  const unidadeFinal = form.reutilizavel ? "uso" : form.unidadeMedida || "";
+
+  /* ===================== VALIDAR ===================== */
+  const validar = () => {
+    if (!form.nomeComercial?.trim()) {
+      alert("Informe o nome comercial.");
+      return null;
+    }
+    if (!form.categoria) {
+      alert("Selecione a categoria.");
+      return null;
+    }
+
+    if (isFarmacia && !form.subTipo) {
+      alert("Selecione o tipo (Farmácia).");
+      return null;
+    }
+    if (isReproducao && !form.subTipo) {
+      alert("Selecione o tipo (Reprodução).");
+      return null;
+    }
+
+    if (!form.formaCompra) {
+      alert("Selecione como este produto é comprado.");
+      return null;
+    }
+
+    if (form.formaCompra === "EMBALADO") {
+      if (!form.tipoEmbalagem) {
+        alert("Selecione o tipo de embalagem (frasco/saco/caixa...).");
+        return null;
+      }
+      if (!form.qtdEmbalagens || toNum(form.qtdEmbalagens) <= 0) {
+        alert("Informe quantas embalagens foram compradas.");
+        return null;
+      }
+
+      if (form.reutilizavel) {
+        if (!form.usosPorUnidade || toNum(form.usosPorUnidade) < 2) {
+          alert("Produto reutilizável: informe usos por unidade (mínimo 2).");
+          return null;
+        }
+      } else {
+        if (!form.unidadeMedida) {
+          alert("Selecione a unidade de medida (mL/L/kg/un...).");
+          return null;
+        }
+        if (!form.tamanhoPorEmbalagem || toNum(form.tamanhoPorEmbalagem) <= 0) {
+          alert("Informe o tamanho por embalagem (ex: 50 mL, 25 kg).");
+          return null;
+        }
+      }
+    }
+
+    if (form.formaCompra === "A_GRANEL") {
+      if (!form.unidadeMedida) {
+        alert("Selecione a unidade de medida (mL/L/kg/g...).");
+        return null;
+      }
+      if (!form.quantidadeTotal || toNum(form.quantidadeTotal) <= 0) {
+        alert("Informe a quantidade total comprada (a granel).");
+        return null;
+      }
+    }
+
+    if (isAntibiotico) {
+      const leiteOk = form.semCarenciaLeite || toNum(form.carenciaLeiteDias) > 0;
+      const carneOk = form.semCarenciaCarne || toNum(form.carenciaCarneDias) > 0;
+
+      if (!leiteOk) {
+        alert("Antibiótico: informe carência de leite (dias) ou marque 'Sem carência'.");
+        return null;
+      }
+      if (!carneOk) {
+        alert("Antibiótico: informe carência de carne (dias) ou marque 'Sem carência'.");
+        return null;
+      }
+    }
+
+    // ✅ retorna { produto, lote } no formato que Estoque.jsx espera
+    return buildOnSavedPayload(form, { totalCalculado, unidadeFinal }, isEdit);
+  };
+
+  if (!open) return null;
 
   /* ===================== RENDER ===================== */
   return (
@@ -372,7 +300,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
             </div>
             <div>
               <h2 style={headerTitle}>{isEdit ? "Editar Produto" : "Cadastrar Produto"}</h2>
-              <p style={headerSubtitle}>Configure o controle de estoque adequado ao tipo de produto</p>
+              <p style={headerSubtitle}>Cadastre o produto e como ele é controlado (catálogo)</p>
             </div>
           </div>
           <button type="button" onClick={onClose} style={btnClose}>
@@ -381,7 +309,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
         </div>
 
         <div style={content}>
-          {/* ETAPA 1: IDENTIFICAÇÃO */}
+          {/* 1) IDENTIFICAÇÃO */}
           <section style={section}>
             <div style={sectionTitle}>Identificação</div>
 
@@ -403,19 +331,25 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                     setForm((f) => ({
                       ...f,
                       categoria: opt?.value || "",
-                      tipoFarmacia: "",
-                      tipoReproducao: "",
-                      apresentacaoHormonio: "",
-                      modoControle: "",
-                      unidade: "",
-                      // limpa configs específicas
-                      volumeTotal: "",
-                      unidadeVolume: "ml",
-                      usosPorUnidade: "1",
-                      pesoTotal: "",
-                      dosagemPeso: "",
+                      subTipo: "",
+                      formaCompra: "",
+                      tipoEmbalagem: "",
+                      qtdEmbalagens: "",
+                      tamanhoPorEmbalagem: "",
+                      unidadeMedida: "",
+                      quantidadeTotal: "",
+                      reutilizavel: false,
+                      usosPorUnidade: "3",
+                      carenciaLeiteDias: "",
+                      carenciaCarneDias: "",
+                      semCarenciaLeite: false,
+                      semCarenciaCarne: false,
+
+                      // não persiste no catálogo
+                      valorTotalEntrada: "",
+                      validadeEntrada: "",
+                      dataCompra: "",
                     }));
-                    setModoControle(null);
                   }}
                   styles={rsStyles}
                   placeholder="Selecione..."
@@ -424,420 +358,286 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
               </Field>
             </div>
 
-            {/* TIPO ESPECÍFICO */}
-            {isFarmacia && (
-              <div style={{ marginTop: "16px" }}>
-                <Field label="Tipo Farmacêutico *">
+            {(isFarmacia || isReproducao) && (
+              <div style={{ marginTop: 14 }}>
+                <Field label={isFarmacia ? "Tipo (Farmácia) *" : "Tipo (Reprodução) *"}>
                   <Select
-                    options={tiposFarmacia}
-                    value={tiposFarmacia.find((t) => t.value === form.tipoFarmacia) || null}
+                    options={isFarmacia ? subtiposFarmacia : subtiposRepro}
+                    value={(isFarmacia ? subtiposFarmacia : subtiposRepro).find((t) => t.value === form.subTipo) || null}
                     onChange={(opt) => {
                       const v = opt?.value || "";
                       setForm((f) => ({
                         ...f,
-                        tipoFarmacia: v,
-                        apresentacaoHormonio: "",
-                        // limpa configs quando troca tipo
-                        volumeTotal: "",
-                        usosPorUnidade: v === "Hormônio" ? f.usosPorUnidade : "1",
+                        subTipo: v,
+                        ...(v !== "Antibiótico"
+                          ? {
+                              carenciaLeiteDias: "",
+                              carenciaCarneDias: "",
+                              semCarenciaLeite: false,
+                              semCarenciaCarne: false,
+                            }
+                          : {}),
                       }));
-                      // se trocar tipo, reseta modo e ele será reatribuído no useEffect
-                      setModoControle(null);
-                    }}
-                    styles={rsStyles}
-                    placeholder="Selecione o tipo..."
-                    menuPortalTarget={menuPortalTarget}
-                  />
-                </Field>
-
-                {/* ✅ Hormônio: apresentação líquido vs dispositivo */}
-                {isHormonio && (
-                  <div style={{ marginTop: "12px" }}>
-                    <Field label="Apresentação do Hormônio *">
-                      <Select
-                        options={apresentacoesHormonio}
-                        value={apresentacoesHormonio.find((a) => a.value === form.apresentacaoHormonio) || null}
-                        onChange={(opt) => {
-                          const val = opt?.value || "";
-                          setForm((f) => ({
-                            ...f,
-                            apresentacaoHormonio: val,
-                            // ajustes “base”
-                            unidade: val === "LIQUIDO" ? "ml" : "un",
-                            unidadeVolume: "ml",
-                            usosPorUnidade: val === "DISPOSITIVO" ? (Number(f.usosPorUnidade) >= 2 ? f.usosPorUnidade : "3") : "1",
-                            volumeTotal: val === "LIQUIDO" ? f.volumeTotal : "",
-                          }));
-                          setModoControle(null);
-                        }}
-                        styles={rsStyles}
-                        placeholder="Selecione..."
-                        menuPortalTarget={menuPortalTarget}
-                      />
-                    </Field>
-
-                    {hormonioLiquido && (
-                      <div style={{ marginTop: 10 }}>
-                        <div style={infoBox}>
-                          <Info size={16} />
-                          <div>
-                            <strong>Importante:</strong> a <strong>dose (mL)</strong> será informada no{" "}
-                            <strong>protocolo/evento</strong> (IATF, cisto, indução etc.). Aqui o estoque fica em{" "}
-                            <strong>volume total</strong>.
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {hormonioDispositivo && (
-                      <div style={{ marginTop: 10 }}>
-                        <div style={infoBox}>
-                          <Info size={16} />
-                          <div>
-                            <strong>Dispositivo/Implante:</strong> aqui faz sentido controlar por{" "}
-                            <strong>usos/reutilizações</strong> (ex.: 1 dispositivo = 3 usos).
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {isReproducao && (
-              <div style={{ marginTop: "16px" }}>
-                <Field label="Tipo de Material *">
-                  <Select
-                    options={tiposReproducao}
-                    value={tiposReproducao.find((t) => t.value === form.tipoReproducao) || null}
-                    onChange={(opt) => {
-                      const v = opt?.value || "";
-                      setForm((f) => ({
-                        ...f,
-                        tipoReproducao: v,
-                        modoControle: "unidade_integral",
-                        unidade: "dose",
-                      }));
-                      setModoControle("unidade_integral");
                     }}
                     styles={rsStyles}
                     placeholder="Selecione..."
                     menuPortalTarget={menuPortalTarget}
                   />
                 </Field>
-
-                {isReproDose && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={infoBox}>
-                      <Info size={16} />
-                      <div>
-                        <strong>Reprodução:</strong> estoque sempre em <strong>dose</strong> (1 palheta = 1 dose; 1 embrião = 1 dose).
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </section>
 
-          {/* ETAPA 2: MODO DE CONTROLE (só quando não travado) */}
-          {mostrarSelecaoModo && (
-            <section style={section}>
-              <div style={sectionTitle}>
-                Modo de Controle de Estoque
-                <span style={sectionSubtitle}>Como este produto será descontado do estoque?</span>
-              </div>
+          {/* 2) COMO FOI COMPRADO */}
+          <section style={section}>
+            <div style={sectionTitle}>Compra e Embalagem</div>
 
-              <div style={gridModos}>
-                {Object.keys(modosControleDefinicoes).map((modo) => (
-                  <ModoCard
-                    key={modo}
-                    modo={modo}
-                    active={modoControle === modo}
-                    onClick={() => {
-                      const unidadeSugerida = modosControleDefinicoes[modo]?.unidades?.[0] || "";
-                      setModoControle(modo);
-                      setForm((f) => ({
-                        ...f,
-                        modoControle: modo,
-                        unidade: unidadeSugerida,
-                        usosPorUnidade: modo === "solido_fracionado" ? (Number(f.usosPorUnidade) >= 2 ? f.usosPorUnidade : "3") : f.usosPorUnidade,
-                      }));
-                    }}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
+            <div style={grid2}>
+              <Field label="Como você compra esse produto? *">
+                <Select
+                  options={formasCompra}
+                  value={formasCompra.find((x) => x.value === form.formaCompra) || null}
+                  onChange={(opt) => {
+                    const v = opt?.value || "";
+                    setForm((f) => ({
+                      ...f,
+                      formaCompra: v,
+                      tipoEmbalagem: "",
+                      qtdEmbalagens: "",
+                      tamanhoPorEmbalagem: "",
+                      quantidadeTotal: "",
+                      reutilizavel: v === "A_GRANEL" ? false : f.reutilizavel,
+                    }));
+                  }}
+                  styles={rsStyles}
+                  placeholder="Selecione..."
+                  menuPortalTarget={menuPortalTarget}
+                />
+              </Field>
 
-          {/* ETAPA 3: CONFIGURAÇÃO DO MODO (quando aplicável) */}
-          {modoControle && (
-            <section style={{ ...section, background: theme.colors.indigo[50], borderColor: theme.colors.indigo[100] }}>
-              <div style={{ ...sectionTitle, color: theme.colors.indigo[900] }}>
-                {React.createElement(modosControleDefinicoes[modoControle].icon, { size: 16, style: { marginRight: 8 } })}
-                Configuração: {modosControleDefinicoes[modoControle].titulo}
-              </div>
+              <Field label="Unidade de medida (estoque) *">
+                <Select
+                  options={unidadesMedida}
+                  value={unidadesMedida.find((u) => u.value === form.unidadeMedida) || null}
+                  onChange={(opt) => setForm((f) => ({ ...f, unidadeMedida: opt?.value || "" }))}
+                  styles={rsStyles}
+                  placeholder="mL / L / kg / un..."
+                  menuPortalTarget={menuPortalTarget}
+                  isDisabled={form.reutilizavel}
+                />
+                {form.reutilizavel && <span style={fieldHint}>Reutilizável: o estoque passa a ser controlado por “uso”.</span>}
+              </Field>
+            </div>
 
-              {/* SÓLIDO FRACIONADO (dispositivos/implantes) */}
-              {modoControle === "solido_fracionado" && (
-                <div style={grid2}>
-                  <Field label="Quantos usos/reutilizações por unidade? *">
+            {form.formaCompra === "EMBALADO" && (
+              <div style={{ marginTop: 14 }}>
+                <div style={grid3}>
+                  <Field label="Tipo de embalagem *">
+                    <Select
+                      options={tiposEmbalagem}
+                      value={tiposEmbalagem.find((t) => t.value === form.tipoEmbalagem) || null}
+                      onChange={(opt) => setForm((f) => ({ ...f, tipoEmbalagem: opt?.value || "" }))}
+                      styles={rsStyles}
+                      placeholder="Frasco / Saco / Caixa..."
+                      menuPortalTarget={menuPortalTarget}
+                    />
+                  </Field>
+
+                  <Field label="Quantas embalagens? *">
                     <input
                       style={input}
                       type="number"
-                      min="2"
-                      max="50"
-                      value={form.usosPorUnidade || ""}
-                      onChange={(e) => setForm((f) => ({ ...f, usosPorUnidade: e.target.value }))}
-                      placeholder="Ex: 3"
-                    />
-                    <span style={fieldHint}>Ex.: 1 dispositivo pode ser reutilizado em 3 protocolos.</span>
-                  </Field>
-
-                  <Field label="Observação/Apresentação (opcional)">
-                    <input
-                      style={input}
-                      value={form.apresentacao || ""}
-                      onChange={(e) => setForm((f) => ({ ...f, apresentacao: e.target.value }))}
-                      placeholder="Ex: Caixa com 10 dispositivos"
+                      value={form.qtdEmbalagens}
+                      onChange={(e) => setForm((f) => ({ ...f, qtdEmbalagens: e.target.value }))}
+                      placeholder="Ex: 5"
                     />
                   </Field>
 
-                  <div style={calcBox}>
-                    <div style={{ fontWeight: 600, marginBottom: "8px" }}>Cálculo automático:</div>
-                    <div style={{ fontSize: "14px", color: theme.colors.slate[800] }}>
-                      Se entrar <strong>{Number(form.qtdEntrada || 0) || 0}</strong> unidade(s) com{" "}
-                      <strong>{Number(form.usosPorUnidade || 0) || 0}</strong> usos cada, você terá{" "}
-                      <strong>{(Number(form.qtdEntrada || 0) || 0) * (parseInt(form.usosPorUnidade || "0", 10) || 0)}</strong>{" "}
-                      usos disponíveis no estoque.
-                    </div>
-                  </div>
+                  {!form.reutilizavel ? (
+                    <Field label="Tamanho por embalagem *">
+                      <div style={flexRow}>
+                        <input
+                          style={{ ...input, flex: 1 }}
+                          type="number"
+                          value={form.tamanhoPorEmbalagem}
+                          onChange={(e) => setForm((f) => ({ ...f, tamanhoPorEmbalagem: e.target.value }))}
+                          placeholder="Ex: 50"
+                        />
+                        <div style={{ width: 110, marginLeft: 8 }}>
+                          <Select
+                            options={unidadesMedida.filter((u) => u.value !== "dose")}
+                            value={unidadesMedida.find((u) => u.value === form.unidadeMedida) || null}
+                            onChange={(opt) => setForm((f) => ({ ...f, unidadeMedida: opt?.value || "" }))}
+                            styles={rsStyles}
+                            placeholder="un"
+                            menuPortalTarget={menuPortalTarget}
+                            isDisabled={form.reutilizavel}
+                          />
+                        </div>
+                      </div>
+                      <span style={fieldHint}>Ex.: frasco 50 mL, saco 25 kg, caixa 12 un…</span>
+                    </Field>
+                  ) : (
+                    <Field label="Usos por unidade *">
+                      <input
+                        style={input}
+                        type="number"
+                        min="2"
+                        value={form.usosPorUnidade}
+                        onChange={(e) => setForm((f) => ({ ...f, usosPorUnidade: e.target.value }))}
+                        placeholder="Ex: 3"
+                      />
+                      <span style={fieldHint}>Ex.: 1 CIDR pode render 3 usos.</span>
+                    </Field>
+                  )}
                 </div>
-              )}
 
-              {/* LÍQUIDO POR VOLUME (sem “dosagem por uso” aqui!) */}
-              {modoControle === "liquido_volume" && (
+                <div style={{ marginTop: 12 }}>
+                  <label style={checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={form.reutilizavel}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          reutilizavel: e.target.checked,
+                          unidadeMedida: e.target.checked ? "" : f.unidadeMedida,
+                        }))
+                      }
+                    />
+                    <span>Produto reutilizável (dispositivo/implante)</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {form.formaCompra === "A_GRANEL" && (
+              <div style={{ marginTop: 14 }}>
                 <div style={grid2}>
-                  <Field label="Volume Total do Frasco *">
+                  <Field label="Quantidade total comprada *">
                     <div style={flexRow}>
                       <input
                         style={{ ...input, flex: 1 }}
                         type="number"
-                        value={form.volumeTotal || ""}
-                        onChange={(e) => setForm((f) => ({ ...f, volumeTotal: e.target.value }))}
-                        placeholder="Ex: 50"
+                        value={form.quantidadeTotal}
+                        onChange={(e) => setForm((f) => ({ ...f, quantidadeTotal: e.target.value }))}
+                        placeholder="Ex: 120"
                       />
-                      <select
-                        style={{ ...input, width: 120, marginLeft: 8 }}
-                        value={form.unidadeVolume || "ml"}
-                        onChange={(e) => setForm((f) => ({ ...f, unidadeVolume: e.target.value, unidade: e.target.value }))}
-                      >
-                        <option value="ml">mL</option>
-                        <option value="litro">Litros</option>
-                      </select>
-                    </div>
-                    <span style={fieldHint}>
-                      Estoque será controlado em <strong>{form.unidadeVolume || "ml"}</strong>. A dose será definida no protocolo/evento.
-                    </span>
-                  </Field>
-
-                  <Field label="Concentração (opcional)">
-                    <input
-                      style={input}
-                      value={form.concentracao || ""}
-                      onChange={(e) => setForm((f) => ({ ...f, concentracao: e.target.value }))}
-                      placeholder="Ex: 50µg/mL, 100µg (GnRH análogo)"
-                    />
-                  </Field>
-
-                  <div style={calcBox}>
-                    <div style={{ fontWeight: 600, marginBottom: "8px" }}>Total em estoque (estimativa):</div>
-
-                    {form.volumeTotal && form.qtdEntrada ? (
-                      <div style={{ fontSize: "14px", color: theme.colors.slate[800] }}>
-                        <strong>{Number(form.qtdEntrada)}</strong> frasco(s) ×{" "}
-                        <strong>
-                          {Number(form.volumeTotal)}
-                          {form.unidadeVolume || "ml"}
-                        </strong>{" "}
-                        ={" "}
-                        <strong>
-                          {Math.max(0, Number(form.qtdEntrada) * Number(form.volumeTotal))}{" "}
-                          {form.unidadeVolume || "ml"}
-                        </strong>{" "}
-                        disponíveis.
+                      <div style={{ width: 160, marginLeft: 8 }}>
+                        <Select
+                          options={unidadesMedida.filter((u) => u.value !== "dose")}
+                          value={unidadesMedida.find((u) => u.value === form.unidadeMedida) || null}
+                          onChange={(opt) => setForm((f) => ({ ...f, unidadeMedida: opt?.value || "" }))}
+                          styles={rsStyles}
+                          placeholder="kg / L..."
+                          menuPortalTarget={menuPortalTarget}
+                        />
                       </div>
-                    ) : (
-                      <div style={{ fontSize: "13px", color: theme.colors.slate[600] }}>
-                        Preencha volume e quantidade de entrada para ver o total
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: 10, fontSize: 12, color: theme.colors.slate[600], lineHeight: 1.4 }}>
-                      ✅ Desconto real acontece quando você registrar a aplicação no protocolo/evento (ex.: 2mL na IATF, 5mL em cisto, 20mL em indução…).
                     </div>
-                  </div>
-                </div>
-              )}
-
-              {/* UNIDADE INTEGRAL */}
-              {modoControle === "unidade_integral" && (
-                <div style={grid2}>
-                  <Field label="Unidade de Controle">
-                    <Select
-                      options={[
-                        { value: "dose", label: "Dose" },
-                        { value: "un", label: "Unidade" },
-                        { value: "frasco", label: "Frasco" },
-                        { value: "ampola", label: "Ampola" },
-                      ]}
-                      value={
-                        [
-                          { value: "dose", label: "Dose" },
-                          { value: "un", label: "Unidade" },
-                          { value: "frasco", label: "Frasco" },
-                          { value: "ampola", label: "Ampola" },
-                        ].find((o) => o.value === (form.unidade || "dose")) || { value: "dose", label: "Dose" }
-                      }
-                      onChange={(opt) => setForm((f) => ({ ...f, unidade: opt?.value || "dose" }))}
-                      styles={rsStyles}
-                      menuPortalTarget={menuPortalTarget}
-                      isDisabled={isReproDose} // ✅ reprodução trava em dose
-                    />
-                    {isReproDose && <span style={fieldHint}>Reprodução: sempre “dose”.</span>}
+                    <span style={fieldHint}>Use “a granel” quando registra direto o total (sem frascos/sacos).</span>
                   </Field>
 
                   <div style={infoBox}>
                     <Info size={16} />
-                    <div>
-                      <strong>Unidade Integral:</strong> cada lançamento de uso desconta 1 unidade completa do estoque.
-                    </div>
+                    <div>Aqui você não precisa informar embalagem. Você registra o total comprado e pronto.</div>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* PESO */}
-              {modoControle === "peso" && (
-                <div style={grid2}>
-                  <Field label="Peso Total por Unidade (ex: saco/frasco) *">
-                    <div style={flexRow}>
-                      <input
-                        style={{ ...input, flex: 1 }}
-                        type="number"
-                        value={form.pesoTotal || ""}
-                        onChange={(e) => setForm((f) => ({ ...f, pesoTotal: e.target.value }))}
-                        placeholder="Ex: 25"
-                      />
-                      <select
-                        style={{ ...input, width: 120, marginLeft: 8 }}
-                        value={form.unidadePeso || "kg"}
-                        onChange={(e) => setForm((f) => ({ ...f, unidadePeso: e.target.value, unidade: e.target.value }))}
-                      >
-                        <option value="g">gramas</option>
-                        <option value="kg">kg</option>
-                        <option value="mg">mg</option>
-                      </select>
-                    </div>
-                    <span style={fieldHint}>Estoque por peso. A dosagem pode variar por dieta/lote.</span>
-                  </Field>
-
-                  <Field label="Dosagem padrão (opcional)">
-                    <input
-                      style={input}
-                      type="number"
-                      value={form.dosagemPeso || ""}
-                      onChange={(e) => setForm((f) => ({ ...f, dosagemPeso: e.target.value }))}
-                      placeholder="Ex: 50 (g)"
-                    />
-                    <span style={fieldHint}>Opcional. Se não quiser, deixe vazio.</span>
-                  </Field>
-
-                  <div style={calcBox}>
-                    <div style={{ fontWeight: 600, marginBottom: "8px" }}>Total em estoque (estimativa):</div>
-                    {form.pesoTotal && form.qtdEntrada ? (
-                      <div style={{ fontSize: 14, color: theme.colors.slate[800] }}>
-                        <strong>{Number(form.qtdEntrada)}</strong> unidade(s) ×{" "}
-                        <strong>
-                          {Number(form.pesoTotal)}
-                          {form.unidadePeso || "kg"}
-                        </strong>{" "}
-                        ={" "}
-                        <strong>
-                          {Math.max(0, Number(form.qtdEntrada) * Number(form.pesoTotal))} {form.unidadePeso || "kg"}
-                        </strong>
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 13, color: theme.colors.slate[600] }}>
-                        Preencha peso e quantidade de entrada para ver o total
-                      </div>
-                    )}
+            {!!form.formaCompra && (
+              <div style={{ marginTop: 14 }}>
+                <div style={calcBox}>
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>Total calculado (referência do cadastro):</div>
+                  <div style={{ fontSize: 14, color: theme.colors.indigo[900] }}>
+                    <strong>{Number(totalCalculado || 0)}</strong> <strong>{unidadeFinal || ""}</strong>
                   </div>
                 </div>
-              )}
-            </section>
-          )}
+              </div>
+            )}
+          </section>
 
-          {/* ENTRADA INICIAL */}
-          {!isEdit && modoControle && (
-            <section style={section}>
-              <div style={sectionTitle}>Entrada Inicial no Estoque</div>
+          {/* 3) VALOR + VALIDADE (opcional -> vira LOTE se preenchido) */}
+          <section style={section}>
+            <div style={sectionTitle}>Valor e Validade (opcional)</div>
 
-              <div style={grid3}>
-                <Field label="Quantidade *">
+            <div style={grid3}>
+              <Field label="Valor Total (R$)">
+                <div style={{ position: "relative" }}>
+                  <DollarSign size={16} style={{ position: "absolute", left: 10, top: 12, color: theme.colors.slate[400] }} />
                   <input
-                    style={input}
-                    type="number"
-                    value={form.qtdEntrada}
-                    onChange={(e) => setForm((f) => ({ ...f, qtdEntrada: e.target.value }))}
-                    placeholder={modoControle === "liquido_volume" ? "Ex: 5 frascos" : "Ex: 10 unidades"}
-                  />
-                </Field>
-
-                <Field label="Valor Total (R$) *">
-                  <input
-                    style={input}
+                    style={{ ...input, paddingLeft: 34 }}
                     type="number"
                     step="0.01"
                     value={form.valorTotalEntrada}
                     onChange={(e) => setForm((f) => ({ ...f, valorTotalEntrada: e.target.value }))}
+                    placeholder="Ex: 350.00"
                   />
-                </Field>
+                </div>
+              </Field>
 
-                <Field label="Validade">
+              <Field label="Data da Compra">
+                <div style={{ position: "relative" }}>
+                  <Calendar size={16} style={{ position: "absolute", left: 10, top: 12, color: theme.colors.slate[400] }} />
                   <input
-                    style={input}
+                    style={{ ...input, paddingLeft: 34 }}
                     type="date"
-                    value={form.validadeEntrada}
-                    onChange={(e) => setForm((f) => ({ ...f, validadeEntrada: e.target.value }))}
+                    value={form.dataCompra}
+                    onChange={(e) => setForm((f) => ({ ...f, dataCompra: e.target.value }))}
                   />
-                </Field>
-              </div>
-            </section>
-          )}
+                </div>
+              </Field>
 
-          {/* CARÊNCIAS (só antibiótico) */}
+              <Field label="Validade">
+                <input
+                  style={input}
+                  type="date"
+                  value={form.validadeEntrada}
+                  onChange={(e) => setForm((f) => ({ ...f, validadeEntrada: e.target.value }))}
+                />
+              </Field>
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <div style={infoBox}>
+                <Info size={16} />
+                <div>
+                  Se você preencher Valor/Data/Validade, isso vira uma <b>entrada de lote</b> no estoque. Se deixar em branco, cadastra só o catálogo.
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 4) CARÊNCIAS (só se antibiótico) */}
           {isAntibiotico && (
             <section style={{ ...section, background: `${theme.colors.warning}08`, borderColor: `${theme.colors.warning}30` }}>
               <div style={{ ...sectionTitle, color: theme.colors.warning }}>
                 <AlertCircle size={16} style={{ marginRight: 8 }} />
-                Carências Obrigatórias
+                Carências (Antibiótico)
               </div>
+
               <div style={grid2}>
-                <CarenciaInput
+                <CarenciaBox
                   titulo="Carência Leite"
                   dias={form.carenciaLeiteDias}
                   setDias={(v) => setForm((f) => ({ ...f, carenciaLeiteDias: v }))}
                   sem={form.semCarenciaLeite}
                   setSem={(v) => setForm((f) => ({ ...f, semCarenciaLeite: v, carenciaLeiteDias: v ? "" : f.carenciaLeiteDias }))}
                 />
-                <CarenciaInput
+                <CarenciaBox
                   titulo="Carência Carne"
                   dias={form.carenciaCarneDias}
                   setDias={(v) => setForm((f) => ({ ...f, carenciaCarneDias: v }))}
                   sem={form.semCarenciaCarne}
                   setSem={(v) => setForm((f) => ({ ...f, semCarenciaCarne: v, carenciaCarneDias: v ? "" : f.carenciaCarneDias }))}
                 />
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                <div style={infoBox}>
+                  <Info size={16} />
+                  <div>Se não tiver carência, marque “Sem carência”. Caso tenha, informe os dias.</div>
+                </div>
               </div>
             </section>
           )}
@@ -850,12 +650,11 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
           </button>
           <button
             type="button"
-            style={{ ...btnPrimary, opacity: !modoControle ? 0.6 : 1 }}
+            style={btnPrimary}
             onClick={() => {
               const payload = validar();
-              if (payload) onSaved?.(payload);
+              if (payload) onSaved?.(payload); // ✅ agora payload = { produto, lote }
             }}
-            disabled={!modoControle}
           >
             {isEdit ? "Salvar Alterações" : "Cadastrar Produto"}
           </button>
@@ -875,13 +674,18 @@ function Field({ label, children }) {
   );
 }
 
-function CarenciaInput({ titulo, dias, setDias, sem, setSem }) {
+function CarenciaBox({ titulo, dias, setDias, sem, setSem }) {
   return (
     <div style={carenciaBox}>
       <div style={carenciaHeader}>{titulo}</div>
       <div style={carenciaRow}>
         <input
-          style={{ ...input, flex: 1, opacity: sem ? 0.5 : 1 }}
+          style={{
+            ...input,
+            flex: 1,
+            opacity: sem ? 0.55 : 1,
+            background: sem ? "#fff" : theme.colors.slate[50],
+          }}
           type="number"
           value={dias || ""}
           onChange={(e) => setDias(e.target.value)}
@@ -889,7 +693,7 @@ function CarenciaInput({ titulo, dias, setDias, sem, setSem }) {
           placeholder="Dias"
         />
         <label style={checkboxLabel}>
-          <input type="checkbox" checked={sem} onChange={(e) => setSem(e.target.checked)} />
+          <input type="checkbox" checked={!!sem} onChange={(e) => setSem(e.target.checked)} />
           <span>Sem carência</span>
         </label>
       </div>
@@ -898,120 +702,110 @@ function CarenciaInput({ titulo, dias, setDias, sem, setSem }) {
 }
 
 /* ===================== HELPERS ===================== */
+function pick(d, ...keys) {
+  for (const k of keys) {
+    if (d && d[k] !== undefined && d[k] !== null) return d[k];
+  }
+  return undefined;
+}
+
+function toNum(v) {
+  if (v === null || v === undefined || v === "") return 0;
+  const s = String(v).replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function toForm(initial) {
   const d = initial || {};
   return {
-    nomeComercial: d.nomeComercial ?? "",
-    categoria: d.categoria ?? "",
-    tipoFarmacia: d.tipoFarmacia ?? "",
-    tipoReproducao: d.tipoReproducao ?? "",
+    // identificação
+    nomeComercial: pick(d, "nomeComercial", "nome_comercial") ?? "",
+    categoria: pick(d, "categoria") ?? "",
+    subTipo: pick(d, "subTipo", "sub_tipo") ?? "",
 
-    // ✅ novo: apresentação do hormônio
-    apresentacaoHormonio: d.apresentacaoHormonio ?? "",
+    // compra
+    formaCompra: pick(d, "formaCompra", "forma_compra") ?? "",
+    tipoEmbalagem: pick(d, "tipoEmbalagem", "tipo_embalagem") ?? "",
+    qtdEmbalagens: pick(d, "qtdEmbalagens") ?? "",
+    tamanhoPorEmbalagem: pick(d, "tamanhoPorEmbalagem", "tamanho_por_embalagem") ?? "",
+    unidadeMedida: pick(d, "unidadeMedida", "unidade_medida", "unidade") ?? "",
 
-    modoControle: d.modoControle ?? "",
+    // a granel (não persiste no catálogo)
+    quantidadeTotal: pick(d, "quantidadeTotal") ?? "",
 
-    // Sólido fracionado
-    usosPorUnidade: String(d.usosPorUnidade ?? "1"),
+    // reutilização
+    reutilizavel: !!pick(d, "reutilizavel"),
+    usosPorUnidade: String(pick(d, "usosPorUnidade", "usos_por_unidade") ?? "3"),
 
-    // Líquido
-    volumeTotal: d.volumeTotal ?? "",
-    unidadeVolume: d.unidadeVolume ?? "ml",
-    concentracao: d.concentracao ?? "",
-
-    // Peso
-    pesoTotal: d.pesoTotal ?? "",
-    unidadePeso: d.unidadePeso ?? "kg",
-    dosagemPeso: d.dosagemPeso ?? "",
-
-    unidade: d.unidade ?? "",
-
-    apresentacao: d.apresentacao ?? "",
-
-    carenciaLeiteDias: d.carenciaLeiteDias ?? "",
-    carenciaCarneDias: d.carenciaCarneDias ?? "",
-    semCarenciaLeite: d.semCarenciaLeite ?? false,
-    semCarenciaCarne: d.semCarenciaCarne ?? false,
-
-    qtdEntrada: "",
+    // valor/validade (vira lote se preenchido)
     valorTotalEntrada: "",
     validadeEntrada: "",
+    dataCompra: "",
+
+    // carências
+    carenciaLeiteDias: pick(d, "carenciaLeiteDias", "carencia_leite") ?? "",
+    carenciaCarneDias: pick(d, "carenciaCarneDias", "carencia_carne") ?? "",
+    semCarenciaLeite: !!pick(d, "semCarenciaLeite", "sem_carencia_leite"),
+    semCarenciaCarne: !!pick(d, "semCarenciaCarne", "sem_carencia_carne"),
+
+    // ativo (edição)
+    ativo: pick(d, "ativo"),
   };
 }
 
-function normalizePayload(f, isEdit) {
-  const calcularSaldoBase = () => {
-    const qtd = Number(f.qtdEntrada) || 0;
-
-    switch (f.modoControle) {
-      case "solido_fracionado":
-        // saldo em "usos"
-        return qtd * (parseInt(f.usosPorUnidade, 10) || 1);
-
-      case "liquido_volume": {
-        // ✅ saldo em volume total (ml ou litro)
-        const volPorFrasco = Number(f.volumeTotal) || 0;
-        return Math.max(0, qtd * volPorFrasco);
-      }
-
-      case "peso": {
-        // saldo em peso total (g/kg/mg)
-        const pesoPorUn = Number(f.pesoTotal) || 0;
-        return Math.max(0, qtd * pesoPorUn);
-      }
-
-      default:
-        // unidade integral: saldo em unidades
-        return qtd;
-    }
-  };
+/**
+ * ✅ Retorna o formato que o Estoque.jsx espera:
+ * onSaved({ produto, lote })
+ * - produto: formato UI (nomeComercial, categoria, unidade, formaCompra...)
+ * - lote: opcional (quantidade, valorTotal, validade) -> só se preencher Valor/Data/Validade
+ */
+function buildOnSavedPayload(f, calc, isEdit) {
+  const { totalCalculado, unidadeFinal } = calc;
 
   const produto = {
+    // UI keys (o Estoque.jsx converte pro banco)
     nomeComercial: (f.nomeComercial || "").trim(),
-    categoria: f.categoria,
-    tipoFarmacia: f.tipoFarmacia || null,
-    tipoReproducao: f.tipoReproducao || null,
-    apresentacaoHormonio: f.apresentacaoHormonio || null,
+    categoria: f.categoria || "",
+    subTipo: f.subTipo || "",
+    formaCompra: f.formaCompra || "", // "EMBALADO" | "A_GRANEL" (enum)
+    tipoEmbalagem: f.formaCompra === "EMBALADO" ? (f.tipoEmbalagem || "") : "",
+    tamanhoPorEmbalagem:
+      f.formaCompra === "EMBALADO" && !f.reutilizavel ? (f.tamanhoPorEmbalagem || "") : "",
+    unidade: unidadeFinal || "",
 
-    modoControle: f.modoControle,
+    reutilizavel: !!f.reutilizavel,
+    usosPorUnidade: f.reutilizavel ? String(f.usosPorUnidade || "") : "",
 
-    // unidade “base” (dose/un/ml/kg etc.)
-    unidade: f.unidade || null,
-
-    apresentacao: (f.apresentacao || "").trim() || null,
-
-    ...(f.modoControle === "solido_fracionado" && {
-      usosPorUnidade: parseInt(f.usosPorUnidade, 10) || 1,
-    }),
-
-    ...(f.modoControle === "liquido_volume" && {
-      volumeTotal: Number(f.volumeTotal) || null,
-      unidadeVolume: f.unidadeVolume,
-      concentracao: (f.concentracao || "").trim() || null,
-    }),
-
-    ...(f.modoControle === "peso" && {
-      pesoTotal: Number(f.pesoTotal) || null,
-      unidadePeso: f.unidadePeso,
-      dosagemPeso: f.dosagemPeso !== "" ? Number(f.dosagemPeso) : null,
-    }),
-
-    carenciaLeiteDias: f.semCarenciaLeite ? 0 : Number(f.carenciaLeiteDias) || null,
-    carenciaCarneDias: f.semCarenciaCarne ? 0 : Number(f.carenciaCarneDias) || null,
+    carenciaLeiteDias: f.carenciaLeiteDias,
+    carenciaCarneDias: f.carenciaCarneDias,
     semCarenciaLeite: !!f.semCarenciaLeite,
     semCarenciaCarne: !!f.semCarenciaCarne,
+
+    // se quiser suportar inativar depois
+    ativo: isEdit && f.ativo === false ? false : true,
   };
 
-  const lote =
-  !isEdit && f.qtdEntrada
+  // ✅ Só cria LOTE se o usuário realmente preencheu algo na seção opcional
+  const valor = toNum(f.valorTotalEntrada);
+  const temValor = valor > 0;
+  const temValidade = !!f.validadeEntrada;
+  const temDataCompra = !!f.dataCompra;
+
+  const deveCriarLote = temValor || temValidade || temDataCompra;
+
+  const lote = deveCriarLote
     ? {
-        quantidade: Number(f.qtdEntrada),
-        valorTotal: Number(f.valorTotalEntrada) || 0,
-        validade: f.validadeEntrada || null,
+        quantidade: Number(totalCalculado || 0), // quantidade inicial do lote
+        valorTotal: temValor ? valor : 0,
+        validade: temValidade ? f.validadeEntrada : null,
+
+        // extra opcional (se tu decidir usar depois no Estoque.jsx)
+        dataCompra: temDataCompra ? f.dataCompra : null,
       }
     : null;
 
-return { produto, lote };
+  return { produto, lote };
 }
 
 /* ===================== ESTILOS ===================== */
@@ -1028,7 +822,7 @@ const overlay = {
 };
 
 const modalContainer = {
-  width: "min(900px, 95vw)",
+  width: "min(980px, 96vw)",
   maxHeight: "90vh",
   background: "#fff",
   borderRadius: theme.radius.lg,
@@ -1040,7 +834,7 @@ const modalContainer = {
 };
 
 const header = {
-  padding: "20px 24px",
+  padding: "18px 22px",
   borderBottom: `1px solid ${theme.colors.slate[200]}`,
   display: "flex",
   justifyContent: "space-between",
@@ -1048,7 +842,7 @@ const header = {
   background: theme.colors.slate[50],
 };
 
-const headerLeft = { display: "flex", alignItems: "center", gap: "16px" };
+const headerLeft = { display: "flex", alignItems: "center", gap: "14px" };
 const headerIcon = {
   width: "40px",
   height: "40px",
@@ -1060,8 +854,8 @@ const headerIcon = {
   justifyContent: "center",
 };
 
-const headerTitle = { margin: 0, fontSize: "16px", fontWeight: 700, color: theme.colors.slate[900] };
-const headerSubtitle = { margin: "4px 0 0 0", fontSize: "13px", color: theme.colors.slate[500] };
+const headerTitle = { margin: 0, fontSize: "16px", fontWeight: 800, color: theme.colors.slate[900] };
+const headerSubtitle = { margin: "4px 0 0 0", fontSize: "13px", color: theme.colors.slate[500], lineHeight: 1.35 };
 
 const btnClose = {
   background: "transparent",
@@ -1075,40 +869,32 @@ const btnClose = {
 const content = {
   flex: 1,
   overflow: "auto",
-  padding: "24px",
+  padding: "22px",
   display: "flex",
   flexDirection: "column",
-  gap: "20px",
+  gap: "16px",
 };
 
 const section = {
   border: `1px solid ${theme.colors.slate[200]}`,
   borderRadius: theme.radius.lg,
-  padding: "20px",
+  padding: "18px",
   background: "#fff",
 };
 
 const sectionTitle = {
   fontSize: "13px",
-  fontWeight: 700,
+  fontWeight: 800,
   color: theme.colors.slate[800],
   textTransform: "uppercase",
   letterSpacing: "0.05em",
-  marginBottom: "16px",
+  marginBottom: "14px",
   display: "flex",
   alignItems: "center",
 };
 
-const sectionSubtitle = {
-  textTransform: "none",
-  fontWeight: 400,
-  color: theme.colors.slate[500],
-  marginLeft: "8px",
-};
-
-const grid2 = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" };
-const grid3 = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" };
-const gridModos = { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" };
+const grid2 = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" };
+const grid3 = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px" };
 
 const input = {
   width: "100%",
@@ -1119,12 +905,13 @@ const input = {
   fontSize: "13px",
   outline: "none",
   boxSizing: "border-box",
+  background: theme.colors.slate[50],
 };
 
 const labelStyle = {
   display: "block",
   fontSize: "12px",
-  fontWeight: 600,
+  fontWeight: 700,
   color: theme.colors.slate[700],
   marginBottom: "6px",
 };
@@ -1145,15 +932,14 @@ const infoBox = {
   borderRadius: theme.radius.md,
   border: `1px solid ${theme.colors.indigo[200]}`,
   display: "flex",
-  gap: "12px",
+  gap: "10px",
   alignItems: "center",
   fontSize: "13px",
   color: theme.colors.slate[600],
 };
 
 const calcBox = {
-  gridColumn: "1 / -1",
-  padding: "16px",
+  padding: "14px",
   background: theme.colors.indigo[100],
   borderRadius: theme.radius.md,
   border: `1px solid ${theme.colors.indigo[200]}`,
@@ -1163,50 +949,51 @@ const calcBox = {
 const carenciaBox = {
   border: `1px solid ${theme.colors.slate[200]}`,
   borderRadius: theme.radius.md,
-  padding: "16px",
+  padding: "14px",
   background: "#fff",
 };
 
-const carenciaHeader = { fontSize: "13px", fontWeight: 600, color: theme.colors.slate[800], marginBottom: "12px" };
+const carenciaHeader = { fontSize: "13px", fontWeight: 800, color: theme.colors.slate[800], marginBottom: "10px" };
 const carenciaRow = { display: "flex", alignItems: "center", gap: "12px" };
 
 const checkboxLabel = {
   display: "flex",
   alignItems: "center",
-  gap: "6px",
+  gap: "8px",
   fontSize: "13px",
   color: theme.colors.slate[700],
   cursor: "pointer",
+  userSelect: "none",
   whiteSpace: "nowrap",
 };
 
 const footer = {
-  padding: "20px 24px",
+  padding: "18px 22px",
   borderTop: `1px solid ${theme.colors.slate[200]}`,
   display: "flex",
   justifyContent: "flex-end",
-  gap: "12px",
+  gap: "10px",
   background: "#fff",
 };
 
 const btnSecondary = {
-  padding: "10px 20px",
+  padding: "10px 18px",
   borderRadius: theme.radius.md,
   border: `1px solid ${theme.colors.slate[300]}`,
   background: "#fff",
   color: theme.colors.slate[700],
   fontSize: "13px",
-  fontWeight: 600,
+  fontWeight: 700,
   cursor: "pointer",
 };
 
 const btnPrimary = {
-  padding: "10px 20px",
+  padding: "10px 18px",
   borderRadius: theme.radius.md,
   border: "none",
   background: theme.colors.indigo[600],
   color: "#fff",
   fontSize: "13px",
-  fontWeight: 600,
+  fontWeight: 800,
   cursor: "pointer",
 };
