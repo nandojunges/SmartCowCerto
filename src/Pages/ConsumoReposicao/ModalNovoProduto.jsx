@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import { X, Package, Pill, FlaskConical, Info, Box, Calendar, DollarSign, AlertCircle } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
 
 /* ===================== DESIGN SYSTEM ===================== */
 const theme = {
@@ -146,18 +147,7 @@ const GRUPOS_FALLBACK = [
   { value: "HORMONIO_ECG", categoria: "Farmácia", label: "Hormônio — eCG", tags: ["HORMONIO"] },
   { value: "HORMONIO_HCG", categoria: "Farmácia", label: "Hormônio — hCG", tags: ["HORMONIO"] },
   { value: "HORMONIO_FSH", categoria: "Farmácia", label: "Hormônio — FSH", tags: ["HORMONIO"] },
-  {
-    value: "HORMONIO_ESTRADIOL_BENZOATO",
-    categoria: "Farmácia",
-    label: "Hormônio — Benzoato de Estradiol",
-    tags: ["HORMONIO"],
-  },
-  {
-    value: "HORMONIO_ESTRADIOL_CIPIONATO",
-    categoria: "Farmácia",
-    label: "Hormônio — Cipionato de Estradiol",
-    tags: ["HORMONIO"],
-  },
+  { value: "HORMONIO_ESTRADIOL", categoria: "Farmácia", label: "Hormônio — Estradiol (ésteres)", tags: ["HORMONIO"] },
   { value: "HORMONIO_OXITOCINA", categoria: "Farmácia", label: "Hormônio — Ocitocina", tags: ["HORMONIO"] },
 
   { value: "ANTIPARASITARIO_ENDO", categoria: "Farmácia", label: "Antiparasitário — Endoparasiticida", tags: ["ANTIPARASITARIO"] },
@@ -221,13 +211,11 @@ const TAGS_TIPO_FARMACIA = [
 ];
 
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
+  const { fazendaAtualId } = useFazenda();
   const isEdit = !!initial?.id;
   const [form, setForm] = useState(() => toForm(initial));
   const [gruposEq, setGruposEq] = useState([]);
   const [carregandoGrupos, setCarregandoGrupos] = useState(false);
-  const [loteIdEditado, setLoteIdEditado] = useState(null);
-  const [carregandoLote, setCarregandoLote] = useState(false);
-  const [avisoSemLote, setAvisoSemLote] = useState(false);
 
   /* ===================== LOOKUPS ===================== */
   const categorias = useMemo(
@@ -301,9 +289,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   useEffect(() => {
     if (!open) return;
     setForm(toForm(initial));
-    setLoteIdEditado(null);
-    setAvisoSemLote(false);
-    setCarregandoLote(false);
   }, [initial, open]);
 
   useEffect(() => {
@@ -338,42 +323,31 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   useEffect(() => {
     let ativo = true;
 
-    if (!open || !initial?.id) return undefined;
+    if (!open || !initial?.id || !fazendaAtualId) return undefined;
 
     const carregarUltimoLote = async () => {
-      setCarregandoLote(true);
       const { data: lote, error } = await supabase
         .from("estoque_lotes")
-        .select("id, data_compra, validade, valor_total, quantidade, unidade_medida, created_at")
+        .select("id,produto_id,data_compra,validade,quantidade_inicial,valor_total,created_at,ativo")
+        .eq("fazenda_id", fazendaAtualId)
         .eq("produto_id", initial.id)
+        .eq("ativo", true)
+        .order("data_compra", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (!ativo) return;
+      if (!ativo || error || !lote) return;
 
-      if (error || !lote) {
-        setAvisoSemLote(true);
-        setLoteIdEditado(null);
-        setForm((f) => ({
-          ...f,
-          valorTotalEntrada: "",
-          dataCompra: "",
-          validadeEntrada: "",
-        }));
-        setCarregandoLote(false);
-        return;
-      }
+      const qtdEmbalagensDerivada = derivarQtdEmbalagens({ produto: initial, lote });
 
-      setAvisoSemLote(false);
-      setLoteIdEditado(lote.id);
       setForm((f) => ({
         ...f,
         valorTotalEntrada: lote.valor_total !== null && lote.valor_total !== undefined ? String(lote.valor_total) : "",
-        dataCompra: toISODateOnly(lote.data_compra),
-        validadeEntrada: toISODateOnly(lote.validade),
+        dataCompra: isoToBR(lote.data_compra),
+        validadeEntrada: isoToBR(lote.validade),
+        qtdEmbalagens: qtdEmbalagensDerivada,
       }));
-      setCarregandoLote(false);
     };
 
     carregarUltimoLote();
@@ -381,7 +355,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
     return () => {
       ativo = false;
     };
-  }, [open, initial?.id, initial]);
+  }, [open, initial?.id, fazendaAtualId, initial]);
 
   const menuPortalTarget = typeof document !== "undefined" ? document.body : null;
 
@@ -457,8 +431,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   ]);
 
   const unidadeFinal = form.reutilizavel ? "uso" : form.unidadeMedida || "";
-  const camposLoteDesabilitados = isEdit && !loteIdEditado;
-  const loteInputsDisabled = camposLoteDesabilitados || carregandoLote;
 
   /* ===================== VALIDAR ===================== */
   const validar = () => {
@@ -543,7 +515,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       subTipo: isCozinha ? "" : form.subTipo,
     };
 
-    return { ...normalizeProdutoPayload(normalizedForm, isEdit), loteIdEditado };
+    return normalizeProdutoPayload(normalizedForm, isEdit);
   };
 
   if (!open) return null;
@@ -849,13 +821,12 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                 <div style={{ position: "relative" }}>
                   <DollarSign size={16} style={{ position: "absolute", left: 10, top: 12, color: theme.colors.slate[400] }} />
                   <input
-                    style={{ ...input, paddingLeft: 34, ...(loteInputsDisabled ? inputDisabled : {}) }}
+                    style={{ ...input, paddingLeft: 34 }}
                     type="number"
                     step="0.01"
                     value={form.valorTotalEntrada}
                     onChange={(e) => setForm((f) => ({ ...f, valorTotalEntrada: e.target.value }))}
                     placeholder="Ex: 350.00"
-                    disabled={loteInputsDisabled}
                   />
                 </div>
               </Field>
@@ -864,33 +835,25 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                 <div style={{ position: "relative" }}>
                   <Calendar size={16} style={{ position: "absolute", left: 10, top: 12, color: theme.colors.slate[400] }} />
                   <input
-                    style={{ ...input, paddingLeft: 34, ...(loteInputsDisabled ? inputDisabled : {}) }}
+                    style={{ ...input, paddingLeft: 34 }}
                     type="date"
                     value={form.dataCompra}
                     onChange={(e) => setForm((f) => ({ ...f, dataCompra: e.target.value }))}
-                    disabled={loteInputsDisabled}
                   />
                 </div>
               </Field>
 
               <Field label="Validade">
                 <input
-                  style={{ ...input, ...(loteInputsDisabled ? inputDisabled : {}) }}
+                  style={input}
                   type="date"
                   value={form.validadeEntrada}
                   onChange={(e) => setForm((f) => ({ ...f, validadeEntrada: e.target.value }))}
-                  disabled={loteInputsDisabled}
                 />
               </Field>
             </div>
 
             <div style={{ marginTop: 10 }}>
-              {isEdit && avisoSemLote && (
-                <div style={{ ...infoBox, borderColor: theme.colors.warning, color: theme.colors.warning, background: `${theme.colors.warning}08` }}>
-                  <AlertCircle size={16} />
-                  <div>Este produto não tem entrada/lote. Datas e valor aparecem quando houver uma compra registrada.</div>
-                </div>
-              )}
               <div style={infoBox}>
                 <Info size={16} />
                 <div>
@@ -1008,14 +971,6 @@ function toNum(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function toISODateOnly(v) {
-  if (!v) return "";
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const d = new Date(v);
-  if (!Number.isFinite(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
-}
-
 function toForm(initial) {
   const d = initial || {};
   const categoriaInicial = pick(d, "categoria");
@@ -1055,6 +1010,35 @@ function toForm(initial) {
     // ativo (edição)
     ativo: pick(d, "ativo"),
   };
+}
+
+function isoToBR(iso) {
+  if (!iso) return "";
+  const dt = new Date(iso);
+  if (!Number.isFinite(dt.getTime())) return "";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yy = dt.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
+
+function derivarQtdEmbalagens({ produto, lote }) {
+  if (!produto || !lote) return "";
+  const qi = Number(lote.quantidade_inicial ?? 0);
+  if (!Number.isFinite(qi) || qi <= 0) return "";
+
+  if (produto.reutilizavel) {
+    const usos = Number(produto.usos_por_unidade ?? produto.usosPorUnidade ?? 0);
+    if (Number.isFinite(usos) && usos > 0) return String(Math.max(1, Math.round(qi / usos)));
+    return "";
+  }
+
+  if (produto.forma_compra === "EMBALADO" || produto.formaCompra === "EMBALADO") {
+    const tam = Number(produto.tamanho_por_embalagem ?? produto.tamanhoPorEmbalagem ?? 0);
+    if (Number.isFinite(tam) && tam > 0) return String(Math.max(1, Math.round(qi / tam)));
+  }
+
+  return "";
 }
 
 function normalizarCategoriaGrupo(categoria) {
@@ -1245,11 +1229,6 @@ const input = {
   outline: "none",
   boxSizing: "border-box",
   background: theme.colors.slate[50],
-};
-
-const inputDisabled = {
-  opacity: 0.6,
-  cursor: "not-allowed",
 };
 
 const labelStyle = {
