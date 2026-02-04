@@ -69,10 +69,89 @@ const rsStyles = {
   }),
 };
 
+const GRUPOS_FALLBACK = [
+  // === FARMÁCIA ===
+  { codigo: "ANTIBIOTICO_PENICILINAS", categoria: "Farmácia", label: "Antibiótico — Penicilinas (β-lactâmicos)" },
+  { codigo: "ANTIBIOTICO_CEFALOSPORINAS", categoria: "Farmácia", label: "Antibiótico — Cefalosporinas (β-lactâmicos)" },
+  { codigo: "ANTIBIOTICO_TETRACICLINAS", categoria: "Farmácia", label: "Antibiótico — Tetraciclinas (ex: oxitetraciclina)" },
+  { codigo: "ANTIBIOTICO_MACROLIDEOS", categoria: "Farmácia", label: "Antibiótico — Macrolídeos (ex: tilosina/tulatromicina)" },
+  { codigo: "ANTIBIOTICO_AMINOGLICOSIDEOS", categoria: "Farmácia", label: "Antibiótico — Aminoglicosídeos (ex: gentamicina/neomicina)" },
+  { codigo: "ANTIBIOTICO_SULFONAMIDAS_TMP", categoria: "Farmácia", label: "Antibiótico — Sulfas + Trimetoprim" },
+  { codigo: "ANTIBIOTICO_FLUOROQUINOLONAS", categoria: "Farmácia", label: "Antibiótico — Fluoroquinolonas (ex: enrofloxacina)" },
+  { codigo: "ANTIBIOTICO_FENICOIS", categoria: "Farmácia", label: "Antibiótico — Fenicóis (ex: florfenicol)" },
+  { codigo: "ANTIBIOTICO_LINCOSAMIDAS", categoria: "Farmácia", label: "Antibiótico — Lincosamidas (ex: lincomicina)" },
+  { codigo: "ANTIBIOTICO_POLIMIXINAS", categoria: "Farmácia", label: "Antibiótico — Polimixinas (ex: polimixina B)" },
+
+  { codigo: "AINE_FLUNIXINA", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Flunixina" },
+  { codigo: "AINE_MELOXICAM", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Meloxicam" },
+  { codigo: "AINE_KETOPROFENO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Cetoprofeno" },
+  { codigo: "AINE_TOLFENAMICO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Ácido tolfenâmico" },
+  { codigo: "AINE_CARPROFENO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Carprofeno" },
+  { codigo: "CORTICOIDE_DEXAMETASONA", categoria: "Farmácia", label: "Corticoide — Dexametasona" },
+  { codigo: "CORTICOIDE_PREDNISOLONA", categoria: "Farmácia", label: "Corticoide — Prednisolona/Prednisona" },
+  { codigo: "CORTICOIDE_HIDROCORTISONA", categoria: "Farmácia", label: "Corticoide — Hidrocortisona" },
+
+  { codigo: "HORMONIO_PROGESTERONA", categoria: "Farmácia", label: "Hormônio — Progesterona (P4 / dispositivos)" },
+  { codigo: "HORMONIO_PROSTAGLANDINA", categoria: "Farmácia", label: "Hormônio — Prostaglandina (PGF2α / análogos)" },
+  { codigo: "HORMONIO_GNRH", categoria: "Farmácia", label: "Hormônio — GnRH (análogos)" },
+  { codigo: "HORMONIO_ECG", categoria: "Farmácia", label: "Hormônio — eCG" },
+  { codigo: "HORMONIO_HCG", categoria: "Farmácia", label: "Hormônio — hCG" },
+  { codigo: "HORMONIO_FSH", categoria: "Farmácia", label: "Hormônio — FSH" },
+  { codigo: "HORMONIO_ESTRADIOL", categoria: "Farmácia", label: "Hormônio — Estradiol (ésteres)" },
+  { codigo: "HORMONIO_OXITOCINA", categoria: "Farmácia", label: "Hormônio — Ocitocina" },
+
+  { codigo: "ANTIPARASITARIO_ENDO", categoria: "Farmácia", label: "Antiparasitário — Endoparasiticida" },
+  { codigo: "ANTIPARASITARIO_ECTO", categoria: "Farmácia", label: "Antiparasitário — Ectoparasiticida" },
+  { codigo: "VITAMINAS_SUPLEMENTOS", categoria: "Farmácia", label: "Vitaminas / Suplementos injetáveis" },
+  { codigo: "ANTISSEPTICO", categoria: "Farmácia", label: "Antisséptico / tópicos" },
+  { codigo: "ANESTESICO_SEDATIVO", categoria: "Farmácia", label: "Anestésico / Sedativo" },
+  { codigo: "ANTIMICROBIANO_INTRA_MAMARIO", categoria: "Farmácia", label: "Intra-mamário (mastite) — grupo funcional" },
+  { codigo: "SOLUTION_FLUIDOTERAPIA", categoria: "Farmácia", label: "Soluções / fluidoterapia" },
+
+  // === COZINHA ===
+  { codigo: "COZINHA_RACAO_CONCENTRADO", categoria: "Cozinha", label: "Ração / Concentrado" },
+  { codigo: "COZINHA_VOLUMOSO_SILAGEM", categoria: "Cozinha", label: "Volumoso / Silagem / Feno" },
+  { codigo: "COZINHA_MINERAL", categoria: "Cozinha", label: "Mineral / Mistura mineral" },
+  { codigo: "COZINHA_NUCLEO_PREMIX", categoria: "Cozinha", label: "Núcleo / Pré-mistura (premix)" },
+  { codigo: "COZINHA_ADITIVO", categoria: "Cozinha", label: "Aditivo (geral)" },
+  { codigo: "COZINHA_TAMPONANTE", categoria: "Cozinha", label: "Tamponante (ex: bicarbonato)" },
+  { codigo: "COZINHA_PROBIOTICO", categoria: "Cozinha", label: "Probiótico" },
+  { codigo: "COZINHA_PREBIOTICO", categoria: "Cozinha", label: "Prebiótico" },
+  { codigo: "COZINHA_LEVEDURA", categoria: "Cozinha", label: "Levedura" },
+  { codigo: "COZINHA_IONOFORO", categoria: "Cozinha", label: "Ionóforo (ex: monensina/lasalocida)" },
+  { codigo: "COZINHA_ANTIFUNGICO_CONSERVANTE", categoria: "Cozinha", label: "Conservante / antifúngico" },
+  { codigo: "COZINHA_ADS_MICOTOXINA", categoria: "Cozinha", label: "Adsorvente de micotoxina" },
+  { codigo: "COZINHA_UREIA_NNP", categoria: "Cozinha", label: "Ureia / NNP" },
+  { codigo: "COZINHA_SAIS", categoria: "Cozinha", label: "Sais (sal comum, calcário, etc.)" },
+  { codigo: "COZINHA_FITOTERAPICO_HOMEOPATICO", categoria: "Cozinha", label: "Fitoterápico / Homeopático" },
+
+  // === HIGIENE ===
+  { codigo: "HIGIENE_DETERGENTE_ALCALINO", categoria: "Higiene e Limpeza", label: "Detergente alcalino" },
+  { codigo: "HIGIENE_DETERGENTE_ACIDO", categoria: "Higiene e Limpeza", label: "Detergente ácido" },
+  { codigo: "HIGIENE_SANITIZANTE_CLORADO", categoria: "Higiene e Limpeza", label: "Sanitizante clorado" },
+  { codigo: "HIGIENE_AMONIO_QUATERNARIO", categoria: "Higiene e Limpeza", label: "Amônio quaternário" },
+  { codigo: "HIGIENE_PEROXIDO_PERACETICO", categoria: "Higiene e Limpeza", label: "Peróxido / Ácido peracético" },
+  { codigo: "HIGIENE_IODOFORO", categoria: "Higiene e Limpeza", label: "Iodóforo" },
+  { codigo: "HIGIENE_CLOREXIDINA", categoria: "Higiene e Limpeza", label: "Clorexidina" },
+  { codigo: "HIGIENE_DEGRAxANTE", categoria: "Higiene e Limpeza", label: "Desengraxante" },
+  { codigo: "HIGIENE_DIP_PRE_POS", categoria: "Higiene e Limpeza", label: "Pré/Pós-dip (grupo funcional)" },
+  { codigo: "HIGIENE_DESINFETANTE_GERAL", categoria: "Higiene e Limpeza", label: "Desinfetante geral" },
+
+  // === REPRODUÇÃO ===
+  { codigo: "REPRO_SEMEN", categoria: "Reprodução", label: "Sêmen (doses)" },
+  { codigo: "REPRO_EMBRIAO", categoria: "Reprodução", label: "Embrião" },
+  { codigo: "REPRO_NITROGENIO", categoria: "Reprodução", label: "Nitrogênio líquido" },
+  { codigo: "REPRO_MATERIAL_INSEMINACAO", categoria: "Reprodução", label: "Material de inseminação" },
+  { codigo: "REPRO_LUVAS_LUBRIFICANTE", categoria: "Reprodução", label: "Luvas / Lubrificantes" },
+  { codigo: "REPRO_MATERIAL_COLETA", categoria: "Reprodução", label: "Material de coleta / manejo repro" },
+];
+
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
   const { fazendaAtualId } = useFazenda();
   const isEdit = !!initial?.id;
   const [form, setForm] = useState(() => toForm(initial));
+  const [gruposEq, setGruposEq] = useState([]);
+  const [carregandoGrupos, setCarregandoGrupos] = useState(false);
 
   /* ===================== LOOKUPS ===================== */
   const categorias = useMemo(
@@ -151,6 +230,39 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   useEffect(() => {
     let ativo = true;
 
+    if (!open) return undefined;
+
+    const carregarGrupos = async () => {
+      try {
+        setCarregandoGrupos(true);
+        const { data, error } = await supabase
+          .from("estoque_grupos_equivalencia")
+          .select("codigo,categoria,label,ativo")
+          .eq("ativo", true)
+          .order("categoria", { ascending: true })
+          .order("label", { ascending: true });
+
+        if (!ativo) return;
+        if (error) throw error;
+        setGruposEq(Array.isArray(data) ? data : []);
+      } catch {
+        if (!ativo) return;
+        setGruposEq(GRUPOS_FALLBACK);
+      } finally {
+        if (ativo) setCarregandoGrupos(false);
+      }
+    };
+
+    carregarGrupos();
+
+    return () => {
+      ativo = false;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    let ativo = true;
+
     if (!open || !initial?.id || !fazendaAtualId) return undefined;
 
     const carregarUltimoLote = async () => {
@@ -191,6 +303,19 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const isReproducao = form.categoria === "Reprodução";
   const isCozinha = form.categoria === "Cozinha";
   const isAntibiotico = isFarmacia && form.subTipo === "Antibiótico";
+  const categoriaGrupo = useMemo(
+    () => (form.categoria === "Higiene" ? "Higiene e Limpeza" : form.categoria),
+    [form.categoria]
+  );
+  const exigeGrupoEquivalencia = useMemo(
+    () => ["Farmácia", "Cozinha", "Higiene e Limpeza", "Reprodução"].includes(categoriaGrupo),
+    [categoriaGrupo]
+  );
+  const gruposOptions = useMemo(() => {
+    const cat = categoriaGrupo || "";
+    const lista = (gruposEq || []).filter((g) => (g.categoria || "") === cat);
+    return lista.map((g) => ({ value: g.codigo, label: g.label }));
+  }, [gruposEq, categoriaGrupo]);
 
   // Sugestões inteligentes (não trava nada)
   useEffect(() => {
@@ -316,6 +441,11 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       }
     }
 
+    if (exigeGrupoEquivalencia && !form.grupoEquivalencia) {
+      alert("Selecione o grupo funcional (equivalência).");
+      return null;
+    }
+
     const normalizedForm = {
       ...form,
       categoria: form.categoria || "Cozinha",
@@ -371,6 +501,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                       ...f,
                       categoria: opt?.value || "",
                       subTipo: "",
+                      grupoEquivalencia: "",
                       formaCompra: "",
                       tipoEmbalagem: "",
                       qtdEmbalagens: "",
@@ -422,6 +553,25 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                     placeholder="Selecione..."
                     menuPortalTarget={menuPortalTarget}
                   />
+                </Field>
+              </div>
+            )}
+
+            {exigeGrupoEquivalencia && (
+              <div style={{ marginTop: 14 }}>
+                <Field label="Grupo funcional (equivalência) *">
+                  <Select
+                    value={gruposOptions.find((o) => o.value === form.grupoEquivalencia) || null}
+                    onChange={(opt) => setForm((f) => ({ ...f, grupoEquivalencia: opt?.value || "" }))}
+                    options={gruposOptions}
+                    isLoading={carregandoGrupos}
+                    placeholder="Selecione..."
+                    styles={rsStyles}
+                    menuPortalTarget={menuPortalTarget}
+                  />
+                  <small style={{ display: "block", marginTop: 6, color: "#64748b" }}>
+                    Ex.: PROSTAGLANDINA (Sincrucil/Estron/Inducil) — o consumo automático usa isso, não o nome comercial.
+                  </small>
                 </Field>
               </div>
             )}
@@ -763,6 +913,7 @@ function toForm(initial) {
     nomeComercial: pick(d, "nomeComercial", "nome_comercial") ?? "",
     categoria: categoriaInicial ? categoriaInicial : "Cozinha",
     subTipo: pick(d, "subTipo", "sub_tipo") ?? "",
+    grupoEquivalencia: pick(d, "grupoEquivalencia", "grupo_equivalencia") ?? "",
 
     // compra
     formaCompra: pick(d, "formaCompra", "forma_compra") ?? "",
@@ -839,6 +990,8 @@ function normalizeProdutoPayload(f, isEdit) {
   }
 
   const categoriaFinal = String(f.categoria || "Cozinha").trim() || "Cozinha";
+  const categoriaGrupo = categoriaFinal === "Higiene" ? "Higiene e Limpeza" : categoriaFinal;
+  const exigeGrupoEquivalencia = ["Farmácia", "Cozinha", "Higiene e Limpeza", "Reprodução"].includes(categoriaGrupo);
   const tipoEmbalagemFinal =
     f.formaCompra === "EMBALADO" ? String(f.tipoEmbalagem || "").trim() : null;
   const tamanhoPorEmbalagemFinal =
@@ -865,6 +1018,7 @@ function normalizeProdutoPayload(f, isEdit) {
     sem_carencia_leite: !!f.semCarenciaLeite,
     sem_carencia_carne: !!f.semCarenciaCarne,
     ativo: isEdit && f.ativo === false ? false : true,
+    grupo_equivalencia: exigeGrupoEquivalencia ? f.grupoEquivalencia || null : null,
     quantidade_total: quantidadeEntrada,
     total_calculado: quantidadeEntrada,
     data_compra: f.dataCompra || null,
