@@ -85,9 +85,7 @@ function generateLocalId() {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
       return crypto.randomUUID();
     }
-  } catch {
-    // fallback abaixo
-  }
+  } catch {}
   return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
@@ -97,9 +95,53 @@ function sortProdutosByNome(list) {
   );
 }
 
+function toDateOnly(v) {
+  if (!v) return null;
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function safeNum(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/* ===================== ENUMS (schema Supabase) ===================== */
+const FORMA_COMPRA_ENUM = {
+  EMBALADO: "EMBALADO",
+  A_GRANEL: "A_GRANEL",
+};
+
+function normalizeFormaCompra(input, produtoUi) {
+  const raw = String(input || "").trim();
+  const up = raw.toUpperCase();
+
+  // aceita já no formato do enum
+  if (up === FORMA_COMPRA_ENUM.EMBALADO) return FORMA_COMPRA_ENUM.EMBALADO;
+  if (up === FORMA_COMPRA_ENUM.A_GRANEL) return FORMA_COMPRA_ENUM.A_GRANEL;
+
+  // aceita rótulos comuns
+  if (["EMBALADO", "EMBALADA", "PACOTE", "SACO", "CAIXA"].includes(up)) return FORMA_COMPRA_ENUM.EMBALADO;
+  if (["GRANEL", "A GRANEL", "A_GRANEL"].includes(up)) return FORMA_COMPRA_ENUM.A_GRANEL;
+
+  // fallback inteligente: se veio tipo/tamanho de embalagem, assume EMBALADO, senão A_GRANEL
+  const hasEmbalagem =
+    !!produtoUi?.tipoEmbalagem ||
+    produtoUi?.tamanhoPorEmbalagem != null ||
+    produtoUi?.tamanho_por_embalagem != null;
+
+  return hasEmbalagem ? FORMA_COMPRA_ENUM.EMBALADO : FORMA_COMPRA_ENUM.A_GRANEL;
+}
+
 export default function Estoque({ onCountChange }) {
   const { fazendaAtualId } = useFazenda();
   const memoData = MEMO_ESTOQUE.data || {};
+
   const categoriasFixas = useMemo(
     () => [
       { value: "Todos", label: "Todos" },
@@ -162,7 +204,6 @@ export default function Estoque({ onCountChange }) {
     await kvSet(CACHE_ESTOQUE_KEY, nextList);
   }, []);
 
-  /* ===================== HELPERS DE PAYLOAD DO MODAL ===================== */
   function splitPayload(payload) {
     return {
       produto: payload?.produto ?? payload,
@@ -170,21 +211,8 @@ export default function Estoque({ onCountChange }) {
     };
   }
 
-  function toDateOnly(v) {
-    if (!v) return null;
-    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return null;
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
   function requireFazendaId() {
-    if (!fazendaAtualId) {
-      throw new Error("Selecione uma fazenda para continuar.");
-    }
+    if (!fazendaAtualId) throw new Error("Selecione uma fazenda para continuar.");
     return fazendaAtualId;
   }
 
@@ -194,7 +222,7 @@ export default function Estoque({ onCountChange }) {
       const { data, error } = await withFazendaId(
         supabase
           .from("estoque_produtos")
-          .select("id, nome_comercial, unidade, categoria")
+          .select("id, nome_comercial, unidade_medida, unidade, categoria")
           .eq("id", produtoId),
         requireFazendaId()
       ).single();
@@ -203,7 +231,7 @@ export default function Estoque({ onCountChange }) {
 
       return {
         nome: data?.nome_comercial || null,
-        unidade: data?.unidade || null,
+        unidade: data?.unidade_medida || data?.unidade || null,
         categoria: data?.categoria || null,
       };
     } catch (e) {
@@ -276,17 +304,13 @@ export default function Estoque({ onCountChange }) {
       const memoCategoria = memo?.categoriaSelecionada?.value;
       const categoriaAtual = categoriaOpt?.value;
 
-      // ✅ NUNCA “travar” a busca por causa do memo (isso gerava itens fantasma quando o banco mudava)
-      // Se estiver fresh e tiver algo na tela, só evitamos flicker (carrega em background).
       const hasProdutos = Array.isArray(produtos) && produtos.length > 0;
       const podeBackground = memoFresh && memoCategoria === categoriaAtual && hasProdutos && !force;
 
       try {
-        if (podeBackground) {
-          setAtualizando(true);
-        } else {
-          setLoading(true);
-        }
+        if (podeBackground) setAtualizando(true);
+        else setLoading(true);
+
         setErro("");
 
         // OFFLINE -> usa cache e sai
@@ -294,51 +318,48 @@ export default function Estoque({ onCountChange }) {
           const cache = normalizeEstoqueCache(await kvGet(CACHE_ESTOQUE_KEY));
           setProdutos(cache);
           MEMO_ESTOQUE.lastAt = Date.now();
-          MEMO_ESTOQUE.data = {
-            ...(MEMO_ESTOQUE.data || {}),
-            produtos: cache,
-          };
+          MEMO_ESTOQUE.data = { ...(MEMO_ESTOQUE.data || {}), produtos: cache };
           setLoading(false);
           setAtualizando(false);
           return;
         }
 
-        if (!fazendaAtualId) {
-          throw new Error("Selecione uma fazenda para carregar o estoque.");
-        }
+        const fazId = requireFazendaId();
 
+        // ✅ PRODUTOS (schema novo tolerante)
         const { data: produtosDb, error: errP } = await withFazendaId(
           supabase
             .from("estoque_produtos")
             .select(
               `
-            id,
-            nome_comercial,
-            categoria,
-            unidade,
-            apresentacao,
-            tipo_farmacia,
-            carencia_leite_dias,
-            carencia_carne_dias,
-            sem_carencia_leite,
-            sem_carencia_carne,
-            created_at,
-            updated_at
-          `
+              id,
+              nome_comercial,
+              categoria,
+              unidade_medida,
+              unidade,
+              sub_tipo,
+              forma_compra,
+              tipo_embalagem,
+              tamanho_por_embalagem,
+              reutilizavel,
+              usos_por_unidade,
+              carencia_leite,
+              carencia_carne,
+              sem_carencia_leite,
+              sem_carencia_carne,
+              ativo,
+              created_at,
+              updated_at
+            `
             ),
-          fazendaAtualId
+          fazId
         ).order("nome_comercial", { ascending: true });
 
         if (errP) throw errP;
 
-        if (!Array.isArray(produtosDb) || produtosDb.length === 0) {
-          await updateCache([]);
-          return;
-        }
-
         const uiBase = (produtosDb || []).map(dbToUiProduto);
 
-        // Lotes
+        // ✅ LOTES (para "Comprado/Em estoque/Valor/Validade")
         const ids = uiBase.map((p) => p.id).filter(Boolean);
         let lotes = [];
 
@@ -348,16 +369,19 @@ export default function Estoque({ onCountChange }) {
               .from("estoque_lotes")
               .select(
                 `
-              id,
-              produto_id,
-              data_entrada,
-              validade,
-              quantidade_inicial,
-              quantidade_atual,
-              valor_total
-            `
+                id,
+                produto_id,
+                data_entrada,
+                validade,
+                data_validade,
+                quantidade_inicial,
+                quantidade_atual,
+                quantidade,
+                valor_total,
+                valor_total_pago
+              `
               ),
-            fazendaAtualId
+            fazId
           ).in("produto_id", ids);
 
           if (errL) throw errL;
@@ -366,83 +390,17 @@ export default function Estoque({ onCountChange }) {
 
         const agregados = agregarLotesPorProduto(lotes);
 
-        /* ========= Consumo/dia (previsão pela dieta mais recente por lote) ========= */
-        let consumoDiaPorProduto = {}; // {produto_id: kg/dia}
-        try {
-          const { data: dietasDb, error: eD } = await withFazendaId(
-            supabase.from("dietas").select("id, lote_id, dia, numvacas_snapshot"),
-            fazendaAtualId
-          )
-            .order("dia", { ascending: false })
-            .limit(200);
-
-          if (!eD && Array.isArray(dietasDb) && dietasDb.length) {
-            const lastByLote = new Map();
-            for (const d of dietasDb) {
-              if (!d?.lote_id) continue;
-              if (!lastByLote.has(d.lote_id)) lastByLote.set(d.lote_id, d);
-            }
-
-            const dietaIds = Array.from(lastByLote.values()).map((d) => d.id).filter(Boolean);
-
-            if (dietaIds.length) {
-              const { data: itensDb, error: eI } = await withFazendaId(
-                supabase.from("dietas_itens").select("dieta_id, produto_id, quantidade_kg_vaca"),
-                fazendaAtualId
-              ).in("dieta_id", dietaIds);
-
-              if (!eI && Array.isArray(itensDb)) {
-                const numVacasByDieta = {};
-                for (const d of lastByLote.values()) {
-                  numVacasByDieta[d.id] = Number(d.numvacas_snapshot || 0);
-                }
-
-                for (const it of itensDb) {
-                  const pid = it?.produto_id;
-                  const did = it?.dieta_id;
-                  if (!pid || !did) continue;
-
-                  const nv = Number(numVacasByDieta[did] || 0);
-                  const kgVaca = Number(it.quantidade_kg_vaca || 0);
-                  const consumoDia = nv * kgVaca;
-
-                  if (consumoDia > 0) {
-                    consumoDiaPorProduto[pid] = (consumoDiaPorProduto[pid] || 0) + consumoDia;
-                  }
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("Não foi possível calcular consumo/dia (ok por enquanto).", e);
-        }
-
         let lista = uiBase.map((p) => {
           const agg = agregados[p.id];
 
-          const compradoTotal = agg ? Number(agg.compradoTotal || 0) : 0;
-          const emEstoque = agg ? Number(agg.emEstoque || 0) : 0;
-          const valorTotalRestante = agg ? Number(agg.valorTotalRestante || 0) : 0;
-          const validadeMaisProxima = agg ? agg.validadeMaisProxima || null : null;
-
-          const categoriaLower = String(p.categoria || "").trim().toLowerCase();
-          const unidadeLower = String(p.unidade || "").trim().toLowerCase();
-
-          const consumoDia = Number(consumoDiaPorProduto[p.id] || 0);
-
-          const fazPrevisao = categoriaLower === "cozinha" && unidadeLower === "kg";
-          const prevDias =
-            fazPrevisao && consumoDia > 0 && emEstoque > 0 ? Math.floor(emEstoque / consumoDia) : null;
-
           return {
             ...p,
-            compradoTotal,
-            quantidade: emEstoque,
-            valorTotal: valorTotalRestante,
-            validade: validadeMaisProxima,
-
-            consumoDiaKg: fazPrevisao ? consumoDia : null,
-            prevTerminoDias: prevDias,
+            compradoTotal: safeNum(agg?.compradoTotal, 0),
+            quantidade: safeNum(agg?.emEstoque, 0),
+            valorTotal: safeNum(agg?.valorTotalRestante, 0),
+            validade: agg?.validadeMaisProxima || null,
+            prevTerminoDias: null,
+            meta: p.meta || {},
           };
         });
 
@@ -453,16 +411,14 @@ export default function Estoque({ onCountChange }) {
           lista = lista.filter((p) => p.categoria === categoriaOpt.value);
         }
 
-        // ✅ Se o banco vier vazio, a UI DEVE ficar vazia (limpa os “fantasmas”)
         await updateCache(Array.isArray(lista) ? lista : []);
       } catch (e) {
         console.error(e);
-        // fallback offline SOMENTE se banco falhar
         try {
           const cache = normalizeEstoqueCache(await kvGet(CACHE_ESTOQUE_KEY));
           setProdutos(cache);
         } catch {}
-        setErro("Erro ao carregar estoque (Supabase).");
+        setErro(e?.message ? String(e.message) : "Erro ao carregar estoque (Supabase).");
       } finally {
         setLoading(false);
         setAtualizando(false);
@@ -494,13 +450,13 @@ export default function Estoque({ onCountChange }) {
 
   const colunas = useMemo(
     () => [
-      "Nome Comercial",
+      "Produto",
       "Categoria",
       "Comprado",
       "Em estoque",
       "Unid.",
-      "Validade",
-      "Consumo/dia (dieta)",
+      "Valor em estoque (R$)",
+      "Validade mais próxima",
       "Prev. término",
       "Alerta Estoque",
       "Alerta Validade",
@@ -547,8 +503,11 @@ export default function Estoque({ onCountChange }) {
             return String(a.nomeComercial || "").localeCompare(String(b.nomeComercial || "")) * dir;
           case "estoque":
             return (Number(a.quantidade || 0) - Number(b.quantidade || 0)) * dir;
-          case "validade":
-            return (new Date(a.validade || 0).getTime() - new Date(b.validade || 0).getTime()) * dir;
+          case "validade": {
+            const da = a.validade ? new Date(a.validade).getTime() : 9e15;
+            const db = b.validade ? new Date(b.validade).getTime() : 9e15;
+            return (da - db) * dir;
+          }
           default:
             return 0;
         }
@@ -574,31 +533,27 @@ export default function Estoque({ onCountChange }) {
   async function salvarNovoProduto(produtoUi) {
     const db = uiToDbProduto(produtoUi);
 
+    // ✅ garante o NOT NULL do schema: forma_compra (enum: EMBALADO | A_GRANEL)
+    if (!db.forma_compra) {
+      // fallback final (não deveria chegar aqui se Modal preencher)
+      db.forma_compra = normalizeFormaCompra(null, produtoUi);
+    }
+
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       const localId = generateLocalId();
       const fazendaId = fazendaAtualId;
-      const payload = {
-        id: localId,
-        ...db,
-        ...(fazendaId ? { fazenda_id: fazendaId } : {}),
-      };
+      const payload = { id: localId, ...db, ...(fazendaId ? { fazenda_id: fazendaId } : {}) };
 
       const novoItem = {
         id: localId,
         nomeComercial: produtoUi?.nomeComercial || "",
         categoria: produtoUi?.categoria || "",
         unidade: produtoUi?.unidade || "",
-        apresentacao: produtoUi?.apresentacao || "",
-        tipoFarmacia: produtoUi?.tipoFarmacia || "",
-        carenciaLeiteDias: produtoUi?.carenciaLeiteDias || "",
-        carenciaCarneDias: produtoUi?.carenciaCarneDias || "",
-        semCarenciaLeite: !!produtoUi?.semCarenciaLeite,
-        semCarenciaCarne: !!produtoUi?.semCarenciaCarne,
+        formaCompra: db.forma_compra || null,
         compradoTotal: 0,
         quantidade: 0,
         valorTotal: 0,
         validade: null,
-        consumoDiaKg: null,
         prevTerminoDias: null,
         meta: {},
       };
@@ -611,30 +566,32 @@ export default function Estoque({ onCountChange }) {
 
     const fazendaId = requireFazendaId();
 
-    let resp = await supabase
+    const payload = { ...db, fazenda_id: fazendaId };
+
+    const { data, error } = await supabase
       .from("estoque_produtos")
-      .insert({ ...db, fazenda_id: fazendaId })
+      .insert(payload)
       .select("id")
       .single();
 
-    if (resp.error) {
-      resp = await supabase
-        .from("estoque_produtos")
-        .insert({ ...db, fazenda_id: fazendaId })
-        .select("id")
-        .single();
+    if (error) {
+      // debug real do 400
+      console.log("payload estoque_produtos ->", payload);
+      console.log("error ->", error);
+      throw error;
     }
 
-    if (resp.error) throw resp.error;
-
-    // ✅ garantia: após salvar no banco, “memo/cache” não pode segurar estado antigo
     MEMO_ESTOQUE.lastAt = 0;
-
-    return resp.data?.id;
+    return data?.id;
   }
 
   async function salvarEdicaoProduto(id, produtoUi) {
     const db = uiToDbProduto(produtoUi);
+
+    // ✅ mantém compatível com schema (se vier vazio, não manda null sem querer)
+    if (!db.forma_compra) {
+      db.forma_compra = normalizeFormaCompra(produtoUi?.formaCompra, produtoUi);
+    }
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       const nextList = sortProdutosByNome(
@@ -645,14 +602,7 @@ export default function Estoque({ onCountChange }) {
             nomeComercial: produtoUi?.nomeComercial ?? p.nomeComercial,
             categoria: produtoUi?.categoria ?? p.categoria,
             unidade: produtoUi?.unidade ?? p.unidade,
-            apresentacao: produtoUi?.apresentacao ?? p.apresentacao,
-            tipoFarmacia: produtoUi?.tipoFarmacia ?? p.tipoFarmacia,
-            carenciaLeiteDias: produtoUi?.carenciaLeiteDias ?? p.carenciaLeiteDias,
-            carenciaCarneDias: produtoUi?.carenciaCarneDias ?? p.carenciaCarneDias,
-            semCarenciaLeite:
-              produtoUi?.semCarenciaLeite != null ? !!produtoUi.semCarenciaLeite : p.semCarenciaLeite,
-            semCarenciaCarne:
-              produtoUi?.semCarenciaCarne != null ? !!produtoUi.semCarenciaCarne : p.semCarenciaCarne,
+            formaCompra: db.forma_compra ?? p.formaCompra ?? null,
           };
         })
       );
@@ -695,24 +645,27 @@ export default function Estoque({ onCountChange }) {
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       const loteId = generateLocalId();
+
       const nextList = produtos.map((p) => {
         if (p.id !== produtoId) return p;
+
         const compradoTotal = Number(p.compradoTotal || 0) + quantidade;
         const quantidadeAtual = Number(p.quantidade || 0) + quantidade;
         const valorTotalAtual = Number(p.valorTotal || 0) + (Number.isFinite(valorTotal) ? valorTotal : 0);
+
         const validadeAtual = p.validade ? new Date(p.validade) : null;
         const validadeNova = validade ? new Date(validade) : null;
         const validadeAtualOk = validadeAtual && !Number.isNaN(validadeAtual.getTime()) ? validadeAtual : null;
         const validadeNovaOk = validadeNova && !Number.isNaN(validadeNova.getTime()) ? validadeNova : null;
+
         const validadeFinalDate =
           validadeAtualOk && validadeNovaOk
             ? validadeNovaOk < validadeAtualOk
               ? validadeNovaOk
               : validadeAtualOk
             : validadeNovaOk || validadeAtualOk;
+
         const validadeFinal = validadeFinalDate ? validadeFinalDate.toISOString() : p.validade || null;
-        const prevDias =
-          p.consumoDiaKg && quantidadeAtual > 0 ? Math.floor(quantidadeAtual / Number(p.consumoDiaKg || 0)) : p.prevTerminoDias;
 
         return {
           ...p,
@@ -720,11 +673,10 @@ export default function Estoque({ onCountChange }) {
           quantidade: quantidadeAtual,
           valorTotal: valorTotalAtual,
           validade: validadeFinal,
-          prevTerminoDias: prevDias,
         };
       });
 
-      await updateCache(nextList);
+      await updateCache(sortProdutosByNome(nextList));
 
       await enqueue("estoque.lote.insert", {
         lote: {
@@ -817,21 +769,6 @@ export default function Estoque({ onCountChange }) {
             <button className="botao-cancelar pequeno" style={{ whiteSpace: "nowrap" }} onClick={() => setMostrarAjustes(true)}>
               Ajustes
             </button>
-
-            {/* ✅ botão opcional pra você “zerar visual” sem precisar mexer no banco */}
-            {/* Remova se não quiser */}
-            {/* 
-            <button
-              className="botao-cancelar pequeno"
-              style={{ whiteSpace: "nowrap" }}
-              onClick={async () => {
-                await invalidarCacheEstoque();
-                await carregar(categoriaSelecionada, { force: true });
-              }}
-            >
-              Limpar cache
-            </button>
-            */}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
@@ -845,9 +782,7 @@ export default function Estoque({ onCountChange }) {
           </div>
         </div>
 
-        {erro && (
-          <div className="mb-3 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-2 rounded">{erro}</div>
-        )}
+        {erro && <div className="mb-3 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-2 rounded">{erro}</div>}
 
         <div className="st-filter-hint">
           Dica: clique no título das colunas habilitadas para ordenar/filtrar. Clique novamente para fechar.
@@ -869,35 +804,20 @@ export default function Estoque({ onCountChange }) {
                 <col style={{ width: "12%" }} />
                 <col style={{ width: "10%" }} />
                 <col style={{ width: "10%" }} />
-                <col style={{ width: "8%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "9%" }} />
                 <col style={{ width: "10%" }} />
-                <col style={{ width: "12%" }} />
                 <col style={{ width: "10%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "14%" }} />
+                <col style={{ width: "10%" }} />
               </colgroup>
 
               <thead>
                 <tr>
                   <th className="col-nome" onMouseEnter={() => setHoveredColKey("produto")}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSort("produto")}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        margin: 0,
-                        font: "inherit",
-                        color: "inherit",
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <span className="st-th-label">Nome Comercial</span>
+                    <button type="button" onClick={() => toggleSort("produto")} style={thBtnStyle}>
+                      <span className="st-th-label">Produto</span>
                       {sortConfig.key === "produto" && sortConfig.direction && (
                         <span style={{ fontSize: 12, opacity: 0.7 }}>{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
                       )}
@@ -909,18 +829,11 @@ export default function Estoque({ onCountChange }) {
                       type="button"
                       data-filter-trigger="true"
                       onClick={() => handleTogglePopover("categoria")}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        margin: 0,
-                        font: "inherit",
-                        color: "inherit",
-                        cursor: "pointer",
-                      }}
+                      style={thBtnStyle}
                     >
                       <span className="st-th-label">Categoria</span>
                     </button>
+
                     {openPopoverKey === "categoria" && (
                       <div className="st-filter-popover" onClick={(event) => event.stopPropagation()}>
                         <label className="st-filter__label">
@@ -950,22 +863,7 @@ export default function Estoque({ onCountChange }) {
                   </th>
 
                   <th className="st-td-center col-estoque" onMouseEnter={() => setHoveredColKey("estoque")}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSort("estoque")}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        margin: 0,
-                        font: "inherit",
-                        color: "inherit",
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
+                    <button type="button" onClick={() => toggleSort("estoque")} style={thBtnStyle}>
                       <span className="st-th-label">Em estoque</span>
                       {sortConfig.key === "estoque" && sortConfig.direction && (
                         <span style={{ fontSize: 12, opacity: 0.7 }}>{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
@@ -978,18 +876,11 @@ export default function Estoque({ onCountChange }) {
                       type="button"
                       data-filter-trigger="true"
                       onClick={() => handleTogglePopover("unidade")}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        margin: 0,
-                        font: "inherit",
-                        color: "inherit",
-                        cursor: "pointer",
-                      }}
+                      style={thBtnStyle}
                     >
                       <span className="st-th-label">Unid.</span>
                     </button>
+
                     {openPopoverKey === "unidade" && (
                       <div className="st-filter-popover" onClick={(event) => event.stopPropagation()}>
                         <label className="st-filter__label">
@@ -1016,42 +907,31 @@ export default function Estoque({ onCountChange }) {
                     )}
                   </th>
 
+                  <th className="st-td-center col-valor">
+                    <span className="st-th-label">Valor em estoque (R$)</span>
+                  </th>
+
                   <th className="st-td-center col-validade" onMouseEnter={() => setHoveredColKey("validade")}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSort("validade")}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        margin: 0,
-                        font: "inherit",
-                        color: "inherit",
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <span className="st-th-label">Validade</span>
+                    <button type="button" onClick={() => toggleSort("validade")} style={thBtnStyle}>
+                      <span className="st-th-label">Validade mais próxima</span>
                       {sortConfig.key === "validade" && sortConfig.direction && (
                         <span style={{ fontSize: 12, opacity: 0.7 }}>{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
                       )}
                     </button>
                   </th>
 
-                  <th className="st-td-center col-consumo">
-                    <span className="st-th-label">Consumo/dia (dieta)</span>
-                  </th>
                   <th className="st-td-center col-prev">
                     <span className="st-th-label">Prev. término</span>
                   </th>
+
                   <th className="st-td-center col-alerta-estoque">
                     <span className="st-th-label">Alerta Estoque</span>
                   </th>
+
                   <th className="st-td-center col-alerta-validade">
                     <span className="st-th-label">Alerta Validade</span>
                   </th>
+
                   <th className="st-td-center col-acoes">
                     <span className="st-th-label">Ação</span>
                   </th>
@@ -1096,6 +976,7 @@ export default function Estoque({ onCountChange }) {
                         </td>
 
                         <td className="st-td-center">{p.categoria || "—"}</td>
+
                         <td className="st-td-center st-num">{formatQtd(p.compradoTotal)}</td>
 
                         <td
@@ -1112,6 +993,8 @@ export default function Estoque({ onCountChange }) {
 
                         <td className="st-td-center">{p.unidade || "—"}</td>
 
+                        <td className="st-td-center st-num">{formatBRL(p.valorTotal)}</td>
+
                         <td
                           className={`st-td-center ${hoveredColKey === "validade" ? "st-col-hover" : ""} ${
                             rowHover ? "st-row-hover" : ""
@@ -1122,10 +1005,6 @@ export default function Estoque({ onCountChange }) {
                           }}
                         >
                           {formatVal(p.validade)}
-                        </td>
-
-                        <td className="st-td-center st-num">
-                          {p.consumoDiaKg != null ? `${formatQtd(p.consumoDiaKg)} kg/d` : "—"}
                         </td>
 
                         <td className="st-td-center st-num">{p.prevTerminoDias != null ? `${p.prevTerminoDias} d` : "—"}</td>
@@ -1186,6 +1065,11 @@ export default function Estoque({ onCountChange }) {
                 return;
               }
 
+              // ✅ forma_compra é NOT NULL no banco
+              // (se Modal ainda não envia, o adapter faz fallback, mas aqui já avisa pra você completar depois)
+              // se tu quiser exigir de vez, descomenta:
+              // if (!produto?.formaCompra) { setErro("Selecione a forma de compra (Embalado / A granel)."); return; }
+
               const novoId = await salvarNovoProduto(produto);
 
               if (lote) {
@@ -1194,12 +1078,11 @@ export default function Estoque({ onCountChange }) {
 
               setMostrarCadastro(false);
 
-              // ✅ força sincronização com o banco (não deixa memo segurar)
               MEMO_ESTOQUE.lastAt = 0;
               await carregar(categoriaSelecionada, { force: true });
             } catch (e) {
               console.error(e);
-              setErro("Não foi possível salvar o produto.");
+              setErro(e?.message ? String(e.message) : "Não foi possível salvar o produto.");
             }
           }}
         />
@@ -1255,7 +1138,6 @@ export default function Estoque({ onCountChange }) {
                     await excluirProduto(produtoParaExcluir.id);
                     setProdutoParaExcluir(null);
 
-                    // ✅ se você está “zerando testes”, isso garante limpar de verdade o cache local
                     await invalidarCacheEstoque();
                     await carregar(categoriaSelecionada, { force: true });
                   } catch (e) {
@@ -1349,49 +1231,63 @@ function formatBRL(v) {
   return (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+const thBtnStyle = {
+  background: "transparent",
+  border: "none",
+  padding: 0,
+  margin: 0,
+  font: "inherit",
+  color: "inherit",
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+};
+
 /* ===================== ADAPTERS ===================== */
 function dbToUiProduto(d) {
   return {
     id: d.id,
     nomeComercial: d.nome_comercial ?? "",
     categoria: d.categoria ?? "",
-    unidade: d.unidade ?? "",
-    apresentacao: d.apresentacao ?? "",
-
-    tipoFarmacia: d.tipo_farmacia ?? "",
-    carenciaLeiteDias: d.carencia_leite_dias ?? "",
-    carenciaCarneDias: d.carencia_carne_dias ?? "",
-    semCarenciaLeite: !!d.sem_carencia_leite,
-    semCarenciaCarne: !!d.sem_carencia_carne,
-
+    unidade: d.unidade_medida ?? d.unidade ?? "",
+    formaCompra: d.forma_compra ?? null,
+    tipoEmbalagem: d.tipo_embalagem ?? null,
+    tamanhoPorEmbalagem: d.tamanho_por_embalagem ?? null,
     compradoTotal: 0,
     quantidade: 0,
     valorTotal: 0,
     validade: null,
-
-    consumoDiaKg: null,
     prevTerminoDias: null,
-
     meta: {},
+    _raw: d,
   };
 }
 
 function uiToDbProduto(p) {
-  return {
-    nome_comercial: String(p?.nomeComercial || "").trim(),
-    categoria: String(p?.categoria || "").trim(),
-    unidade: String(p?.unidade || "").trim(),
-    apresentacao: String(p?.apresentacao || "").trim() || null,
+  const nome = String(p?.nomeComercial || "").trim();
+  const categoria = String(p?.categoria || "").trim();
+  const unidade = String(p?.unidade || "").trim();
 
-    tipo_farmacia: String(p?.tipoFarmacia || "").trim() || null,
-    carencia_leite_dias: p?.carenciaLeiteDias === "" || p?.carenciaLeiteDias == null ? null : Number(p.carenciaLeiteDias),
-    carencia_carne_dias: p?.carenciaCarneDias === "" || p?.carenciaCarneDias == null ? null : Number(p.carenciaCarneDias),
-    sem_carencia_leite: !!p?.semCarenciaLeite,
-    sem_carencia_carne: !!p?.semCarenciaCarne,
+  const formaNorm = normalizeFormaCompra(p?.formaCompra, p);
+
+  return {
+    nome_comercial: nome,
+    categoria,
+    unidade_medida: unidade,
+    forma_compra: formaNorm, // ✅ NOT NULL + enum
+    // se tu quiser persistir isso futuramente, já fica plugável:
+    tipo_embalagem: p?.tipoEmbalagem ?? p?.tipo_embalagem ?? null,
+    tamanho_por_embalagem:
+      p?.tamanhoPorEmbalagem != null
+        ? Number(String(p.tamanhoPorEmbalagem).replace(",", "."))
+        : p?.tamanho_por_embalagem != null
+        ? Number(String(p.tamanho_por_embalagem).replace(",", "."))
+        : null,
   };
 }
 
-/* ===================== LOTES -> AGREGADOS ===================== */
+/* ===================== LOTES -> AGREGADOS (tolerante) ===================== */
 function agregarLotesPorProduto(lotesDb) {
   const lotes = Array.isArray(lotesDb) ? lotesDb : [];
   const by = {};
@@ -1400,9 +1296,10 @@ function agregarLotesPorProduto(lotesDb) {
     const pid = l.produto_id;
     if (!pid) continue;
 
-    const qtdAtual = Number(l.quantidade_atual || 0);
-    const qtdIni = Number(l.quantidade_inicial || 0);
-    const valorTotalLote = Number(l.valor_total || 0);
+    const qtdAtual = safeNum(l.quantidade_atual ?? l.quantidade ?? 0, 0);
+    const qtdIni = safeNum(l.quantidade_inicial ?? l.quantidade_inicial_original ?? l.quantidade ?? 0, 0);
+
+    const valorTotalLote = safeNum(l.valor_total ?? l.valor_total_pago ?? 0, 0);
     const unit = qtdIni > 0 ? valorTotalLote / qtdIni : 0;
 
     if (!by[pid]) {
@@ -1418,8 +1315,10 @@ function agregarLotesPorProduto(lotesDb) {
     by[pid].emEstoque += qtdAtual;
     by[pid].valorTotalRestante += qtdAtual * unit;
 
-    if (qtdAtual > 0 && l.validade) {
-      const dt = new Date(l.validade);
+    const validade = l.validade ?? l.data_validade ?? null;
+
+    if (qtdAtual > 0 && validade) {
+      const dt = new Date(validade);
       if (!Number.isNaN(dt.getTime())) {
         const atual = by[pid].validadeMaisProxima ? new Date(by[pid].validadeMaisProxima) : null;
         if (!atual || dt < atual) by[pid].validadeMaisProxima = dt.toISOString();
@@ -1428,9 +1327,9 @@ function agregarLotesPorProduto(lotesDb) {
   }
 
   Object.keys(by).forEach((pid) => {
-    by[pid].compradoTotal = Number(by[pid].compradoTotal || 0);
-    by[pid].emEstoque = Number(by[pid].emEstoque || 0);
-    by[pid].valorTotalRestante = Number(by[pid].valorTotalRestante || 0);
+    by[pid].compradoTotal = safeNum(by[pid].compradoTotal, 0);
+    by[pid].emEstoque = safeNum(by[pid].emEstoque, 0);
+    by[pid].valorTotalRestante = safeNum(by[pid].valorTotalRestante, 0);
   });
 
   return by;
@@ -1448,9 +1347,7 @@ function normalizeTouros(arr) {
     quantidade: Number(t.doses ?? 0),
     unidade: "doses",
     valorTotal: Number(t.valorTotal ?? 0),
-    apresentacao: "Sêmen (touro)",
     validade: t.validade || null,
-    consumoDiaKg: null,
     prevTerminoDias: null,
     meta: { readOnly: true },
   }));
@@ -1466,17 +1363,8 @@ function mesclarTourosNoEstoque(estoque, touros) {
     compradoTotal: Number(p.compradoTotal ?? 0),
     quantidade: Number(p.quantidade ?? 0),
     valorTotal: Number(p.valorTotal ?? 0),
-    apresentacao: p.apresentacao || null,
     validade: p.validade || null,
-
-    consumoDiaKg: p.consumoDiaKg ?? null,
     prevTerminoDias: p.prevTerminoDias ?? null,
-
-    tipoFarmacia: p.tipoFarmacia ?? "",
-    carenciaLeiteDias: p.carenciaLeiteDias ?? "",
-    carenciaCarneDias: p.carenciaCarneDias ?? "",
-    semCarenciaLeite: !!p.semCarenciaLeite,
-    semCarenciaCarne: !!p.semCarenciaCarne,
 
     meta: p.meta || {},
   }));
