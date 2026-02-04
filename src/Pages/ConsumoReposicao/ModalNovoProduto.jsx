@@ -76,8 +76,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
     () => [
       { value: "Farmácia", label: "Farmácia", icon: Pill },
       { value: "Reprodução", label: "Reprodução", icon: FlaskConical },
-      { value: "Ração/Concentrado", label: "Rações e Concentrados", icon: Package },
-      { value: "Mineral/Aditivo", label: "Minerais e Aditivos", icon: Package },
       { value: "Higiene", label: "Higiene e Limpeza", icon: Package },
       { value: "Materiais", label: "Materiais Gerais", icon: Box },
       { value: "Cozinha", label: "Cozinha", icon: Package },
@@ -211,11 +209,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       alert("Informe o nome comercial.");
       return null;
     }
-    if (!form.categoria) {
-      alert("Selecione a categoria.");
-      return null;
-    }
-
     if (isFarmacia && !form.subTipo) {
       alert("Selecione o tipo (Farmácia).");
       return null;
@@ -282,7 +275,12 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       }
     }
 
-    return normalizeProdutoPayload(form, isEdit);
+    const normalizedForm = {
+      ...form,
+      categoria: form.categoria || "Cozinha",
+    };
+
+    return normalizeProdutoPayload(normalizedForm, isEdit);
   };
 
   if (!open) return null;
@@ -717,10 +715,11 @@ function toNum(v) {
 
 function toForm(initial) {
   const d = initial || {};
+  const categoriaInicial = pick(d, "categoria");
   return {
     // identificação
     nomeComercial: pick(d, "nomeComercial", "nome_comercial") ?? "",
-    categoria: pick(d, "categoria") ?? "",
+    categoria: categoriaInicial ? categoriaInicial : "Cozinha",
     subTipo: pick(d, "subTipo", "sub_tipo") ?? "",
 
     // compra
@@ -770,12 +769,12 @@ function normalizeProdutoPayload(f, isEdit) {
 
   return {
     nome_comercial: String(f.nomeComercial || "").trim(),
-    categoria: String(f.categoria || "").trim(),
+    categoria: String(f.categoria || "Cozinha").trim(),
     sub_tipo: f.subTipo || "",
     forma_compra: f.formaCompra || "",
-    tipo_embalagem: f.formaCompra === "EMBALADO" ? f.tipoEmbalagem || "" : "",
+    tipo_embalagem: f.formaCompra === "EMBALADO" ? f.tipoEmbalagem || "" : null,
     tamanho_por_embalagem:
-      f.formaCompra === "EMBALADO" && !f.reutilizavel ? f.tamanhoPorEmbalagem || "" : "",
+      f.formaCompra === "EMBALADO" && !f.reutilizavel ? f.tamanhoPorEmbalagem || "" : null,
     unidade_medida: f.reutilizavel ? "" : f.unidadeMedida || "",
     reutilizavel: !!f.reutilizavel,
     usos_por_unidade: f.reutilizavel ? String(f.usosPorUnidade || "") : "",
