@@ -569,8 +569,6 @@ export default function ConsumoReposicao() {
         const produtoPayload = produtoIn?.produto ? produtoIn.produto : produtoIn;
         const entradaOpcional =
           produtoIn?._entrada || (produtoIn?.produto ? produtoIn.entradaOpcional : null) || produtoPayload?._entrada;
-        const loteIdEditado =
-          produtoIn?.loteIdEditado || produtoPayload?.loteIdEditado || produtoPayload?.lote_id_editado || null;
 
         const nome = pick(produtoPayload, "nome_comercial", "nomeComercial");
         const categoriaProduto = pick(produtoPayload, "categoria");
@@ -686,85 +684,65 @@ export default function ConsumoReposicao() {
           pick(produtoPayload, "valor_total", "valorTotal") ?? entradaOpcional?.valor_total ?? null;
         const observacoesRaw = pick(produtoPayload, "observacoes") ?? entradaOpcional?.observacoes ?? null;
 
-        if (idEdicao) {
-          const deveAtualizarLote =
-            !!loteIdEditado &&
-            [dataCompraRaw, validadeRaw, valorTotalRaw].some((valor) => valor !== null && valor !== undefined && valor !== "");
+        const shouldCreateLote =
+          !!quantidadeTotal || !!dataCompraRaw || !!validadeRaw || !!valorTotalRaw;
 
-          if (deveAtualizarLote) {
-            const loteUpdate = {
-              data_compra: toISODateOnly(dataCompraRaw) || null,
-              validade: toISODateOnly(validadeRaw) || null,
-              valor_total: numOrNull(valorTotalRaw),
-            };
+        if (shouldCreateLote) {
+          const dataCompraISO = toISODateOnly(dataCompraRaw);
+          const validadeISO = toISODateOnly(validadeRaw);
+          const quantidadeEntrada = numOrZero(quantidadeTotal);
 
-            const { error: eLote } = await supabase.from("estoque_lotes").update(loteUpdate).eq("id", loteIdEditado);
-            if (eLote) {
-              logSb("[estoque_lotes.update]", eLote);
-              throw eLote;
-            }
+          const loteRow = {
+            fazenda_id: fazendaAtualId,
+            produto_id: produtoRow?.id,
+            data_compra: dataCompraISO,
+            validade: validadeISO,
+            quantidade_inicial: numOrZero(quantidadeEntrada),
+            quantidade_atual: numOrZero(quantidadeEntrada),
+            valor_total: numOrNull(valorTotalRaw),
+            observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
+            ativo: true,
+          };
+          if (userId) loteRow.user_id = userId;
+
+          const { data: lote, error: eL } = await supabase
+            .from("estoque_lotes")
+            .insert(loteRow)
+            .select("*")
+            .single();
+
+          if (eL) {
+            logSb("[estoque_lotes]", eL);
+            throw eL;
           }
-        } else {
-          const shouldCreateLote =
-            !!quantidadeTotal || !!dataCompraRaw || !!validadeRaw || !!valorTotalRaw;
+          if (!lote?.id) throw new Error("Lote não foi criado, não dá para registrar movimento.");
 
-          if (shouldCreateLote) {
-            const dataCompraISO = toISODateOnly(dataCompraRaw);
-            const validadeISO = toISODateOnly(validadeRaw);
-            const quantidadeEntrada = numOrZero(quantidadeTotal);
+          const produtoReutilizavel = !!(produtoRow?.reutilizavel ?? reutilizavel);
+          const quantidadeMovBase = produtoReutilizavel
+            ? pick(produtoPayload, "total_calculado", "totalCalculado") ?? quantidadeTotal
+            : quantidadeTotal;
+          const unidadeMov =
+            (produtoRow?.unidade_medida || produtoPayload?.unidade_medida || "").trim() ||
+            (produtoReutilizavel ? "uso" : "un");
 
-            const loteRow = {
-              fazenda_id: fazendaAtualId,
-              produto_id: produtoRow?.id,
-              data_compra: dataCompraISO,
-              validade: validadeISO,
-              quantidade_inicial: numOrZero(quantidadeEntrada),
-              quantidade_atual: numOrZero(quantidadeEntrada),
-              valor_total: numOrNull(valorTotalRaw),
-              observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
-              ativo: true,
-            };
-            if (userId) loteRow.user_id = userId;
+          const movRow = {
+            fazenda_id: fazendaAtualId,
+            produto_id: produtoRow?.id,
+            lote_id: lote.id,
+            tipo: "ENTRADA",
+            data_mov: dataCompraISO || new Date().toISOString().slice(0, 10),
+            quantidade: numOrZero(quantidadeMovBase),
+            unidade_medida: unidadeMov,
+            valor_total: numOrNull(valorTotalRaw),
+            observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
+            meta: { origem: "cadastro_produto_modal" },
+          };
+          if (userId) movRow.user_id = userId;
 
-            const { data: lote, error: eL } = await supabase
-              .from("estoque_lotes")
-              .insert(loteRow)
-              .select("*")
-              .single();
-
-            if (eL) {
-              logSb("[estoque_lotes]", eL);
-              throw eL;
-            }
-            if (!lote?.id) throw new Error("Lote não foi criado, não dá para registrar movimento.");
-
-            const produtoReutilizavel = !!(produtoRow?.reutilizavel ?? reutilizavel);
-            const quantidadeMovBase = produtoReutilizavel
-              ? pick(produtoPayload, "total_calculado", "totalCalculado") ?? quantidadeTotal
-              : quantidadeTotal;
-            const unidadeMov =
-              (produtoRow?.unidade_medida || produtoPayload?.unidade_medida || "").trim() ||
-              (produtoReutilizavel ? "uso" : "un");
-
-            const movRow = {
-              fazenda_id: fazendaAtualId,
-              produto_id: produtoRow?.id,
-              lote_id: lote.id,
-              tipo: "ENTRADA",
-              data_mov: dataCompraISO || new Date().toISOString().slice(0, 10),
-              quantidade: numOrZero(quantidadeMovBase),
-              unidade_medida: unidadeMov,
-              valor_total: numOrNull(valorTotalRaw),
-              observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
-              meta: { origem: "cadastro_produto_modal" },
-            };
-            if (userId) movRow.user_id = userId;
-
-            const { error: eM } = await supabase.from("estoque_movimentos").insert(movRow);
-            if (eM) {
-              logSb("[estoque_movimentos]", eM);
-              throw eM;
-            }
+          const { error: eM } = await supabase.from("estoque_movimentos").insert(movRow);
+          if (eM) {
+            logSb("[estoque_movimentos]", eM);
+            throw eM;
           }
         }
 
