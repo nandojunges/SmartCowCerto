@@ -556,7 +556,7 @@ export default function ConsumoReposicao() {
           fazenda_id: fazendaAtualId,
 
           nome_comercial: String(nome || "").trim(),
-          categoria: String(categoriaProduto || "").trim(),
+          categoria: String(categoriaProduto || "Cozinha").trim(),
           sub_tipo: sub_tipo ?? null,
 
           forma_compra: forma_compra ?? null,
@@ -595,7 +595,12 @@ export default function ConsumoReposicao() {
         };
 
         if (!String(row.nome_comercial || "").trim()) throw new Error("Nome do produto é obrigatório.");
-        if (!String(row.categoria || "").trim()) throw new Error("Categoria do produto é obrigatória.");
+        if (!String(row.categoria || "").trim()) row.categoria = "Cozinha";
+
+        if (row.forma_compra === "A_GRANEL") {
+          row.tipo_embalagem = null;
+          row.tamanho_por_embalagem = null;
+        }
 
         if (idEdicao) {
           const { data, error } = await supabase
