@@ -71,82 +71,144 @@ const rsStyles = {
 
 const GRUPOS_FALLBACK = [
   // === FARMÁCIA ===
-  { codigo: "ANTIBIOTICO_PENICILINAS", categoria: "Farmácia", label: "Antibiótico — Penicilinas (β-lactâmicos)" },
-  { codigo: "ANTIBIOTICO_CEFALOSPORINAS", categoria: "Farmácia", label: "Antibiótico — Cefalosporinas (β-lactâmicos)" },
-  { codigo: "ANTIBIOTICO_TETRACICLINAS", categoria: "Farmácia", label: "Antibiótico — Tetraciclinas (ex: oxitetraciclina)" },
-  { codigo: "ANTIBIOTICO_MACROLIDEOS", categoria: "Farmácia", label: "Antibiótico — Macrolídeos (ex: tilosina/tulatromicina)" },
-  { codigo: "ANTIBIOTICO_AMINOGLICOSIDEOS", categoria: "Farmácia", label: "Antibiótico — Aminoglicosídeos (ex: gentamicina/neomicina)" },
-  { codigo: "ANTIBIOTICO_SULFONAMIDAS_TMP", categoria: "Farmácia", label: "Antibiótico — Sulfas + Trimetoprim" },
-  { codigo: "ANTIBIOTICO_FLUOROQUINOLONAS", categoria: "Farmácia", label: "Antibiótico — Fluoroquinolonas (ex: enrofloxacina)" },
-  { codigo: "ANTIBIOTICO_FENICOIS", categoria: "Farmácia", label: "Antibiótico — Fenicóis (ex: florfenicol)" },
-  { codigo: "ANTIBIOTICO_LINCOSAMIDAS", categoria: "Farmácia", label: "Antibiótico — Lincosamidas (ex: lincomicina)" },
-  { codigo: "ANTIBIOTICO_POLIMIXINAS", categoria: "Farmácia", label: "Antibiótico — Polimixinas (ex: polimixina B)" },
+  {
+    value: "ANTIBIOTICO_PENICILINAS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Penicilinas (β-lactâmicos)",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_CEFALOSPORINAS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Cefalosporinas (β-lactâmicos)",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_TETRACICLINAS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Tetraciclinas (ex: oxitetraciclina)",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_MACROLIDEOS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Macrolídeos (ex: tilosina/tulatromicina)",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_AMINOGLICOSIDEOS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Aminoglicosídeos (ex: gentamicina/neomicina)",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_SULFONAMIDAS_TMP",
+    categoria: "Farmácia",
+    label: "Antibiótico — Sulfas + Trimetoprim",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_FLUOROQUINOLONAS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Fluoroquinolonas (ex: enrofloxacina)",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_FENICOIS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Fenicóis (ex: florfenicol)",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_LINCOSAMIDAS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Lincosamidas (ex: lincomicina)",
+    tags: ["ANTIBIOTICO"],
+  },
+  {
+    value: "ANTIBIOTICO_POLIMIXINAS",
+    categoria: "Farmácia",
+    label: "Antibiótico — Polimixinas (ex: polimixina B)",
+    tags: ["ANTIBIOTICO"],
+  },
 
-  { codigo: "AINE_FLUNIXINA", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Flunixina" },
-  { codigo: "AINE_MELOXICAM", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Meloxicam" },
-  { codigo: "AINE_KETOPROFENO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Cetoprofeno" },
-  { codigo: "AINE_TOLFENAMICO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Ácido tolfenâmico" },
-  { codigo: "AINE_CARPROFENO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Carprofeno" },
-  { codigo: "CORTICOIDE_DEXAMETASONA", categoria: "Farmácia", label: "Corticoide — Dexametasona" },
-  { codigo: "CORTICOIDE_PREDNISOLONA", categoria: "Farmácia", label: "Corticoide — Prednisolona/Prednisona" },
-  { codigo: "CORTICOIDE_HIDROCORTISONA", categoria: "Farmácia", label: "Corticoide — Hidrocortisona" },
+  { value: "AINE_FLUNIXINA", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Flunixina", tags: ["AINE"] },
+  { value: "AINE_MELOXICAM", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Meloxicam", tags: ["AINE"] },
+  { value: "AINE_KETOPROFENO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Cetoprofeno", tags: ["AINE"] },
+  { value: "AINE_TOLFENAMICO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Ácido tolfenâmico", tags: ["AINE"] },
+  { value: "AINE_CARPROFENO", categoria: "Farmácia", label: "Anti-inflamatório (AINE) — Carprofeno", tags: ["AINE"] },
+  { value: "CORTICOIDE_DEXAMETASONA", categoria: "Farmácia", label: "Corticoide — Dexametasona", tags: ["CORTICOIDE"] },
+  { value: "CORTICOIDE_PREDNISOLONA", categoria: "Farmácia", label: "Corticoide — Prednisolona/Prednisona", tags: ["CORTICOIDE"] },
+  { value: "CORTICOIDE_HIDROCORTISONA", categoria: "Farmácia", label: "Corticoide — Hidrocortisona", tags: ["CORTICOIDE"] },
 
-  { codigo: "HORMONIO_PROGESTERONA", categoria: "Farmácia", label: "Hormônio — Progesterona (P4 / dispositivos)" },
-  { codigo: "HORMONIO_PROSTAGLANDINA", categoria: "Farmácia", label: "Hormônio — Prostaglandina (PGF2α / análogos)" },
-  { codigo: "HORMONIO_GNRH", categoria: "Farmácia", label: "Hormônio — GnRH (análogos)" },
-  { codigo: "HORMONIO_ECG", categoria: "Farmácia", label: "Hormônio — eCG" },
-  { codigo: "HORMONIO_HCG", categoria: "Farmácia", label: "Hormônio — hCG" },
-  { codigo: "HORMONIO_FSH", categoria: "Farmácia", label: "Hormônio — FSH" },
-  { codigo: "HORMONIO_ESTRADIOL", categoria: "Farmácia", label: "Hormônio — Estradiol (ésteres)" },
-  { codigo: "HORMONIO_OXITOCINA", categoria: "Farmácia", label: "Hormônio — Ocitocina" },
+  { value: "HORMONIO_PROGESTERONA", categoria: "Farmácia", label: "Hormônio — Progesterona (P4 / dispositivos)", tags: ["HORMONIO"] },
+  { value: "HORMONIO_PROSTAGLANDINA", categoria: "Farmácia", label: "Hormônio — Prostaglandina (PGF2α / análogos)", tags: ["HORMONIO"] },
+  { value: "HORMONIO_GNRH", categoria: "Farmácia", label: "Hormônio — GnRH (análogos)", tags: ["HORMONIO"] },
+  { value: "HORMONIO_ECG", categoria: "Farmácia", label: "Hormônio — eCG", tags: ["HORMONIO"] },
+  { value: "HORMONIO_HCG", categoria: "Farmácia", label: "Hormônio — hCG", tags: ["HORMONIO"] },
+  { value: "HORMONIO_FSH", categoria: "Farmácia", label: "Hormônio — FSH", tags: ["HORMONIO"] },
+  { value: "HORMONIO_ESTRADIOL", categoria: "Farmácia", label: "Hormônio — Estradiol (ésteres)", tags: ["HORMONIO"] },
+  { value: "HORMONIO_OXITOCINA", categoria: "Farmácia", label: "Hormônio — Ocitocina", tags: ["HORMONIO"] },
 
-  { codigo: "ANTIPARASITARIO_ENDO", categoria: "Farmácia", label: "Antiparasitário — Endoparasiticida" },
-  { codigo: "ANTIPARASITARIO_ECTO", categoria: "Farmácia", label: "Antiparasitário — Ectoparasiticida" },
-  { codigo: "VITAMINAS_SUPLEMENTOS", categoria: "Farmácia", label: "Vitaminas / Suplementos injetáveis" },
-  { codigo: "ANTISSEPTICO", categoria: "Farmácia", label: "Antisséptico / tópicos" },
-  { codigo: "ANESTESICO_SEDATIVO", categoria: "Farmácia", label: "Anestésico / Sedativo" },
-  { codigo: "ANTIMICROBIANO_INTRA_MAMARIO", categoria: "Farmácia", label: "Intra-mamário (mastite) — grupo funcional" },
-  { codigo: "SOLUTION_FLUIDOTERAPIA", categoria: "Farmácia", label: "Soluções / fluidoterapia" },
+  { value: "ANTIPARASITARIO_ENDO", categoria: "Farmácia", label: "Antiparasitário — Endoparasiticida", tags: ["ANTIPARASITARIO"] },
+  { value: "ANTIPARASITARIO_ECTO", categoria: "Farmácia", label: "Antiparasitário — Ectoparasiticida", tags: ["ANTIPARASITARIO"] },
+  { value: "VITAMINAS_SUPLEMENTOS", categoria: "Farmácia", label: "Vitaminas / Suplementos injetáveis", tags: ["VITAMINAS"] },
+  { value: "ANTISSEPTICO", categoria: "Farmácia", label: "Antisséptico / tópicos", tags: ["ANTISSEPTICO"] },
+  { value: "ANESTESICO_SEDATIVO", categoria: "Farmácia", label: "Anestésico / Sedativo", tags: ["ANESTESICO"] },
+  { value: "ANTIMICROBIANO_INTRA_MAMARIO", categoria: "Farmácia", label: "Intra-mamário (mastite) — grupo funcional", tags: ["INTRAMAMARIO"] },
+  { value: "SOLUTION_FLUIDOTERAPIA", categoria: "Farmácia", label: "Soluções / fluidoterapia", tags: ["SOLUTION"] },
 
   // === COZINHA ===
-  { codigo: "COZINHA_RACAO_CONCENTRADO", categoria: "Cozinha", label: "Ração / Concentrado" },
-  { codigo: "COZINHA_VOLUMOSO_SILAGEM", categoria: "Cozinha", label: "Volumoso / Silagem / Feno" },
-  { codigo: "COZINHA_MINERAL", categoria: "Cozinha", label: "Mineral / Mistura mineral" },
-  { codigo: "COZINHA_NUCLEO_PREMIX", categoria: "Cozinha", label: "Núcleo / Pré-mistura (premix)" },
-  { codigo: "COZINHA_ADITIVO", categoria: "Cozinha", label: "Aditivo (geral)" },
-  { codigo: "COZINHA_TAMPONANTE", categoria: "Cozinha", label: "Tamponante (ex: bicarbonato)" },
-  { codigo: "COZINHA_PROBIOTICO", categoria: "Cozinha", label: "Probiótico" },
-  { codigo: "COZINHA_PREBIOTICO", categoria: "Cozinha", label: "Prebiótico" },
-  { codigo: "COZINHA_LEVEDURA", categoria: "Cozinha", label: "Levedura" },
-  { codigo: "COZINHA_IONOFORO", categoria: "Cozinha", label: "Ionóforo (ex: monensina/lasalocida)" },
-  { codigo: "COZINHA_ANTIFUNGICO_CONSERVANTE", categoria: "Cozinha", label: "Conservante / antifúngico" },
-  { codigo: "COZINHA_ADS_MICOTOXINA", categoria: "Cozinha", label: "Adsorvente de micotoxina" },
-  { codigo: "COZINHA_UREIA_NNP", categoria: "Cozinha", label: "Ureia / NNP" },
-  { codigo: "COZINHA_SAIS", categoria: "Cozinha", label: "Sais (sal comum, calcário, etc.)" },
-  { codigo: "COZINHA_FITOTERAPICO_HOMEOPATICO", categoria: "Cozinha", label: "Fitoterápico / Homeopático" },
+  { value: "COZINHA_RACAO_CONCENTRADO", categoria: "Cozinha", label: "Ração / Concentrado", tags: [] },
+  { value: "COZINHA_VOLUMOSO_SILAGEM", categoria: "Cozinha", label: "Volumoso / Silagem / Feno", tags: [] },
+  { value: "COZINHA_MINERAL", categoria: "Cozinha", label: "Mineral / Mistura mineral", tags: [] },
+  { value: "COZINHA_NUCLEO_PREMIX", categoria: "Cozinha", label: "Núcleo / Pré-mistura (premix)", tags: [] },
+  { value: "COZINHA_ADITIVO", categoria: "Cozinha", label: "Aditivo (geral)", tags: [] },
+  { value: "COZINHA_TAMPONANTE", categoria: "Cozinha", label: "Tamponante (ex: bicarbonato)", tags: [] },
+  { value: "COZINHA_PROBIOTICO", categoria: "Cozinha", label: "Probiótico", tags: [] },
+  { value: "COZINHA_PREBIOTICO", categoria: "Cozinha", label: "Prebiótico", tags: [] },
+  { value: "COZINHA_LEVEDURA", categoria: "Cozinha", label: "Levedura", tags: [] },
+  { value: "COZINHA_IONOFORO", categoria: "Cozinha", label: "Ionóforo (ex: monensina/lasalocida)", tags: [] },
+  { value: "COZINHA_ANTIFUNGICO_CONSERVANTE", categoria: "Cozinha", label: "Conservante / antifúngico", tags: [] },
+  { value: "COZINHA_ADS_MICOTOXINA", categoria: "Cozinha", label: "Adsorvente de micotoxina", tags: [] },
+  { value: "COZINHA_UREIA_NNP", categoria: "Cozinha", label: "Ureia / NNP", tags: [] },
+  { value: "COZINHA_SAIS", categoria: "Cozinha", label: "Sais (sal comum, calcário, etc.)", tags: [] },
+  { value: "COZINHA_FITOTERAPICO_HOMEOPATICO", categoria: "Cozinha", label: "Fitoterápico / Homeopático", tags: [] },
 
   // === HIGIENE ===
-  { codigo: "HIGIENE_DETERGENTE_ALCALINO", categoria: "Higiene e Limpeza", label: "Detergente alcalino" },
-  { codigo: "HIGIENE_DETERGENTE_ACIDO", categoria: "Higiene e Limpeza", label: "Detergente ácido" },
-  { codigo: "HIGIENE_SANITIZANTE_CLORADO", categoria: "Higiene e Limpeza", label: "Sanitizante clorado" },
-  { codigo: "HIGIENE_AMONIO_QUATERNARIO", categoria: "Higiene e Limpeza", label: "Amônio quaternário" },
-  { codigo: "HIGIENE_PEROXIDO_PERACETICO", categoria: "Higiene e Limpeza", label: "Peróxido / Ácido peracético" },
-  { codigo: "HIGIENE_IODOFORO", categoria: "Higiene e Limpeza", label: "Iodóforo" },
-  { codigo: "HIGIENE_CLOREXIDINA", categoria: "Higiene e Limpeza", label: "Clorexidina" },
-  { codigo: "HIGIENE_DEGRAXANTE", categoria: "Higiene e Limpeza", label: "Desengraxante" },
-  { codigo: "HIGIENE_DIP_PRE_POS", categoria: "Higiene e Limpeza", label: "Pré/Pós-dip (grupo funcional)" },
-  { codigo: "HIGIENE_DESINFETANTE_GERAL", categoria: "Higiene e Limpeza", label: "Desinfetante geral" },
+  { value: "HIGIENE_DETERGENTE_ALCALINO", categoria: "Higiene e Limpeza", label: "Detergente alcalino", tags: [] },
+  { value: "HIGIENE_DETERGENTE_ACIDO", categoria: "Higiene e Limpeza", label: "Detergente ácido", tags: [] },
+  { value: "HIGIENE_SANITIZANTE_CLORADO", categoria: "Higiene e Limpeza", label: "Sanitizante clorado", tags: [] },
+  { value: "HIGIENE_AMONIO_QUATERNARIO", categoria: "Higiene e Limpeza", label: "Amônio quaternário", tags: [] },
+  { value: "HIGIENE_PEROXIDO_PERACETICO", categoria: "Higiene e Limpeza", label: "Peróxido / Ácido peracético", tags: [] },
+  { value: "HIGIENE_IODOFORO", categoria: "Higiene e Limpeza", label: "Iodóforo", tags: [] },
+  { value: "HIGIENE_CLOREXIDINA", categoria: "Higiene e Limpeza", label: "Clorexidina", tags: [] },
+  { value: "HIGIENE_DEGRAXANTE", categoria: "Higiene e Limpeza", label: "Desengraxante", tags: [] },
+  { value: "HIGIENE_DIP_PRE_POS", categoria: "Higiene e Limpeza", label: "Pré/Pós-dip (grupo funcional)", tags: [] },
+  { value: "HIGIENE_DESINFETANTE_GERAL", categoria: "Higiene e Limpeza", label: "Desinfetante geral", tags: [] },
 
   // === REPRODUÇÃO ===
-  { codigo: "REPRO_SEMEN", categoria: "Reprodução", label: "Sêmen (doses)" },
-  { codigo: "REPRO_EMBRIAO", categoria: "Reprodução", label: "Embrião" },
-  { codigo: "REPRO_NITROGENIO", categoria: "Reprodução", label: "Nitrogênio líquido" },
-  { codigo: "REPRO_MATERIAL_INSEMINACAO", categoria: "Reprodução", label: "Material de inseminação" },
-  { codigo: "REPRO_LUVAS_LUBRIFICANTE", categoria: "Reprodução", label: "Luvas / Lubrificantes" },
-  { codigo: "REPRO_MATERIAL_COLETA", categoria: "Reprodução", label: "Material de coleta / manejo repro" },
+  { value: "REPRO_SEMEN", categoria: "Reprodução", label: "Sêmen (doses)", tags: [] },
+  { value: "REPRO_EMBRIAO", categoria: "Reprodução", label: "Embrião", tags: [] },
+  { value: "REPRO_NITROGENIO", categoria: "Reprodução", label: "Nitrogênio líquido", tags: [] },
+  { value: "REPRO_MATERIAL_INSEMINACAO", categoria: "Reprodução", label: "Material de inseminação", tags: [] },
+  { value: "REPRO_LUVAS_LUBRIFICANTE", categoria: "Reprodução", label: "Luvas / Lubrificantes", tags: [] },
+  { value: "REPRO_MATERIAL_COLETA", categoria: "Reprodução", label: "Material de coleta / manejo repro", tags: [] },
 ];
 
 const CATEGORIAS_GRUPO_EQ = new Set(["Farmácia", "Cozinha", "Reprodução", "Higiene", "Higiene e Limpeza"]);
+const TAGS_POR_CODIGO = Object.fromEntries(GRUPOS_FALLBACK.map((grupo) => [grupo.value, grupo.tags || []]));
+const TAGS_TIPO_FARMACIA = [
+  { termos: ["Antibiótico"], tags: ["ANTIBIOTICO"] },
+  { termos: ["Hormônio"], tags: ["HORMONIO"] },
+  { termos: ["Anti-inflamatório"], tags: ["AINE", "CORTICOIDE"] },
+  { termos: ["Antiparasitário"], tags: ["ANTIPARASITARIO"] },
+  { termos: ["Vitaminas"], tags: ["VITAMINAS"] },
+  { termos: ["Antisséptico"], tags: ["ANTISSEPTICO"] },
+  { termos: ["Anestésico", "Sedativo"], tags: ["ANESTESICO"] },
+  { termos: ["Intra-mamário"], tags: ["INTRAMAMARIO"] },
+  { termos: ["Soluções", "Fluidoterapia"], tags: ["SOLUTION"] },
+];
 
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
   const { fazendaAtualId } = useFazenda();
@@ -244,7 +306,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
 
         if (!ativo) return;
         if (error) throw error;
-        setGruposEq(Array.isArray(data) ? data : []);
+        setGruposEq(normalizarGruposEquivalencia(data));
       } catch {
         if (!ativo) return;
         setGruposEq(GRUPOS_FALLBACK);
@@ -306,9 +368,17 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const categoriaGrupoEquivalencia = normalizarCategoriaGrupo(form.categoria);
 
   const gruposOptions = useMemo(() => {
-    const lista = (gruposEq || []).filter((g) => (g.categoria || "") === categoriaGrupoEquivalencia);
-    return lista.map((g) => ({ value: g.codigo, label: g.label }));
-  }, [gruposEq, categoriaGrupoEquivalencia]);
+    const listaBase = (gruposEq || []).filter((g) => (g.categoria || "") === categoriaGrupoEquivalencia);
+    const tagsTipoFarmacia = isFarmacia ? obterTagsTipoFarmacia(form.subTipo) : [];
+
+    if (isFarmacia && tagsTipoFarmacia.length > 0) {
+      const filtrados = listaBase.filter((grupo) => (grupo.tags || []).some((tag) => tagsTipoFarmacia.includes(tag)));
+      const listaFinal = filtrados.length > 0 ? filtrados : listaBase;
+      return listaFinal.map((g) => ({ value: g.value, label: g.label }));
+    }
+
+    return listaBase.map((g) => ({ value: g.value, label: g.label }));
+  }, [gruposEq, categoriaGrupoEquivalencia, isFarmacia, form.subTipo]);
 
   // Sugestões inteligentes (não trava nada)
   useEffect(() => {
@@ -532,6 +602,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                       setForm((f) => ({
                         ...f,
                         subTipo: v,
+                        grupoEquivalencia: f.categoria === "Farmácia" ? "" : f.grupoEquivalencia,
                         ...(v !== "Antibiótico"
                           ? {
                               carenciaLeiteDias: "",
@@ -564,6 +635,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                   />
                   <span style={fieldHint}>
                     Ex.: PROSTAGLANDINA (Sincrucil/Estron/Inducil) — o consumo automático usa isso, não o nome comercial.
+                    <br />
+                    Selecione o grupo por equivalência funcional.
                   </span>
                 </Field>
               </div>
@@ -971,6 +1044,27 @@ function derivarQtdEmbalagens({ produto, lote }) {
 function normalizarCategoriaGrupo(categoria) {
   if (categoria === "Higiene") return "Higiene e Limpeza";
   return categoria || "";
+}
+
+function normalizarGruposEquivalencia(lista) {
+  if (!Array.isArray(lista)) return [];
+  return lista
+    .map((grupo) => {
+      const codigo = grupo.value || grupo.codigo || "";
+      return {
+        value: codigo,
+        label: grupo.label || "",
+        categoria: grupo.categoria || "",
+        tags: grupo.tags || TAGS_POR_CODIGO[codigo] || [],
+      };
+    })
+    .filter((grupo) => grupo.value && grupo.label);
+}
+
+function obterTagsTipoFarmacia(tipoFarmacia) {
+  if (!tipoFarmacia) return [];
+  const match = TAGS_TIPO_FARMACIA.find((item) => item.termos.some((termo) => tipoFarmacia.includes(termo)));
+  return match ? match.tags : [];
 }
 
 /**
