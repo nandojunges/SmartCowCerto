@@ -237,12 +237,16 @@ function CadastroLoteForm({ value, onCancel, onSave }) {
 
   const [form, setForm] = useState(value || { ativo: true });
   const [errors, setErrors] = useState({});
+  const [apiError, setApiError] = useState(null);
 
   useEffect(() => setForm(value || { ativo: true }), [value]);
+  useEffect(() => setApiError(null), [value?.id]);
 
   const set = (k, v) => {
     setForm((f) => ({ ...f, [k]: v }));
     if (errors[k]) setErrors(e => ({...e, [k]: null}));
+    // se o usuário está corrigindo o nome, some com o aviso
+    if (k === "nome" && apiError) setApiError(null);
   };
 
   // Limpa campos dependentes quando troca função
@@ -266,8 +270,33 @@ function CadastroLoteForm({ value, onCancel, onSave }) {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSave = () => {
-    if (validate()) onSave(form);
+  const handleSave = async () => {
+    setApiError(null);
+    if (!validate()) return;
+    try {
+      // suporta onSave sync ou async
+      await Promise.resolve(onSave(form));
+    } catch (err) {
+      // Supabase costuma vir: { code: '23505', message: 'duplicate key value...' }
+      const code = err?.code;
+      const msg = String(err?.message || "");
+      const isDuplicate =
+        code === "23505" ||
+        msg.toLowerCase().includes("duplicate key") ||
+        msg.includes("lotes_user_nome_ux");
+
+      if (isDuplicate) {
+        setApiError("Já existe um lote com esse nome. Escolha outro nome para continuar.");
+        setErrors((e) => ({ ...e, nome: "Este nome de lote já existe" }));
+        // foca no campo nome (se existir)
+        setTimeout(() => refNome.current?.focus(), 50);
+        return;
+      }
+
+      setApiError("Não foi possível salvar o lote agora. Tente novamente.");
+      // opcional: manter no console para debug
+      console.error("Erro ao salvar lote:", err);
+    }
   };
 
   // Refs para navegação
@@ -282,6 +311,30 @@ function CadastroLoteForm({ value, onCancel, onSave }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Aviso de erro amigável */}
+      {apiError && (
+        <div style={{
+          padding: "12px 14px",
+          borderRadius: 12,
+          border: "1px solid #fecaca",
+          backgroundColor: "#fff1f2",
+          color: "#991b1b",
+          fontWeight: 700,
+          fontSize: 13,
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+        }}>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
+          <div style={{ lineHeight: 1.4 }}>
+            {apiError}
+            <div style={{ fontWeight: 600, fontSize: 12, color: "#b91c1c", marginTop: 4, opacity: 0.9 }}>
+              Dica: use um padrão tipo “Lote 1”, “Lote 2”, “Pré-parto”, “Secagem”, etc.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Card de Identificação */}
       <div style={sectionCard}>
         <div style={sectionTitle}>Identificação</div>
