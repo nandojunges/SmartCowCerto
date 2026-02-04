@@ -1094,7 +1094,11 @@ function normalizeProdutoPayload(f, isEdit) {
   const unidadeMedidaFinal = f.reutilizavel ? "uso" : String(f.unidadeMedida || "un").trim() || "un";
   const usosPorUnidadeFinal = f.reutilizavel ? toNum(f.usosPorUnidade) : null;
   const categoriaGrupo = normalizarCategoriaGrupo(f.categoria);
-  const grupoEquivalenciaFinal = CATEGORIAS_GRUPO_EQ.has(categoriaGrupo) ? f.grupoEquivalencia || null : null;
+  const grupoEquivalenciaFinal = CATEGORIAS_GRUPO_EQ.has(categoriaGrupo)
+    ? f.grupoEquivalencia && String(f.grupoEquivalencia).trim()
+      ? String(f.grupoEquivalencia).trim()
+      : null
+    : null;
 
   return {
     nome_comercial: String(f.nomeComercial || "").trim(),

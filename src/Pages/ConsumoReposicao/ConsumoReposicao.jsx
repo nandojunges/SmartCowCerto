@@ -393,6 +393,7 @@ export default function ConsumoReposicao() {
             "carencia_carne",
             "sem_carencia_leite",
             "sem_carencia_carne",
+            "grupo_equivalencia",
             "ativo",
             "created_at",
             "updated_at",
@@ -583,6 +584,9 @@ export default function ConsumoReposicao() {
         const sem_carencia_leite = !!pick(produtoPayload, "sem_carencia_leite", "semCarenciaLeite");
         const sem_carencia_carne = !!pick(produtoPayload, "sem_carencia_carne", "semCarenciaCarne");
         const ativo = pick(produtoPayload, "ativo") === false ? false : true;
+        const grupoEquivalencia = pick(produtoPayload, "grupo_equivalencia", "grupoEquivalencia");
+        const grupo_equivalencia =
+          grupoEquivalencia && String(grupoEquivalencia).trim() ? String(grupoEquivalencia).trim() : null;
         const unidadeMedidaFinal =
           String(unidade_medida || "").trim() || (reutilizavel ? "uso" : "un");
 
@@ -625,6 +629,7 @@ export default function ConsumoReposicao() {
 
           sem_carencia_leite,
           sem_carencia_carne,
+          grupo_equivalencia,
 
           ativo,
         };
@@ -662,6 +667,9 @@ export default function ConsumoReposicao() {
             throw error;
           }
           produtoRow = data;
+          if (import.meta?.env?.DEV) {
+            console.log("[DEBUG insert estoque_produtos payload]", produtoPayload);
+          }
         }
 
         const quantidadeTotal =
