@@ -676,6 +676,7 @@ export default function ConsumoReposicao() {
           pick(produtoPayload, "quantidade_total", "quantidadeTotal") ??
           entradaOpcional?.quantidade ??
           null;
+        const loteEditId = pick(produtoPayload, "_loteEditId", "loteEditId", "lote_edit_id") ?? null;
         const dataCompraRaw =
           pick(produtoPayload, "data_compra", "dataCompra") ?? entradaOpcional?.data_compra ?? null;
         const validadeRaw =
@@ -684,10 +685,52 @@ export default function ConsumoReposicao() {
           pick(produtoPayload, "valor_total", "valorTotal") ?? entradaOpcional?.valor_total ?? null;
         const observacoesRaw = pick(produtoPayload, "observacoes") ?? entradaOpcional?.observacoes ?? null;
 
-        const shouldCreateLote =
-          !!quantidadeTotal || !!dataCompraRaw || !!validadeRaw || !!valorTotalRaw;
+        const hasValoresLote = !!dataCompraRaw || !!validadeRaw || !!valorTotalRaw;
+        const shouldCreateLote = !!quantidadeTotal || hasValoresLote;
 
-        if (shouldCreateLote) {
+        if (idEdicao) {
+          if (loteEditId) {
+            const dataCompraISO = toISODateOnly(dataCompraRaw);
+            const validadeISO = toISODateOnly(validadeRaw);
+
+            const { error: eL } = await supabase
+              .from("estoque_lotes")
+              .update({
+                data_compra: dataCompraISO,
+                validade: validadeISO,
+                valor_total: numOrNull(valorTotalRaw),
+                observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
+              })
+              .eq("id", loteEditId)
+              .eq("fazenda_id", fazendaAtualId);
+
+            if (eL) {
+              logSb("[estoque_lotes:update]", eL);
+              throw eL;
+            }
+          } else if (hasValoresLote) {
+            const dataCompraISO = toISODateOnly(dataCompraRaw);
+            const validadeISO = toISODateOnly(validadeRaw);
+            const loteRow = {
+              fazenda_id: fazendaAtualId,
+              produto_id: produtoRow?.id,
+              data_compra: dataCompraISO,
+              validade: validadeISO,
+              quantidade_inicial: 0,
+              quantidade_atual: 0,
+              valor_total: numOrNull(valorTotalRaw),
+              observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
+              ativo: true,
+            };
+            if (userId) loteRow.user_id = userId;
+
+            const { error: eL } = await supabase.from("estoque_lotes").insert(loteRow);
+            if (eL) {
+              logSb("[estoque_lotes:insert]", eL);
+              throw eL;
+            }
+          }
+        } else if (shouldCreateLote) {
           const dataCompraISO = toISODateOnly(dataCompraRaw);
           const validadeISO = toISODateOnly(validadeRaw);
           const quantidadeEntrada = numOrZero(quantidadeTotal);
