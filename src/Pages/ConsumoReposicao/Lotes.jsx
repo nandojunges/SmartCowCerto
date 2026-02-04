@@ -221,9 +221,16 @@ export default function Lotes() {
     const nome = String(loteFinal?.nome || "").trim();
     const funcao = String(loteFinal?.funcao || "").trim();
 
-    if (!nome || !funcao) return alert("Preencha os campos obrigatórios.");
-    if (funcao === "Lactação" && !String(loteFinal?.nivelProducao || "").trim())
-      return alert("Informe o nível produtivo.");
+    // Validação aqui deve ser mínima; o Modal já valida e mostra bonito.
+    // Se cair aqui sem nome/função, rejeita para o Modal tratar.
+    if (!nome || !funcao) {
+      const err = { code: "VALIDATION", message: "Preencha os campos obrigatórios." };
+      throw err;
+    }
+    if (funcao === "Lactação" && !String(loteFinal?.nivelProducao || "").trim()) {
+      const err = { code: "VALIDATION", message: "Informe o nível produtivo." };
+      throw err;
+    }
 
     setLoading(true);
     setErro("");
@@ -234,6 +241,28 @@ export default function Lotes() {
     };
 
     try {
+      // =========================
+      // Pré-checagem de duplicidade (UI/UX)
+      // =========================
+      const norm = (s) => String(s || "").trim().toLowerCase();
+      const nomeNorm = norm(nome);
+      const existeMesmoNome = (Array.isArray(lotes) ? lotes : []).some((l) => {
+        const mesmoRegistro = loteFinal?.id && String(l.id) === String(loteFinal.id);
+        if (mesmoRegistro) return false;
+        // Escopo: fazenda atual
+        const mesmaFazenda =
+          !fazendaAtualId || String(l.fazenda_id || "") === String(fazendaAtualId);
+        if (!mesmaFazenda) return false;
+        return norm(l.nome) === nomeNorm;
+      });
+      if (existeMesmoNome) {
+        // Simula o padrão do Postgres para o Modal capturar e exibir aviso
+        throw {
+          code: "23505",
+          message: 'duplicate key value violates unique constraint "lotes_user_nome_ux"',
+        };
+      }
+
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         const localId = loteFinal?.id || generateLocalId();
         const loteUi = {
@@ -279,7 +308,18 @@ export default function Lotes() {
       await carregar();
     } catch (e) {
       console.error("Erro ao salvar lote:", e);
-      setErro("Não foi possível salvar o lote. Confira os campos e tente novamente.");
+      // Se for duplicidade, NÃO joga no alerta da página.
+      // Deixa o Modal tratar e mostrar o aviso "nome já existe".
+      const msg = String(e?.message || "");
+      const isDuplicate =
+        e?.code === "23505" ||
+        msg.toLowerCase().includes("duplicate key") ||
+        msg.includes("lotes_user_nome_ux");
+      if (!isDuplicate) {
+        setErro("Não foi possível salvar o lote. Confira os campos e tente novamente.");
+      }
+      // Propaga para o Modal (onSave async) exibir aviso bonito
+      throw e;
     } finally {
       setLoading(false);
     }
