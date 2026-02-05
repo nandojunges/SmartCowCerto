@@ -39,6 +39,35 @@ export default function Limpeza() {
   const [planoDe, setPlanoDe] = useState(null);
   const [excluirCicloId, setExcluirCicloId] = useState(null);
 
+  const carregarGruposFuncionais = useCallback(async () => {
+    if (!fazendaAtualId) {
+      setGruposFuncionaisOptions([]);
+      return [];
+    }
+
+    const produtosRes = await supabase
+      .from("estoque_produtos")
+      .select("grupo_funcional,categoria")
+      .eq("fazenda_id", fazendaAtualId)
+      .or("categoria.ilike.%higiene%,categoria.ilike.%limpeza%");
+
+    if (produtosRes.error) {
+      throw produtosRes.error;
+    }
+
+    const grupos = Array.from(
+      new Set(
+        (produtosRes.data || [])
+          .map((p) => String(p.grupo_funcional || "").trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+
+    const options = grupos.map((gf) => ({ value: gf, label: gf }));
+    setGruposFuncionaisOptions(options);
+    return options;
+  }, [fazendaAtualId]);
+
   const condicaoParaBanco = (condicao) => {
     const cond = parseCond(condicao);
     if (cond?.tipo === "cada") return `A cada ${Number(cond.intervalo) || 1} ordenhas`;
@@ -64,15 +93,15 @@ export default function Limpeza() {
         .eq("fazenda_id", fazendaAtualId)
         .order("nome", { ascending: true });
 
-      const produtosRes = await supabase
-        .from("estoque_produtos")
-        .select("grupo_funcional")
-        .eq("fazenda_id", fazendaAtualId)
-        .or("categoria.ilike.%higiene%,categoria.ilike.%limpeza%")
-        .not("grupo_funcional", "is", null);
+      let gruposOptions = [];
+      try {
+        gruposOptions = await carregarGruposFuncionais();
+      } catch (gruposError) {
+        console.error("Erro ao carregar grupos funcionais:", gruposError);
+      }
 
-      if (ciclosRes.error || produtosRes.error) {
-        console.error("Erro ao carregar limpeza:", ciclosRes.error || produtosRes.error);
+      if (ciclosRes.error) {
+        console.error("Erro ao carregar limpeza:", ciclosRes.error);
         setErro("Não foi possível carregar os ciclos de limpeza.");
         setLoading(false);
         return;
@@ -119,23 +148,13 @@ export default function Limpeza() {
         etapas: etapasPorCiclo[ciclo.id] || [],
       }));
 
-      const grupos = Array.from(
-        new Set(
-          (produtosRes.data || [])
-            .map((p) => String(p.grupo_funcional || "").trim())
-            .filter(Boolean)
-        )
-      ).sort((a, b) => a.localeCompare(b));
-
-      const gruposOptions = grupos.map((grupo) => ({ value: grupo, label: grupo }));
-
       setCiclos(ciclosMontados);
       setGruposFuncionaisOptions(gruposOptions);
       setLoading(false);
     };
 
     carregarDados();
-  }, [fazendaAtualId]);
+  }, [carregarGruposFuncionais, fazendaAtualId]);
 
   const tipoOptions = useMemo(() => {
     return Array.from(new Set(ciclos.map((c) => c.tipo).filter(Boolean))).sort();

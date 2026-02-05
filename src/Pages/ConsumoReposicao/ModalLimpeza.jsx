@@ -180,20 +180,21 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
     []
   );
 
-  const reactSelectStyles = useMemo(
+  const rsStyles = useMemo(
     () => ({
-      control: (base, state) => ({
+      control: (base) => ({
         ...base,
-        borderColor: state.isFocused ? "#3b82f6" : "#d1d5db",
-        borderRadius: 8,
-        minHeight: 40,
-        boxShadow: state.isFocused ? "0 0 0 1px #3b82f6" : "none",
+        borderColor: "#d1d5db",
+        borderRadius: 10,
+        minHeight: 44,
+        boxShadow: "none",
         fontSize: 14,
-        ":hover": { borderColor: state.isFocused ? "#3b82f6" : "#cbd5e1" },
+        ":hover": { borderColor: "#d1d5db" },
       }),
       valueContainer: (base) => ({ ...base, padding: "2px 12px" }),
-      placeholder: (base) => ({ ...base, color: "#9ca3af" }),
-      menu: (base) => ({ ...base, zIndex: 40 }),
+      placeholder: (base) => ({ ...base, color: "#94a3b8" }),
+      menu: (base) => ({ ...base, zIndex: 99999, borderRadius: 10 }),
+      option: (base) => ({ ...base, fontSize: 14 }),
     }),
     []
   );
@@ -371,6 +372,22 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
 
   return (
     <div style={{ maxHeight: "70vh", overflow: "auto", paddingRight: "8px" }}>
+      {!gruposFuncionaisOptions?.length && (
+        <div
+          style={{
+            marginBottom: "16px",
+            backgroundColor: "#fffbeb",
+            color: "#92400e",
+            border: "1px solid #fde68a",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            fontSize: "13px",
+          }}
+        >
+          Nenhum produto de Higiene/Limpeza encontrado no estoque. Cadastre um produto com grupo funcional.
+        </div>
+      )}
+
       <div style={styles.previewBox}>
         <span style={styles.previewLabel}>💰 Custo Estimado (Preview)</span>
         <span style={styles.previewValue}>{formatBRL(previewCusto)} / dia</span>
@@ -390,21 +407,21 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
         <div style={styles.col}>
           <label style={styles.label}>Tipo de Equipamento *</label>
           <Select
-            styles={reactSelectStyles}
+            styles={rsStyles}
             options={tipoOptions}
             value={tipoOptions.find((t) => t.value === form.tipo) || null}
             onChange={(option) => set("tipo", option?.value || "")}
-            placeholder="Selecione..."
+            placeholder="Selecione o tipo..."
           />
         </div>
         <div style={styles.col}>
           <label style={styles.label}>Frequência por dia *</label>
           <Select
-            styles={reactSelectStyles}
+            styles={rsStyles}
             options={frequenciaOptions}
             value={frequenciaOptions.find((f) => f.value === form.frequencia) || null}
             onChange={(option) => set("frequencia", Number(option?.value || 1))}
-            placeholder="Selecione..."
+            placeholder="Selecione a frequência..."
           />
         </div>
       </div>
@@ -448,11 +465,11 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
               <div style={{ flex: 2 }}>
                 <label style={styles.label}>Grupo funcional</label>
                 <Select
-                  styles={reactSelectStyles}
+                  styles={rsStyles}
                   options={gruposFuncionaisOptions || []}
                   value={(gruposFuncionaisOptions || []).find((o) => o.value === etapa.grupo_funcional) || null}
                   onChange={(option) => setEtapa(i, "grupo_funcional", option?.value || "")}
-                  placeholder={(gruposFuncionaisOptions || []).length ? "Selecione..." : "Cadastre produtos de limpeza no estoque"}
+                  placeholder={(gruposFuncionaisOptions || []).length === 0 ? "Cadastre produtos de limpeza no estoque" : "Selecione o grupo funcional..."}
                   isDisabled={!(gruposFuncionaisOptions || []).length}
                 />
               </div>
@@ -468,7 +485,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
               <div style={{ flex: 1 }}>
                 <label style={styles.label}>Unidade</label>
                 <Select
-                  styles={reactSelectStyles}
+                  styles={rsStyles}
                   options={unidadeOptions}
                   value={unidadeOptions.find((u) => u.value === etapa.unidade) || unidadeOptions[0]}
                   onChange={(option) => setEtapa(i, "unidade", option?.value || "mL")}
@@ -480,7 +497,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
               <div style={styles.col}>
                 <label style={styles.label}>Condição de Aplicação</label>
                 <Select
-                  styles={reactSelectStyles}
+                  styles={rsStyles}
                   options={condicaoOptions}
                   value={condicaoOptions.find((c) => c.value === etapa.condicao?.tipo) || condicaoOptions[0]}
                   onChange={(option) =>
