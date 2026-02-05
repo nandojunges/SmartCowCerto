@@ -255,7 +255,12 @@ export default function Inseminacao({
   const handleSalvar = () => {
     const obsFinal = [obs?.trim(), extrasResumo].filter(Boolean).join(" || ");
     onSubmit?.({
-      kind: "IA", data, touroId, inseminadorId: insId, obs: obsFinal,
+      kind: "IA",
+      data,
+      touroId,
+      touroNome: touroSel?.nome || null,
+      inseminadorId: insId,
+      obs: obsFinal,
       extras: { razao, tipoSemen, palhetas, lote },
     });
   };
