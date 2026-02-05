@@ -45,23 +45,69 @@ export default function Limpeza() {
       return [];
     }
 
-    const produtosRes = await supabase
-      .from("estoque_produtos")
-      .select("grupo_funcional,categoria")
-      .eq("fazenda_id", fazendaAtualId)
-      .or("categoria.ilike.%higiene%,categoria.ilike.%limpeza%");
+    const [higieneRes, limpezaRes] = await Promise.all([
+      supabase
+        .from("estoque_produtos")
+        .select("grupo_funcional,categoria")
+        .eq("fazenda_id", fazendaAtualId)
+        .ilike("categoria", "%higiene%"),
+      supabase
+        .from("estoque_produtos")
+        .select("grupo_funcional,categoria")
+        .eq("fazenda_id", fazendaAtualId)
+        .ilike("categoria", "%limpeza%"),
+    ]);
 
-    if (produtosRes.error) {
-      throw produtosRes.error;
+    if (higieneRes.error || limpezaRes.error) {
+      throw higieneRes.error || limpezaRes.error;
     }
+
+    const produtosData = [...(higieneRes.data || []), ...(limpezaRes.data || [])];
 
     const grupos = Array.from(
       new Set(
-        (produtosRes.data || [])
+        produtosData
           .map((p) => String(p.grupo_funcional || "").trim())
           .filter(Boolean)
       )
     ).sort((a, b) => a.localeCompare(b));
+
+    if (!grupos.length) {
+      console.warn(
+        "Nenhum grupo funcional encontrado por categoria em estoque_produtos. Executando fallback sem filtro de categoria.",
+        { fazendaAtualId }
+      );
+
+      const fallbackRes = await supabase
+        .from("estoque_produtos")
+        .select("grupo_funcional,categoria")
+        .eq("fazenda_id", fazendaAtualId)
+        .not("grupo_funcional", "is", null)
+        .limit(200);
+
+      if (fallbackRes.error) {
+        throw fallbackRes.error;
+      }
+
+      const fallbackGrupos = Array.from(
+        new Set(
+          (fallbackRes.data || [])
+            .map((p) => String(p.grupo_funcional || "").trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b));
+
+      if (!fallbackGrupos.length) {
+        console.warn(
+          "Fallback sem categoria também não retornou grupos funcionais. Verifique o nome da coluna de categoria.",
+          { fazendaAtualId, amostra: fallbackRes.data?.slice?.(0, 5) || [] }
+        );
+      }
+
+      const fallbackOptions = fallbackGrupos.map((gf) => ({ value: gf, label: gf }));
+      setGruposFuncionaisOptions(fallbackOptions);
+      return fallbackOptions;
+    }
 
     const options = grupos.map((gf) => ({ value: gf, label: gf }));
     setGruposFuncionaisOptions(options);
@@ -89,7 +135,7 @@ export default function Limpeza() {
 
       const ciclosRes = await supabase
         .from("limpeza_ciclos")
-        .select("id,nome,tipo,dias_semana,frequencia")
+        .select("id,nome,tipo_equipamento,dias_semana,frequencia_dia,ativo,created_at,updated_at")
         .eq("fazenda_id", fazendaAtualId)
         .order("nome", { ascending: true });
 
@@ -142,9 +188,9 @@ export default function Limpeza() {
       const ciclosMontados = (ciclosRes.data || []).map((ciclo) => ({
         id: ciclo.id,
         nome: ciclo.nome || "",
-        tipo: ciclo.tipo || "",
+        tipo: ciclo.tipo_equipamento || "",
         diasSemana: Array.isArray(ciclo.dias_semana) ? ciclo.dias_semana : [],
-        frequencia: Number(ciclo.frequencia) || 1,
+        frequencia: Number(ciclo.frequencia_dia) || 1,
         etapas: etapasPorCiclo[ciclo.id] || [],
       }));
 
@@ -234,9 +280,9 @@ export default function Limpeza() {
       id: cicloFinal.id || undefined,
       fazenda_id: fazendaAtualId,
       nome: String(cicloFinal.nome || "").trim(),
-      tipo: cicloFinal.tipo,
+      tipo_equipamento: cicloFinal.tipo,
       dias_semana: cicloFinal.diasSemana || [],
-      frequencia: Number(cicloFinal.frequencia) || 1,
+      frequencia_dia: Number(cicloFinal.frequencia) || 1,
     };
 
     const { data: cicloSalvo, error: cicloError } = await supabase
@@ -289,7 +335,7 @@ export default function Limpeza() {
 
     const { data: ciclosAtualizados } = await supabase
       .from("limpeza_ciclos")
-      .select("id,nome,tipo,dias_semana,frequencia")
+      .select("id,nome,tipo_equipamento,dias_semana,frequencia_dia,ativo,created_at,updated_at")
       .eq("fazenda_id", fazendaAtualId)
       .order("nome", { ascending: true });
 
@@ -321,9 +367,9 @@ export default function Limpeza() {
       (ciclosAtualizados || []).map((ciclo) => ({
         id: ciclo.id,
         nome: ciclo.nome || "",
-        tipo: ciclo.tipo || "",
+        tipo: ciclo.tipo_equipamento || "",
         diasSemana: Array.isArray(ciclo.dias_semana) ? ciclo.dias_semana : [],
-        frequencia: Number(ciclo.frequencia) || 1,
+        frequencia: Number(ciclo.frequencia_dia) || 1,
         etapas: etapasPorCiclo[ciclo.id] || [],
       }))
     );
