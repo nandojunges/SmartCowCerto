@@ -242,13 +242,16 @@ export default function Limpeza() {
 
     setLoading(true);
 
+    const cicloId = String(cicloFinal.id || "").trim() || crypto.randomUUID();
+
     const cicloPayload = {
-      id: cicloFinal.id || undefined,
+      id: cicloId,
       fazenda_id: fazendaAtualId,
       nome: String(cicloFinal.nome || "").trim(),
       tipo_equipamento: cicloFinal.tipo,
       dias_semana: cicloFinal.diasSemana || [],
       frequencia_dia: Number(cicloFinal.frequencia) || 1,
+      ativo: true,
     };
 
     const { data: cicloSalvo, error: cicloError } = await supabase
@@ -264,13 +267,13 @@ export default function Limpeza() {
       return;
     }
 
-    const cicloId = cicloSalvo?.id || cicloFinal.id;
+    const cicloIdSalvo = cicloSalvo?.id || cicloId;
 
     const { error: delEtapasError } = await supabase
       .from("limpeza_etapas")
       .delete()
       .eq("fazenda_id", fazendaAtualId)
-      .eq("ciclo_id", cicloId);
+      .eq("ciclo_id", cicloIdSalvo);
 
     if (delEtapasError) {
       console.error("Erro ao limpar etapas antigas:", delEtapasError);
@@ -281,10 +284,10 @@ export default function Limpeza() {
 
     const etapasPayload = (cicloFinal.etapas || []).map((etapa, idx) => ({
       fazenda_id: fazendaAtualId,
-      ciclo_id: cicloId,
+      ciclo_id: cicloIdSalvo,
       ordem: idx + 1,
       grupo_equivalencia: String(etapa.grupo_equivalencia || "").trim(),
-      quantidade_ml: convToMl(etapa.quantidade, etapa.unidade),
+      quantidade_ml: Number(convToMl(etapa.quantidade, etapa.unidade)),
       condicao: condicaoParaBanco(etapa.condicao),
       complementar: !!etapa.complementar,
     }));

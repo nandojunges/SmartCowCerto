@@ -220,7 +220,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
       const fallbackGrupo = gruposFuncionaisOptions[0].value;
       const etapas = (prev.etapas || []).map((etapa) => {
         const grupoAtual = String(
-          etapa?.grupo_equivalencia || etapa?.grupo_funcional || etapa?.produto || ""
+          etapa?.grupo_equivalencia || etapa?.produto || ""
         ).trim();
         return { ...etapa, grupo_equivalencia: grupoAtual || fallbackGrupo };
       });
@@ -594,7 +594,7 @@ export function PlanoSemanal({ ciclo }) {
             else if (cond.tipo === "tarde") aplicar = horario === "Tarde";
 
             if (aplicar) {
-              const grupoLabel = formatGrupoEquivalenciaLabel(e.grupo_equivalencia || e.grupo_funcional);
+              const grupoLabel = formatGrupoEquivalenciaLabel(e.grupo_equivalencia);
               itens.push(`${e.quantidade}${e.unidade} de ${grupoLabel || "—"}`);
             }
           });
