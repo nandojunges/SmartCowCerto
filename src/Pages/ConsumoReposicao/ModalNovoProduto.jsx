@@ -296,32 +296,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   }, [initial, open]);
 
   useEffect(() => {
-    let ativo = true;
-
-    (async () => {
-      try {
-        setCarregandoGrupos(true);
-        const { data, error } = await supabase
-          .from("estoque_grupos_equivalencia")
-          .select("codigo,categoria,label,ativo")
-          .eq("ativo", true)
-          .order("categoria", { ascending: true })
-          .order("label", { ascending: true });
-
-        if (!ativo) return;
-        if (error) throw error;
-        setGruposEq(normalizarGruposEquivalencia(data));
-      } catch {
-        if (!ativo) return;
-        setGruposEq(GRUPOS_FALLBACK);
-      } finally {
-        if (ativo) setCarregandoGrupos(false);
-      }
-    })();
-
-    return () => {
-      ativo = false;
-    };
+    setGruposEq(GRUPOS_FALLBACK);
+    setCarregandoGrupos(false);
   }, []);
 
   useEffect(() => {
@@ -1069,21 +1045,6 @@ function derivarQtdEmbalagens({ produto, lote }) {
 function normalizarCategoriaGrupo(categoria) {
   if (categoria === "Higiene") return "Higiene e Limpeza";
   return categoria || "";
-}
-
-function normalizarGruposEquivalencia(lista) {
-  if (!Array.isArray(lista)) return [];
-  return lista
-    .map((grupo) => {
-      const codigo = grupo.value || grupo.codigo || "";
-      return {
-        value: codigo,
-        label: grupo.label || "",
-        categoria: grupo.categoria || "",
-        tags: grupo.tags || TAGS_POR_CODIGO[codigo] || [],
-      };
-    })
-    .filter((grupo) => grupo.value && grupo.label);
 }
 
 function obterTagsTipoFarmacia(tipoFarmacia) {
