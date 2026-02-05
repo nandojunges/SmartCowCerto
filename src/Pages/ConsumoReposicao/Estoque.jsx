@@ -111,6 +111,35 @@ function safeNum(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function normUn(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+// ✅ Converte consumo "base" (tipicamente ml para higiene) para a unidade do produto quando fizer sentido.
+// Regras mínimas (sem inventar demais):
+// - Se produto está em L e consumo parece estar em ml -> divide por 1000
+// - Se produto está em ml -> mantém
+// - Caso contrário -> mantém (dietas/ração/etc. serão tratados quando a view de dietas estiver pronta)
+function consumoNaUnidadeDoProduto(consumoBase, unidadeProduto) {
+  const c = Number(consumoBase);
+  if (!Number.isFinite(c) || c <= 0) return 0;
+
+  const un = normUn(unidadeProduto);
+  const isL = un === "l" || un === "litro" || un === "litros";
+  const isMl = un === "ml";
+
+  if (isL) {
+    // heurística segura: higiene normalmente vem em ml (ex: 1000), então converte pra L.
+    // Se por algum motivo já viesse em L (ex: 1.2), dividir por 1000 quebraria.
+    // Então só converte quando o valor "parece ml" (>= 10).
+    if (c >= 10) return c / 1000;
+    return c;
+  }
+
+  if (isMl) return c;
+  return c;
+}
+
 /* ===================== ENUMS (schema Supabase) ===================== */
 const FORMA_COMPRA_ENUM = {
   EMBALADO: "EMBALADO",
@@ -321,10 +350,27 @@ export default function Estoque({ onCountChange }) {
 
         const fazId = requireFazendaId();
 
-        const { data: consumoDb, error: errConsumo } = await withFazendaId(
-          supabase.from("v_consumo_diario_produtos").select("produto_id, consumo_dia").eq("fazenda_id", fazId),
-          fazId
-        );
+        // ✅ Consumo/Dia (limpeza/dietas) - view nova: v_consumo_produto_dia
+        // Mantém fallback pra view antiga, se existir em algum ambiente.
+        let consumoDb = null;
+        let errConsumo = null;
+        {
+          const r1 = await withFazendaId(
+            supabase.from("v_consumo_produto_dia").select("produto_id, consumo_dia").eq("fazenda_id", fazId),
+            fazId
+          );
+          consumoDb = r1?.data ?? null;
+          errConsumo = r1?.error ?? null;
+        }
+
+        if (errConsumo) {
+          const r2 = await withFazendaId(
+            supabase.from("v_consumo_diario_produtos").select("produto_id, consumo_dia").eq("fazenda_id", fazId),
+            fazId
+          );
+          consumoDb = r2?.data ?? null;
+          errConsumo = r2?.error ?? null;
+        }
 
         if (errConsumo) throw errConsumo;
 
@@ -899,7 +945,8 @@ export default function Estoque({ onCountChange }) {
                     const readOnly = !!p?.meta?.readOnly;
                     const rowId = p.id || p._virtualId || idx;
                     const rowHover = hoveredRowId === rowId;
-                    const consumoDia = Number(consumoDiario[p.id]);
+                    const consumoBase = Number(consumoDiario[p.id]);
+                    const consumoDia = consumoNaUnidadeDoProduto(consumoBase, p.unidade);
                     const hasConsumo = Number.isFinite(consumoDia) && consumoDia > 0;
                     const consumoDiaLabel = hasConsumo
                       ? `${formatQtd(consumoDia)} ${p.unidade || ""}`.trim()
