@@ -1,5 +1,5 @@
 // src/pages/ConsumoReposicao/Estoque.jsx
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Select from "react-select";
 import { supabase } from "../../lib/supabaseClient";
 import { withFazendaId } from "../../lib/fazendaScope";
@@ -140,6 +140,7 @@ function normalizeFormaCompra(input, produtoUi) {
 
 export default function Estoque({ onCountChange }) {
   const { fazendaAtualId } = useFazenda();
+  const cacheInvalidadoRef = useRef(false);
   const memoData = MEMO_ESTOQUE.data || {};
 
   const categoriasFixas = useMemo(
@@ -330,6 +331,18 @@ export default function Estoque({ onCountChange }) {
 
         if (errEstoque) throw errEstoque;
 
+        console.log("[ESTOQUE] view first row:", estoqueDb?.[0]);
+        console.log(
+          "[ESTOQUE] view sample:",
+          (estoqueDb || []).slice(0, 5).map((r) => ({
+            nome: r.nome_comercial,
+            consumo: r.consumo_dia,
+            prev: r.prev_termino,
+            produto_id: r.produto_id,
+            id: r.id,
+          }))
+        );
+
         console.log(
           "[DEBUG] v_estoque_consumo_previsao rows:",
           Array.isArray(estoqueDb) ? estoqueDb.length : 0
@@ -362,8 +375,27 @@ export default function Estoque({ onCountChange }) {
           _raw: d,
         }));
 
+        console.log(
+          "[ESTOQUE] mapped sample:",
+          lista.slice(0, 5).map((p) => ({
+            nome: p.nomeComercial,
+            consumoDia: p.consumoDia,
+            prevTermino: p.prevTermino,
+            id: p.id,
+          }))
+        );
+
         const touros = normalizeTouros(tourosBase);
         lista = mesclarTourosNoEstoque(lista, touros);
+        console.log(
+          "[ESTOQUE] after merge sample:",
+          lista.slice(0, 5).map((p) => ({
+            nome: p.nomeComercial,
+            consumoDia: p.consumoDia,
+            prevTermino: p.prevTermino,
+            id: p.id,
+          }))
+        );
         console.table(
           (lista || []).slice(0, 10).map((p) => ({
             nome: p.nomeComercial,
@@ -393,7 +425,14 @@ export default function Estoque({ onCountChange }) {
   );
 
   useEffect(() => {
-    carregar(categoriaSelecionada, { force: false });
+    (async () => {
+      if (!cacheInvalidadoRef.current) {
+        await kvSet("cache:estoque:list", null);
+        MEMO_ESTOQUE = { data: null, lastAt: 0 };
+        cacheInvalidadoRef.current = true;
+      }
+      await carregar(categoriaSelecionada, { force: false });
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoriaSelecionada?.value, fazendaAtualId]);
 
@@ -494,6 +533,15 @@ export default function Estoque({ onCountChange }) {
   }, [produtosExibidos, minimos]);
 
   const hasProdutos = produtosExibidos.length > 0;
+
+  console.log(
+    "[ESTOQUE] render sample:",
+    produtosExibidos.slice(0, 5).map((p) => ({
+      nome: p.nomeComercial,
+      consumoDia: p.consumoDia,
+      prevTermino: p.prevTermino,
+    }))
+  );
 
   /* ===================== CRUD PRODUTO ===================== */
   async function salvarNovoProduto(produtoUi) {
