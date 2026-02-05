@@ -20,7 +20,7 @@ import Bezerras from "./Pages/Bezerras/Bezerras.jsx";
 import Reproducao from "./Pages/Reproducao/Reproducao.jsx";
 import Leite from "./Pages/Leite/Leite.jsx";
 import Saude from "./Pages/Saude/Saude.jsx";
-import ConsumoReposicao from "./Pages/ConsumoReposicao/ConsumoReposicao.jsx";
+import ConsumoReposicao from "./Pages/ConsumoReposicao/Estoque.jsx";
 import Financeiro from "./Pages/Financeiro/Financeiro.jsx";
 import Calendario from "./Pages/Calendario/Calendario.jsx";
 import Ajustes from "./Pages/Ajustes/Ajustes.jsx";
