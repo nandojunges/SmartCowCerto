@@ -38,6 +38,7 @@ export default function Limpeza() {
   const [modal, setModal] = useState({ open: false, index: null, ciclo: null });
   const [planoDe, setPlanoDe] = useState(null);
   const [excluirCicloId, setExcluirCicloId] = useState(null);
+  const [pausandoCiclos, setPausandoCiclos] = useState({});
 
   const carregarGruposFuncionais = useCallback(async () => {
     if (!fazendaAtualId) {
@@ -98,7 +99,7 @@ export default function Limpeza() {
     const ciclosRes = await supabase
       .from("v_limpeza_custo_ciclo")
       .select(
-        "ciclo_id,nome,tipo_equipamento,frequencia_dia,dias_semana,ativo,custo_por_execucao,custo_diario_estimado"
+        "ciclo_id,nome,tipo_equipamento,frequencia_dia,dias_semana,ativo,custo_por_execucao,custo_diario_estimado,pausado,pausado_em"
       )
       .eq("fazenda_id", fazendaAtualId)
       .eq("ativo", true)
@@ -154,7 +155,9 @@ export default function Limpeza() {
       tipo: ciclo.tipo_equipamento || "",
       diasSemana: Array.isArray(ciclo.dias_semana) ? ciclo.dias_semana : [],
       frequencia: Number(ciclo.frequencia_dia) || 1,
-      custo_diario_estimado: Number(ciclo.custo_diario_estimado) || 0,
+      pausado: Boolean(ciclo.pausado),
+      pausado_em: ciclo.pausado_em || null,
+      custo_diario_estimado: ciclo.pausado ? 0 : Number(ciclo.custo_diario_estimado) || 0,
       etapas: etapasPorCiclo[ciclo.ciclo_id] || [],
     }));
 
@@ -365,6 +368,61 @@ export default function Limpeza() {
     setExcluirCicloId(null);
   };
 
+  const togglePausa = async (ciclo) => {
+    if (!fazendaAtualId || !ciclo?.id || pausandoCiclos[ciclo.id]) return;
+
+    const proximoPausado = !ciclo.pausado;
+    const proximoPausadoEm = proximoPausado ? new Date().toISOString() : null;
+
+    setErro("");
+    setPausandoCiclos((prev) => ({ ...prev, [ciclo.id]: true }));
+
+    setCiclos((prev) =>
+      prev.map((item) =>
+        item.id === ciclo.id
+          ? {
+              ...item,
+              pausado: proximoPausado,
+              pausado_em: proximoPausadoEm,
+              custo_diario_estimado: proximoPausado ? 0 : Number(ciclo.custo_diario_estimado) || 0,
+            }
+          : item
+      )
+    );
+
+    const { error } = await supabase
+      .from("limpeza_ciclos")
+      .update({
+        pausado: proximoPausado,
+        pausado_em: proximoPausadoEm,
+      })
+      .eq("id", ciclo.id)
+      .eq("fazenda_id", fazendaAtualId);
+
+    if (error) {
+      console.error("Erro ao atualizar pausa do ciclo:", error);
+      setCiclos((prev) =>
+        prev.map((item) =>
+          item.id === ciclo.id
+            ? {
+                ...item,
+                pausado: Boolean(ciclo.pausado),
+                pausado_em: ciclo.pausado_em || null,
+                custo_diario_estimado: ciclo.pausado ? 0 : Number(ciclo.custo_diario_estimado) || 0,
+              }
+            : item
+        )
+      );
+      setErro("Não foi possível atualizar o status de pausa do ciclo.");
+    }
+
+    setPausandoCiclos((prev) => {
+      const next = { ...prev };
+      delete next[ciclo.id];
+      return next;
+    });
+  };
+
   // ===== Filtros e Sort =====
   const ciclosExibidos = useMemo(() => {
     let lista = [...ciclos];
@@ -389,7 +447,10 @@ export default function Limpeza() {
   const resumo = useMemo(() => {
     const total = ciclosExibidos.length;
     const totalEtapas = ciclosExibidos.reduce((acc, c) => acc + (c.etapas?.length || 0), 0);
-    const custoTotal = ciclosExibidos.reduce((acc, c) => acc + (Number(c.custo_diario_estimado) || 0), 0);
+    const custoTotal = ciclosExibidos.reduce(
+      (acc, c) => acc + (c.pausado ? 0 : Number(c.custo_diario_estimado) || 0),
+      0
+    );
     return {
       total,
       totalEtapas,
@@ -495,6 +556,17 @@ export default function Limpeza() {
       borderRadius: "8px",
       fontSize: "13px",
       fontWeight: 600,
+    },
+    statusBadgePausado: {
+      display: "inline-flex",
+      padding: "3px 8px",
+      borderRadius: "999px",
+      fontSize: "11px",
+      fontWeight: 600,
+      backgroundColor: "#f1f5f9",
+      color: "#475569",
+      border: "1px solid #e2e8f0",
+      marginLeft: "8px",
     },
     diasContainer: { display: "flex", gap: "4px", flexWrap: "wrap", justifyContent: "center" },
     diaBadge: {
@@ -636,7 +708,10 @@ export default function Limpeza() {
                       onMouseEnter={() => setHoveredRowId(rowId)}
                       onMouseLeave={() => setHoveredRowId(null)}
                     >
-                      <td style={{ ...styles.td, fontWeight: 600, color: "#0f172a" }}>{c.nome}</td>
+                      <td style={{ ...styles.td, fontWeight: 600, color: "#0f172a" }}>
+                        {c.nome}
+                        {c.pausado && <span style={styles.statusBadgePausado}>Pausado</span>}
+                      </td>
 
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
                         <span style={styles.tipoBadge}>{c.tipo}</span>
@@ -664,7 +739,7 @@ export default function Limpeza() {
                       </td>
 
                       <td style={{ ...styles.td, textAlign: "right" }}>
-                        <span style={styles.custoBadge}>{formatBRL(c.custo_diario_estimado || 0)}</span>
+                        <span style={styles.custoBadge}>{formatBRL(c.pausado ? 0 : c.custo_diario_estimado || 0)}</span>
                       </td>
 
                       <td style={styles.td}>
@@ -694,8 +769,13 @@ export default function Limpeza() {
                           <button style={{ ...styles.iconButton, ...styles.iconButtonDanger }} onClick={() => setExcluirCicloId(c.id)} title="Excluir">
                             🗑️
                           </button>
-                          <button style={styles.iconButton} onClick={() => setPlanoDe(c)} title="Ver Plano">
-                            📋
+                          <button
+                            style={styles.iconButton}
+                            onClick={() => togglePausa(c)}
+                            title={c.pausado ? "Retomar ciclo" : "Pausar ciclo (não gera consumo)"}
+                            disabled={!!pausandoCiclos[c.id]}
+                          >
+                            {c.pausado ? "▶" : "⏸"}
                           </button>
                         </div>
                       </td>
