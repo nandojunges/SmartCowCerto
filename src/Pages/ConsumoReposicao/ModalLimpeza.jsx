@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import Select from "react-select";
 
 /** =========================================================
  *  MODAL + SUBCOMPONENTES — LIMPEZA
@@ -149,7 +150,7 @@ export function Modal({ title, children, onClose }) {
 }
 
 /* =================== Cadastro (form modal) =================== */
-export function CadastroCicloModal({ value, onCancel, onSave, tipos, produtos, precoPorML }) {
+export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFuncionaisOptions, precoPorML }) {
   const [form, setForm] = useState(value);
   const [previewCusto, setPreviewCusto] = useState(0);
 
@@ -157,13 +158,66 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, produtos, p
     setForm(value);
   }, [value]);
 
+  const tipoOptions = useMemo(() => (tipos || []).map((t) => ({ value: t, label: t })), [tipos]);
+  const frequenciaOptions = useMemo(
+    () => [1, 2, 3, 4].map((f) => ({ value: f, label: `${f}x ao dia` })),
+    []
+  );
+  const condicaoOptions = useMemo(
+    () => [
+      { value: "sempre", label: "Sempre" },
+      { value: "manha", label: "Somente Manhã" },
+      { value: "tarde", label: "Somente Tarde" },
+      { value: "cada", label: "A cada X ordenhas" },
+    ],
+    []
+  );
+  const unidadeOptions = useMemo(
+    () => [
+      { value: "mL", label: "mL" },
+      { value: "L", label: "L" },
+    ],
+    []
+  );
+
+  const reactSelectStyles = useMemo(
+    () => ({
+      control: (base, state) => ({
+        ...base,
+        borderColor: state.isFocused ? "#3b82f6" : "#d1d5db",
+        borderRadius: 8,
+        minHeight: 40,
+        boxShadow: state.isFocused ? "0 0 0 1px #3b82f6" : "none",
+        fontSize: 14,
+        ":hover": { borderColor: state.isFocused ? "#3b82f6" : "#cbd5e1" },
+      }),
+      valueContainer: (base) => ({ ...base, padding: "2px 12px" }),
+      placeholder: (base) => ({ ...base, color: "#9ca3af" }),
+      menu: (base) => ({ ...base, zIndex: 40 }),
+    }),
+    []
+  );
+
+  useEffect(() => {
+    if (!Array.isArray(gruposFuncionaisOptions) || !gruposFuncionaisOptions.length) return;
+    setForm((prev) => {
+      if (!prev) return prev;
+      const fallbackGrupo = gruposFuncionaisOptions[0].value;
+      const etapas = (prev.etapas || []).map((etapa) => {
+        const grupoAtual = String(etapa?.grupo_funcional || etapa?.produto || "").trim();
+        return { ...etapa, grupo_funcional: grupoAtual || fallbackGrupo };
+      });
+      return { ...prev, etapas };
+    });
+  }, [gruposFuncionaisOptions]);
+
   useEffect(() => {
     const freq = Number(form.frequencia) || 1;
     const custo = (form.etapas || []).reduce((acc, e) => {
       const cond = parseCond(e.condicao);
       const vezes = vezesPorDia(cond, freq);
       const ml = convToMl(e.quantidade, e.unidade);
-      const preco = precoPorML?.[e.produto] ?? 0;
+      const preco = precoPorML?.[e.grupo_funcional] ?? 0;
       return acc + ml * vezes * preco;
     }, 0);
     setPreviewCusto(custo);
@@ -189,7 +243,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, produtos, p
     set("etapas", [
       ...form.etapas,
       {
-        produto: produtos?.[0] || "",
+        grupo_funcional: gruposFuncionaisOptions?.[0]?.value || "",
         quantidade: "",
         unidade: "mL",
         condicao: { tipo: "sempre" },
@@ -215,14 +269,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, produtos, p
       borderRadius: "8px",
       fontSize: "14px",
     },
-    select: {
-      width: "100%",
-      padding: "10px 12px",
-      border: "1px solid #d1d5db",
-      borderRadius: "8px",
-      fontSize: "14px",
-      backgroundColor: "#fff",
-    },
+    select: { width: "100%" },
     diasGrid: { display: "flex", gap: "8px", flexWrap: "wrap" },
     diaChip: {
       padding: "8px 16px",
@@ -342,28 +389,23 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, produtos, p
       <div style={styles.row}>
         <div style={styles.col}>
           <label style={styles.label}>Tipo de Equipamento *</label>
-          <select style={styles.select} value={form.tipo} onChange={(e) => set("tipo", e.target.value)}>
-            <option value="">Selecione...</option>
-            {tipos.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+          <Select
+            styles={reactSelectStyles}
+            options={tipoOptions}
+            value={tipoOptions.find((t) => t.value === form.tipo) || null}
+            onChange={(option) => set("tipo", option?.value || "")}
+            placeholder="Selecione..."
+          />
         </div>
         <div style={styles.col}>
           <label style={styles.label}>Frequência por dia *</label>
-          <select
-            style={styles.select}
-            value={form.frequencia}
-            onChange={(e) => set("frequencia", Number(e.target.value))}
-          >
-            {[1, 2, 3, 4].map((f) => (
-              <option key={f} value={f}>
-                {f}x ao dia
-              </option>
-            ))}
-          </select>
+          <Select
+            styles={reactSelectStyles}
+            options={frequenciaOptions}
+            value={frequenciaOptions.find((f) => f.value === form.frequencia) || null}
+            onChange={(option) => set("frequencia", Number(option?.value || 1))}
+            placeholder="Selecione..."
+          />
         </div>
       </div>
 
@@ -404,19 +446,15 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, produtos, p
 
             <div style={styles.row}>
               <div style={{ flex: 2 }}>
-                <label style={styles.label}>Produto</label>
-                <select
-                  style={styles.select}
-                  value={etapa.produto}
-                  onChange={(e) => setEtapa(i, "produto", e.target.value)}
-                >
-                  <option value="">Selecione...</option>
-                  {(produtos || []).map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
+                <label style={styles.label}>Grupo funcional</label>
+                <Select
+                  styles={reactSelectStyles}
+                  options={gruposFuncionaisOptions || []}
+                  value={(gruposFuncionaisOptions || []).find((o) => o.value === etapa.grupo_funcional) || null}
+                  onChange={(option) => setEtapa(i, "grupo_funcional", option?.value || "")}
+                  placeholder={(gruposFuncionaisOptions || []).length ? "Selecione..." : "Cadastre produtos de limpeza no estoque"}
+                  isDisabled={!(gruposFuncionaisOptions || []).length}
+                />
               </div>
               <div style={{ flex: 1 }}>
                 <label style={styles.label}>Qtd</label>
@@ -429,35 +467,29 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, produtos, p
               </div>
               <div style={{ flex: 1 }}>
                 <label style={styles.label}>Unidade</label>
-                <select
-                  style={styles.select}
-                  value={etapa.unidade}
-                  onChange={(e) => setEtapa(i, "unidade", e.target.value)}
-                >
-                  <option value="mL">mL</option>
-                  <option value="L">Litros</option>
-                </select>
+                <Select
+                  styles={reactSelectStyles}
+                  options={unidadeOptions}
+                  value={unidadeOptions.find((u) => u.value === etapa.unidade) || unidadeOptions[0]}
+                  onChange={(option) => setEtapa(i, "unidade", option?.value || "mL")}
+                />
               </div>
             </div>
 
             <div style={styles.row}>
               <div style={styles.col}>
                 <label style={styles.label}>Condição de Aplicação</label>
-                <select
-                  style={styles.select}
-                  value={etapa.condicao?.tipo}
-                  onChange={(e) =>
+                <Select
+                  styles={reactSelectStyles}
+                  options={condicaoOptions}
+                  value={condicaoOptions.find((c) => c.value === etapa.condicao?.tipo) || condicaoOptions[0]}
+                  onChange={(option) =>
                     setEtapa(i, "condicao", {
-                      tipo: e.target.value,
-                      intervalo: e.target.value === "cada" ? 2 : undefined,
+                      tipo: option?.value || "sempre",
+                      intervalo: option?.value === "cada" ? 2 : undefined,
                     })
                   }
-                >
-                  <option value="sempre">Sempre</option>
-                  <option value="manha">Somente Manhã</option>
-                  <option value="tarde">Somente Tarde</option>
-                  <option value="cada">A cada X ordenhas</option>
-                </select>
+                />
               </div>
 
               {etapa.condicao?.tipo === "cada" && (
@@ -528,7 +560,7 @@ export function PlanoSemanal({ ciclo }) {
             else if (cond.tipo === "manha") aplicar = horario === "Manhã";
             else if (cond.tipo === "tarde") aplicar = horario === "Tarde";
 
-            if (aplicar) itens.push(`${e.quantidade}${e.unidade} de ${e.produto}`);
+            if (aplicar) itens.push(`${e.quantidade}${e.unidade} de ${e.grupo_funcional}`);
           });
 
           if (itens.length) execs.push({ horario, itens });
