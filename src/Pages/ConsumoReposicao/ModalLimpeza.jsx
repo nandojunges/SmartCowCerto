@@ -410,6 +410,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, produtos, p
                   value={etapa.produto}
                   onChange={(e) => setEtapa(i, "produto", e.target.value)}
                 >
+                  <option value="">Selecione...</option>
                   {(produtos || []).map((p) => (
                     <option key={p} value={p}>
                       {p}
