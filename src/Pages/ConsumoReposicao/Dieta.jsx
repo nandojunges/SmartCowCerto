@@ -56,7 +56,8 @@ export default function Dieta({ onCountChange }) {
   const [excluir, setExcluir] = useState({ open: false, dieta: null });
   const [openItensDietaId, setOpenItensDietaId] = useState(null);
   const [itensByDietaId, setItensByDietaId] = useState(() => memoData.itensByDietaId ?? {});
-  const [loadingItensId, setLoadingItensId] = useState(null);
+  const [itensLoadingByDietaId, setItensLoadingByDietaId] = useState({});
+  const [itensErroByDietaId, setItensErroByDietaId] = useState({});
   const itensPopoverRef = useRef(null);
 
   const normalizeDietaCache = useCallback((cache) => {
@@ -487,6 +488,10 @@ export default function Dieta({ onCountChange }) {
         return;
       }
 
+      setOpenItensDietaId(dietaId);
+      setItensLoadingByDietaId((prev) => ({ ...prev, [dietaId]: true }));
+      setItensErroByDietaId((prev) => ({ ...prev, [dietaId]: "" }));
+
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         const cacheDietas = normalizeDietaCache(await kvGet(CACHE_DIETA_KEY));
         const dietaOffline = cacheDietas.find((item) => String(item?.id) === String(dietaId)) || dietaRow;
@@ -503,53 +508,108 @@ export default function Dieta({ onCountChange }) {
           : [{ produto: "Itens indisponíveis offline", qtd: null, un: "" }];
 
         setItensByDietaId((prev) => ({ ...prev, [dietaId]: offlineItens }));
-        setOpenItensDietaId(dietaId);
+        setItensLoadingByDietaId((prev) => ({ ...prev, [dietaId]: false }));
         return;
       }
 
       if (!fazendaAtualId) {
-        setItensByDietaId((prev) => ({
-          ...prev,
-          [dietaId]: [{ produto: "Fazenda não selecionada", qtd: null, un: "" }],
-        }));
-        setOpenItensDietaId(dietaId);
+        setItensErroByDietaId((prev) => ({ ...prev, [dietaId]: "Fazenda não selecionada" }));
+        setItensLoadingByDietaId((prev) => ({ ...prev, [dietaId]: false }));
         return;
       }
 
-      setLoadingItensId(dietaId);
       try {
-        const { data, error } = await withFazendaId(
+        const { data: itensData, error: itensError } = await withFazendaId(
           supabase
-            .from("v_dieta_itens_detalhe")
-            .select("produto_id, produto_nome, quantidade_kg_vaca, unidade")
+            .from("dietas_itens")
+            .select("produto_id, quantidade_kg_vaca, created_at")
             .eq("dieta_id", dietaId)
-            .order("produto_nome", { ascending: true }),
+            .order("created_at", { ascending: true }),
           fazendaAtualId
         );
 
-        if (error) throw error;
+        if (itensError) throw itensError;
 
-        const normalizados = (data || []).map((item) => ({
-          produto: item?.produto_nome || item?.produto_id || "Produto",
-          qtd: Number(item?.quantidade_kg_vaca ?? 0),
-          un: item?.unidade || "kg",
-        }));
+        const itens = itensData || [];
+        if (itens.length === 0) {
+          setItensByDietaId((prev) => ({ ...prev, [dietaId]: [] }));
+          setItensErroByDietaId((prev) => ({ ...prev, [dietaId]: "" }));
+          return;
+        }
+
+        const produtoIds = Array.from(new Set(itens.map((item) => item?.produto_id).filter(Boolean)));
+
+        let produtosData = [];
+        let produtosError = null;
+
+        if (produtoIds.length > 0) {
+          const { data: produtosComUnidade, error: erroProdutosComUnidade } = await withFazendaId(
+            supabase
+              .from("estoque_produtos")
+              .select("id, nome_comercial, unidade")
+              .in("id", produtoIds),
+            fazendaAtualId
+          );
+
+          if (erroProdutosComUnidade) {
+            const { data: produtosComUnidadeMedida, error: erroProdutosComUnidadeMedida } =
+              await withFazendaId(
+                supabase
+                  .from("estoque_produtos")
+                  .select("id, nome_comercial, unidade_medida")
+                  .in("id", produtoIds),
+                fazendaAtualId
+              );
+
+            produtosData = produtosComUnidadeMedida || [];
+            produtosError = erroProdutosComUnidadeMedida;
+          } else {
+            produtosData = produtosComUnidade || [];
+          }
+        }
+
+        if (produtosError) throw produtosError;
+
+        const produtoById = new Map(
+          (produtosData || []).map((produto) => [
+            String(produto.id),
+            {
+              nome: produto?.nome_comercial || `Produto ${produto?.id}`,
+              unidade: produto?.unidade || produto?.unidade_medida || "kg",
+            },
+          ])
+        );
+
+        const normalizados = itens.map((item) => {
+          const produto = produtoById.get(String(item?.produto_id));
+          return {
+            produto: produto?.nome || item?.produto_id || "Produto",
+            qtd: Number(item?.quantidade_kg_vaca ?? 0),
+            un: produto?.unidade || "kg",
+          };
+        });
 
         setItensByDietaId((prev) => ({ ...prev, [dietaId]: normalizados }));
-        setOpenItensDietaId(dietaId);
+        setItensErroByDietaId((prev) => ({ ...prev, [dietaId]: "" }));
       } catch (err) {
         console.error("Erro ao carregar itens da dieta:", err);
-        setItensByDietaId((prev) => ({
+        setItensErroByDietaId((prev) => ({
           ...prev,
-          [dietaId]: [{ produto: "Erro ao carregar itens", qtd: null, un: "" }],
+          [dietaId]: err?.message || "Erro ao carregar itens",
         }));
-        setOpenItensDietaId(dietaId);
       } finally {
-        setLoadingItensId(null);
+        setItensLoadingByDietaId((prev) => ({ ...prev, [dietaId]: false }));
       }
     },
     [fazendaAtualId, itensByDietaId, normalizeDietaCache, openItensDietaId]
   );
+
+  const atualizarPagina = useCallback(async () => {
+    setItensByDietaId({});
+    setItensErroByDietaId({});
+    setItensLoadingByDietaId({});
+    await loadDietas();
+  }, [loadDietas]);
 
   // Estilos inline modernos
   const styles = {
@@ -861,7 +921,7 @@ export default function Dieta({ onCountChange }) {
             <p style={styles.subtitle}>Planeje e acompanhe as dietas dos lotes</p>
           </div>
           <div style={styles.headerActions}>
-            <button style={styles.secondaryButton} onClick={loadDietas} disabled={atualizandoLista}>
+            <button style={styles.secondaryButton} onClick={atualizarPagina} disabled={atualizandoLista}>
               {atualizandoLista ? "Atualizando..." : "↻ Atualizar"}
             </button>
 
@@ -1045,14 +1105,18 @@ export default function Dieta({ onCountChange }) {
                             onClick={() => abrirItensDieta(dieta)}
                             title="Ver itens da dieta"
                           >
-                            {loadingItensId === dieta.id ? "…" : "📋"}
+                            {itensLoadingByDietaId[dieta.id] ? "…" : "📋"}
                           </button>
 
                           {openItensDietaId === dieta.id && (
                             <div style={styles.itensPopover}>
                               <div style={styles.itensPopoverTitle}>Itens da dieta</div>
-                              {(itensByDietaId[dieta.id] || []).length === 0 ? (
-                                <div style={styles.itensPopoverLine}>Sem itens</div>
+                              {itensLoadingByDietaId[dieta.id] ? (
+                                <div style={styles.itensPopoverLine}>Carregando…</div>
+                              ) : itensErroByDietaId[dieta.id] ? (
+                                <div style={styles.itensPopoverLine}>Erro ao carregar itens</div>
+                              ) : (itensByDietaId[dieta.id] || []).length === 0 ? (
+                                <div style={styles.itensPopoverLine}>Sem itens cadastrados</div>
                               ) : (
                                 (itensByDietaId[dieta.id] || []).map((item, idx) => (
                                   <div key={`${dieta.id}-item-${idx}`} style={styles.itensPopoverLine}>
