@@ -4,7 +4,7 @@
 // - Editar busca itens em dietas_itens para preencher ModalDieta
 // - Excluir remove do banco e recarrega
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { withFazendaId } from "../../lib/fazendaScope";
 import { useFazenda } from "../../context/FazendaContext";
@@ -54,6 +54,10 @@ export default function Dieta({ onCountChange }) {
 
   const [modal, setModal] = useState({ open: false, dieta: null });
   const [excluir, setExcluir] = useState({ open: false, dieta: null });
+  const [openItensDietaId, setOpenItensDietaId] = useState(null);
+  const [itensByDietaId, setItensByDietaId] = useState(() => memoData.itensByDietaId ?? {});
+  const [loadingItensId, setLoadingItensId] = useState(null);
+  const itensPopoverRef = useRef(null);
 
   const normalizeDietaCache = useCallback((cache) => {
     return Array.isArray(cache) ? cache : [];
@@ -75,9 +79,21 @@ export default function Dieta({ onCountChange }) {
       sortConfig,
       filtros,
       erro,
+      itensByDietaId,
     };
     MEMO_DIETA.lastAt = Date.now();
-  }, [dietas, sortConfig, filtros, erro]);
+  }, [dietas, sortConfig, filtros, erro, itensByDietaId]);
+
+  useEffect(() => {
+    const onDocMouseDown = (event) => {
+      if (!openItensDietaId) return;
+      if (itensPopoverRef.current?.contains(event.target)) return;
+      setOpenItensDietaId(null);
+    };
+
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [openItensDietaId]);
 
   useEffect(() => onCountChange?.(dietas.length), [dietas.length, onCountChange]);
 
@@ -415,6 +431,85 @@ export default function Dieta({ onCountChange }) {
     }
   }, [dietas, excluir.dieta, fazendaAtualId, loadDietas, updateCache]);
 
+  const abrirItensDieta = useCallback(
+    async (dietaRow) => {
+      const dietaId = dietaRow?.id;
+      if (!dietaId) return;
+
+      if (openItensDietaId === dietaId) {
+        setOpenItensDietaId(null);
+        return;
+      }
+
+      if (itensByDietaId[dietaId]) {
+        setOpenItensDietaId(dietaId);
+        return;
+      }
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        const cacheDietas = normalizeDietaCache(await kvGet(CACHE_DIETA_KEY));
+        const dietaOffline = cacheDietas.find((item) => String(item?.id) === String(dietaId)) || dietaRow;
+        const offlineIngredientes = Array.isArray(dietaOffline?.ingredientes)
+          ? dietaOffline.ingredientes.map((it) => ({
+              produto: it?.produto || it?.produto_nome || it?.produto_id || "Produto",
+              qtd: Number(it?.quantidade ?? it?.quantidade_kg_vaca ?? 0),
+              un: it?.un || it?.unidade_medida || "kg",
+            }))
+          : [];
+
+        const offlineItens = offlineIngredientes.length
+          ? offlineIngredientes
+          : [{ produto: "Itens indisponíveis offline", qtd: null, un: "" }];
+
+        setItensByDietaId((prev) => ({ ...prev, [dietaId]: offlineItens }));
+        setOpenItensDietaId(dietaId);
+        return;
+      }
+
+      if (!fazendaAtualId) {
+        setItensByDietaId((prev) => ({
+          ...prev,
+          [dietaId]: [{ produto: "Fazenda não selecionada", qtd: null, un: "" }],
+        }));
+        setOpenItensDietaId(dietaId);
+        return;
+      }
+
+      setLoadingItensId(dietaId);
+      try {
+        const { data, error } = await withFazendaId(
+          supabase
+            .from("dietas_itens")
+            .select("quantidade_kg_vaca, produto_id, estoque_produtos(nome_comercial, unidade_medida)")
+            .eq("dieta_id", dietaId)
+            .order("created_at", { ascending: true }),
+          fazendaAtualId
+        );
+
+        if (error) throw error;
+
+        const normalizados = (data || []).map((item) => ({
+          produto: item?.estoque_produtos?.nome_comercial || item?.produto_id || "Produto",
+          qtd: Number(item?.quantidade_kg_vaca ?? 0),
+          un: item?.estoque_produtos?.unidade_medida || "kg",
+        }));
+
+        setItensByDietaId((prev) => ({ ...prev, [dietaId]: normalizados }));
+        setOpenItensDietaId(dietaId);
+      } catch (err) {
+        console.error("Erro ao carregar itens da dieta:", err);
+        setItensByDietaId((prev) => ({
+          ...prev,
+          [dietaId]: [{ produto: "Erro ao carregar itens", qtd: null, un: "" }],
+        }));
+        setOpenItensDietaId(dietaId);
+      } finally {
+        setLoadingItensId(null);
+      }
+    },
+    [fazendaAtualId, itensByDietaId, normalizeDietaCache, openItensDietaId]
+  );
+
   // Estilos inline modernos
   const styles = {
     page: {
@@ -629,6 +724,38 @@ export default function Dieta({ onCountChange }) {
       color: "#9a3412",
       borderColor: "#fed7aa",
     },
+    itensCellWrap: {
+      display: "inline-block",
+      position: "relative",
+    },
+    itensPopover: {
+      position: "absolute",
+      top: "calc(100% + 8px)",
+      right: 0,
+      width: "320px",
+      backgroundColor: "#ffffff",
+      border: "1px solid #e2e8f0",
+      borderRadius: "10px",
+      boxShadow: "0 10px 30px rgba(15, 23, 42, 0.15)",
+      padding: "12px 14px",
+      textAlign: "left",
+      zIndex: 40,
+    },
+    itensPopoverTitle: {
+      fontSize: "12px",
+      color: "#64748b",
+      marginBottom: "8px",
+      fontWeight: 700,
+      textTransform: "uppercase",
+      letterSpacing: "0.04em",
+    },
+    itensPopoverLine: {
+      fontSize: "13px",
+      color: "#334155",
+      lineHeight: 1.4,
+      marginBottom: "6px",
+      wordBreak: "break-word",
+    },
     footer: {
       display: "flex",
       justifyContent: "space-between",
@@ -787,10 +914,6 @@ export default function Dieta({ onCountChange }) {
                   </div>
                 </th>
 
-                <th style={{ ...styles.th, textAlign: "right" }}>
-                  <span>Custo Vaca/mês</span>
-                </th>
-
                 <th style={{ ...styles.th, textAlign: "center" }}>
                   <div
                     style={{ ...styles.thSortable, justifyContent: "center" }}
@@ -802,6 +925,8 @@ export default function Dieta({ onCountChange }) {
                     )}
                   </div>
                 </th>
+
+                <th style={{ ...styles.th, textAlign: "center" }}>Itens</th>
 
                 <th style={{ ...styles.th, textAlign: "center" }}>Ações</th>
               </tr>
@@ -868,14 +993,38 @@ export default function Dieta({ onCountChange }) {
                         <span style={styles.currencyTotal}>{formatBRL(dieta.custoTotal)}</span>
                       </td>
 
-                      <td style={{ ...styles.td, textAlign: "right" }}>
-                        <span style={{ ...styles.currency, opacity: 0.8 }}>
-                          {formatBRL(Number(dieta.custoVacaDia || 0) * 30)}
-                        </span>
+                      <td style={{ ...styles.td, ...styles.tdCenter }}>
+                        <span style={styles.date}>{formatDateBR(dieta.data)}</span>
                       </td>
 
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
-                        <span style={styles.date}>{formatDateBR(dieta.data)}</span>
+                        <div style={styles.itensCellWrap} ref={openItensDietaId === dieta.id ? itensPopoverRef : null}>
+                          <button
+                            style={styles.iconButton}
+                            onClick={() => abrirItensDieta(dieta)}
+                            title="Ver itens da dieta"
+                          >
+                            {loadingItensId === dieta.id ? "…" : "📋"}
+                          </button>
+
+                          {openItensDietaId === dieta.id && (
+                            <div style={styles.itensPopover}>
+                              <div style={styles.itensPopoverTitle}>Itens da dieta</div>
+                              {(itensByDietaId[dieta.id] || []).length === 0 ? (
+                                <div style={styles.itensPopoverLine}>Sem itens</div>
+                              ) : (
+                                (itensByDietaId[dieta.id] || []).map((item, idx) => (
+                                  <div key={`${dieta.id}-item-${idx}`} style={styles.itensPopoverLine}>
+                                    • {item.produto}
+                                    {item.qtd === null || item.qtd === undefined
+                                      ? ""
+                                      : ` — ${item.qtd} ${item.un || "kg"}/vaca`}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
