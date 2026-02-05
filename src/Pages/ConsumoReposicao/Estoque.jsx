@@ -165,6 +165,7 @@ export default function Estoque({ onCountChange }) {
   const [tourosBase] = useState(() => []); // mock
 
   const [produtos, setProdutos] = useState(() => memoData.produtos ?? []);
+  const [consumoDiario, setConsumoDiario] = useState({});
   const [loading, setLoading] = useState(() => !memoData.produtos);
   const [atualizando, setAtualizando] = useState(false);
   const [erro, setErro] = useState(() => memoData.erro ?? "");
@@ -310,6 +311,7 @@ export default function Estoque({ onCountChange }) {
         if (typeof navigator !== "undefined" && !navigator.onLine) {
           const cache = normalizeEstoqueCache(await kvGet(CACHE_ESTOQUE_KEY));
           setProdutos(cache);
+          setConsumoDiario({});
           MEMO_ESTOQUE.lastAt = Date.now();
           MEMO_ESTOQUE.data = { ...(MEMO_ESTOQUE.data || {}), produtos: cache };
           setLoading(false);
@@ -318,6 +320,27 @@ export default function Estoque({ onCountChange }) {
         }
 
         const fazId = requireFazendaId();
+
+        const { data: consumoDb, error: errConsumo } = await withFazendaId(
+          supabase.from("v_consumo_diario_produtos").select("produto_id, consumo_dia").eq("fazenda_id", fazId),
+          fazId
+        );
+
+        if (errConsumo) throw errConsumo;
+
+        const consumoMap = (Array.isArray(consumoDb) ? consumoDb : []).reduce((acc, item) => {
+          const produtoId = item?.produto_id;
+          if (!produtoId) return acc;
+
+          const consumo = Number(item?.consumo_dia);
+          if (Number.isFinite(consumo)) {
+            acc[produtoId] = consumo;
+          }
+
+          return acc;
+        }, {});
+
+        setConsumoDiario(consumoMap);
 
         // ✅ PRODUTOS (schema novo tolerante)
         const { data: produtosDb, error: errP } = await withFazendaId(
@@ -403,6 +426,7 @@ export default function Estoque({ onCountChange }) {
           const cache = normalizeEstoqueCache(await kvGet(CACHE_ESTOQUE_KEY));
           setProdutos(cache);
         } catch {}
+        setConsumoDiario({});
         setErro(e?.message ? String(e.message) : "Erro ao carregar estoque (Supabase).");
       } finally {
         setLoading(false);
@@ -440,6 +464,7 @@ export default function Estoque({ onCountChange }) {
       "Comprado",
       "Em estoque",
       "Unid.",
+      "Consumo/Dia",
       "Valor em estoque (R$)",
       "Validade mais próxima",
       "Prev. término",
@@ -820,6 +845,10 @@ export default function Estoque({ onCountChange }) {
                   </th>
 
                   <th className="st-td-center col-valor">
+                    <span className="st-th-label">Consumo/Dia</span>
+                  </th>
+
+                  <th className="st-td-center col-valor">
                     <span className="st-th-label">Valor em estoque (R$)</span>
                   </th>
 
@@ -870,6 +899,20 @@ export default function Estoque({ onCountChange }) {
                     const readOnly = !!p?.meta?.readOnly;
                     const rowId = p.id || p._virtualId || idx;
                     const rowHover = hoveredRowId === rowId;
+                    const consumoDia = Number(consumoDiario[p.id]);
+                    const hasConsumo = Number.isFinite(consumoDia) && consumoDia > 0;
+                    const consumoDiaLabel = hasConsumo
+                      ? `${formatQtd(consumoDia)} ${p.unidade || ""}`.trim()
+                      : "—";
+
+                    let prevTerminoLabel = "—";
+                    if (hasConsumo) {
+                      const dias = safeNum(p.quantidade, 0) / consumoDia;
+                      if (Number.isFinite(dias) && dias >= 0) {
+                        const dataPrevista = new Date(Date.now() + dias * 24 * 60 * 60 * 1000);
+                        prevTerminoLabel = dataPrevista.toLocaleDateString("pt-BR");
+                      }
+                    }
 
                     return (
                       <tr key={rowId} className={rowHover ? "st-row-hover" : ""}>
@@ -905,6 +948,8 @@ export default function Estoque({ onCountChange }) {
 
                         <td className="st-td-center">{p.unidade || "—"}</td>
 
+                        <td className="st-td-center st-num">{consumoDiaLabel}</td>
+
                         <td className="st-td-center st-num">{formatBRL(p.valorTotal)}</td>
 
                         <td
@@ -919,7 +964,7 @@ export default function Estoque({ onCountChange }) {
                           {formatVal(p.validade)}
                         </td>
 
-                        <td className="st-td-center st-num">{p.prevTerminoDias != null ? `${p.prevTerminoDias} d` : "—"}</td>
+                        <td className="st-td-center st-num">{prevTerminoLabel}</td>
 
                         <td className="st-td-center">
                           <span className={`st-pill ${est.variant}`}>{est.label}</span>
@@ -951,7 +996,7 @@ export default function Estoque({ onCountChange }) {
 
               <tfoot>
                 <tr className="st-summary-row">
-                  <td colSpan={11}>
+                  <td colSpan={12}>
                     <div className="st-summary-row__content">
                       <span>Total de itens exibidos: {resumo.total}</span>
                       <span>Valor total: {formatBRL(resumo.valorTotal)}</span>
