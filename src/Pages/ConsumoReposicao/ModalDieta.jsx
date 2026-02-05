@@ -158,22 +158,55 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
 
   const loadProdutos = useCallback(async () => {
     setProdutosLoading(true);
+
+    // ===== OFFLINE =====
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       const cache = await kvGet(CACHE_ESTOQUE_KEY);
       const list = Array.isArray(cache) ? cache : [];
-      const cozinha = list.filter((p) => String(p?.categoria || "").toLowerCase() === CATEGORIA_INGREDIENTE);
-      setProdutosCozinha(cozinha.map((p) => ({ id: p.id, nome: p.nomeComercial || p.nome_comercial, unidade: p.unidade })));
+
+      // ✅ categoria cozinha + (se tiver quantidade) >0
+      const cozinha = list.filter((p) => {
+        const cat = String(p?.categoria || "").toLowerCase();
+        if (!cat.includes("cozinha")) return false;
+
+        const qtd = Number(
+          p?.quantidade_atual ??
+          p?.quantidade ??
+          p?.saldo ??
+          p?.estoque ??
+          p?.qtd ??
+          0
+        ) || 0;
+
+        // se não tiver qtd no cache, deixa passar
+        const hasQtd = (p?.quantidade_atual != null || p?.quantidade != null || p?.saldo != null || p?.estoque != null || p?.qtd != null);
+        return hasQtd ? qtd > 0 : true;
+      });
+
+      const normalized = cozinha.map((p) => ({
+        id: p.id,
+        nome_comercial: p.nomeComercial || p.nome_comercial || p.nome || "—",
+        unidade: p.unidade || p.unidade_medida || "un",
+        categoria: p.categoria || "cozinha",
+      }));
+
+      setProdutosCozinha(normalized);
+
+      // preços aproximados via cache
       const prices = {};
-      cozinha.forEach((p) => {
-        const qtd = safeNum(p.quantidade);
-        const total = safeNum(p.valorTotal || p.valor_total);
+      normalized.forEach((p) => {
+        const original = cozinha.find((x) => String(x.id) === String(p.id));
+        const qtd = Number(original?.quantidade ?? original?.qtd ?? 0) || 0;
+        const total = Number(original?.valorTotal ?? original?.valor_total ?? 0) || 0;
         prices[p.id] = qtd > 0 ? total / qtd : 0;
       });
+
       setPrecosMap(prices);
       setProdutosLoading(false);
       return;
     }
 
+    // ===== ONLINE =====
     if (!fazendaAtualId) {
       setProdutosCozinha([]);
       setPrecosMap({});
@@ -181,12 +214,17 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
       return;
     }
 
+    // ✅ NÃO peça colunas que não existem (isso estava causando 400)
     const { data: produtos, error } = await withFazendaId(
-      supabase.from("estoque_produtos").select("id, nome_comercial, unidade").ilike("categoria", CATEGORIA_INGREDIENTE),
+      supabase
+        .from("estoque_produtos")
+        .select("id, nome_comercial, unidade, categoria")
+        .ilike("categoria", "%cozinha%"),
       fazendaAtualId
     ).order("nome_comercial", { ascending: true });
 
     if (error) {
+      console.error("loadProdutos erro:", error);
       setProdutosCozinha([]);
       setPrecosMap({});
       setProdutosLoading(false);
@@ -196,16 +234,28 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
     const list = Array.isArray(produtos) ? produtos : [];
     setProdutosCozinha(list);
 
-    // Buscar preços
+    // ✅ preços por movimentos (mantém teu cálculo)
     const nextPrices = {};
     for (const p of list) {
-      const { data: movs } = await withFazendaId(
-        supabase.from("estoque_movimentos").select("*").eq("produto_id", p.id).in("tipo", TIPOS_ENTRADA),
+      const { data: movs, error: eMov } = await withFazendaId(
+        supabase
+          .from("estoque_movimentos")
+          .select("*")
+          .eq("produto_id", p.id)
+          .in("tipo", TIPOS_ENTRADA),
         fazendaAtualId
       ).limit(20);
+
+      if (eMov) {
+        console.warn("loadProdutos mov erro:", eMov);
+        nextPrices[p.id] = 0;
+        continue;
+      }
+
       const last = pickMostRecentRow(movs);
       nextPrices[p.id] = extractUnitPriceFromMov(last);
     }
+
     setPrecosMap(nextPrices);
     setProdutosLoading(false);
   }, [fazendaAtualId]);
