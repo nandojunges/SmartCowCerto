@@ -111,35 +111,6 @@ function safeNum(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function normUn(v) {
-  return String(v || "").trim().toLowerCase();
-}
-
-// ✅ Converte consumo "base" (tipicamente ml para higiene) para a unidade do produto quando fizer sentido.
-// Regras mínimas (sem inventar demais):
-// - Se produto está em L e consumo parece estar em ml -> divide por 1000
-// - Se produto está em ml -> mantém
-// - Caso contrário -> mantém (dietas/ração/etc. serão tratados quando a view de dietas estiver pronta)
-function consumoNaUnidadeDoProduto(consumoBase, unidadeProduto) {
-  const c = Number(consumoBase);
-  if (!Number.isFinite(c) || c <= 0) return 0;
-
-  const un = normUn(unidadeProduto);
-  const isL = un === "l" || un === "litro" || un === "litros";
-  const isMl = un === "ml";
-
-  if (isL) {
-    // heurística segura: higiene normalmente vem em ml (ex: 1000), então converte pra L.
-    // Se por algum motivo já viesse em L (ex: 1.2), dividir por 1000 quebraria.
-    // Então só converte quando o valor "parece ml" (>= 10).
-    if (c >= 10) return c / 1000;
-    return c;
-  }
-
-  if (isMl) return c;
-  return c;
-}
-
 /* ===================== ENUMS (schema Supabase) ===================== */
 const FORMA_COMPRA_ENUM = {
   EMBALADO: "EMBALADO",
@@ -194,7 +165,6 @@ export default function Estoque({ onCountChange }) {
   const [tourosBase] = useState(() => []); // mock
 
   const [produtos, setProdutos] = useState(() => memoData.produtos ?? []);
-  const [consumoDiario, setConsumoDiario] = useState({});
   const [loading, setLoading] = useState(() => !memoData.produtos);
   const [atualizando, setAtualizando] = useState(false);
   const [erro, setErro] = useState(() => memoData.erro ?? "");
@@ -340,7 +310,6 @@ export default function Estoque({ onCountChange }) {
         if (typeof navigator !== "undefined" && !navigator.onLine) {
           const cache = normalizeEstoqueCache(await kvGet(CACHE_ESTOQUE_KEY));
           setProdutos(cache);
-          setConsumoDiario({});
           MEMO_ESTOQUE.lastAt = Date.now();
           MEMO_ESTOQUE.data = { ...(MEMO_ESTOQUE.data || {}), produtos: cache };
           setLoading(false);
@@ -350,113 +319,35 @@ export default function Estoque({ onCountChange }) {
 
         const fazId = requireFazendaId();
 
-        // ✅ Consumo/Dia (limpeza/dietas) - view nova: v_consumo_produto_dia
-        // Mantém fallback pra view antiga, se existir em algum ambiente.
-        let consumoDb = null;
-        let errConsumo = null;
-        {
-          const r1 = await withFazendaId(
-            supabase.from("v_consumo_produto_dia").select("produto_id, consumo_dia").eq("fazenda_id", fazId),
-            fazId
-          );
-          consumoDb = r1?.data ?? null;
-          errConsumo = r1?.error ?? null;
-        }
-
-        if (errConsumo) {
-          const r2 = await withFazendaId(
-            supabase.from("v_consumo_diario_produtos").select("produto_id, consumo_dia").eq("fazenda_id", fazId),
-            fazId
-          );
-          consumoDb = r2?.data ?? null;
-          errConsumo = r2?.error ?? null;
-        }
-
-        if (errConsumo) throw errConsumo;
-
-        const consumoMap = (Array.isArray(consumoDb) ? consumoDb : []).reduce((acc, item) => {
-          const produtoId = item?.produto_id;
-          if (!produtoId) return acc;
-
-          const consumo = Number(item?.consumo_dia);
-          if (Number.isFinite(consumo)) {
-            acc[produtoId] = consumo;
-          }
-
-          return acc;
-        }, {});
-
-        setConsumoDiario(consumoMap);
-
-        // ✅ PRODUTOS (schema novo tolerante)
-        const { data: produtosDb, error: errP } = await withFazendaId(
+        const { data: estoqueDb, error: errEstoque } = await withFazendaId(
           supabase
-            .from("estoque_produtos")
-            .select(
-              `
-              id,
-              nome_comercial,
-              categoria,
-              unidade_medida,
-              unidade,
-              sub_tipo,
-              forma_compra,
-              tipo_embalagem,
-              tamanho_por_embalagem,
-              reutilizavel,
-              usos_por_unidade,
-              carencia_leite,
-              carencia_carne,
-              sem_carencia_leite,
-              sem_carencia_carne,
-              ativo,
-              created_at,
-              updated_at
-            `
-            ),
+            .from("v_estoque_consumo_previsao")
+            .select("*")
+            .eq("fazenda_id", fazId)
+            .order("nome_comercial", { ascending: true }),
           fazId
-        ).order("nome_comercial", { ascending: true });
+        );
 
-        if (errP) throw errP;
+        if (errEstoque) throw errEstoque;
 
-        const uiBase = (produtosDb || []).map(dbToUiProduto);
-
-        // ✅ LOTES (para "Comprado/Em estoque/Valor/Validade")
-        const ids = uiBase.map((p) => p.id).filter(Boolean);
-        let lotes = [];
-
-        if (ids.length > 0) {
-          const { data: lotesDb, error: errL } = await withFazendaId(
-            supabase
-              .from("estoque_lotes")
-              .select(
-                "id,fazenda_id,produto_id,data_compra,validade,quantidade_inicial,quantidade_atual,valor_total,observacoes,ativo,created_at"
-              ),
-            fazId
-          ).in("produto_id", ids);
-
-          if (errL) {
-            console.error("[estoque_lotes] error:", errL);
-            throw errL;
-          }
-          lotes = Array.isArray(lotesDb) ? lotesDb : [];
-        }
-
-        const agregados = agregarLotesPorProduto(lotes);
-
-        let lista = uiBase.map((p) => {
-          const agg = agregados[p.id];
-
-          return {
-            ...p,
-            compradoTotal: safeNum(agg?.compradoTotal, 0),
-            quantidade: safeNum(agg?.emEstoque, 0),
-            valorTotal: safeNum(agg?.valorTotalRestante, 0),
-            validade: agg?.validadeMaisProxima || null,
-            prevTerminoDias: null,
-            meta: p.meta || {},
-          };
-        });
+        let lista = (Array.isArray(estoqueDb) ? estoqueDb : []).map((d) => ({
+          id: d.id,
+          nomeComercial: d.nome_comercial ?? "",
+          categoria: d.categoria ?? "",
+          unidade: d.unidade_medida ?? d.unidade ?? "",
+          formaCompra: d.forma_compra ?? null,
+          tipoEmbalagem: d.tipo_embalagem ?? null,
+          tamanhoPorEmbalagem: d.tamanho_por_embalagem ?? null,
+          compradoTotal: safeNum(d.comprado_total ?? d.comprado ?? 0, 0),
+          quantidade: safeNum(d.em_estoque ?? d.quantidade ?? 0, 0),
+          valorTotal: safeNum(d.valor_em_estoque ?? d.valor_total ?? 0, 0),
+          validade: d.validade_mais_proxima ?? d.validade ?? null,
+          consumoDia: d.consumo_dia,
+          prevTermino: d.prev_termino,
+          prevTerminoDias: null,
+          meta: {},
+          _raw: d,
+        }));
 
         const touros = normalizeTouros(tourosBase);
         lista = mesclarTourosNoEstoque(lista, touros);
@@ -472,7 +363,6 @@ export default function Estoque({ onCountChange }) {
           const cache = normalizeEstoqueCache(await kvGet(CACHE_ESTOQUE_KEY));
           setProdutos(cache);
         } catch {}
-        setConsumoDiario({});
         setErro(e?.message ? String(e.message) : "Erro ao carregar estoque (Supabase).");
       } finally {
         setLoading(false);
@@ -945,21 +835,12 @@ export default function Estoque({ onCountChange }) {
                     const readOnly = !!p?.meta?.readOnly;
                     const rowId = p.id || p._virtualId || idx;
                     const rowHover = hoveredRowId === rowId;
-                    const consumoBase = Number(consumoDiario[p.id]);
-                    const consumoDia = consumoNaUnidadeDoProduto(consumoBase, p.unidade);
-                    const hasConsumo = Number.isFinite(consumoDia) && consumoDia > 0;
-                    const consumoDiaLabel = hasConsumo
-                      ? `${formatQtd(consumoDia)} ${p.unidade || ""}`.trim()
-                      : "—";
-
-                    let prevTerminoLabel = "—";
-                    if (hasConsumo) {
-                      const dias = safeNum(p.quantidade, 0) / consumoDia;
-                      if (Number.isFinite(dias) && dias >= 0) {
-                        const dataPrevista = new Date(Date.now() + dias * 24 * 60 * 60 * 1000);
-                        prevTerminoLabel = dataPrevista.toLocaleDateString("pt-BR");
-                      }
-                    }
+                    const consumoDiaValor = Number(p.consumoDia);
+                    const consumoDiaLabel =
+                      Number.isFinite(consumoDiaValor) && consumoDiaValor > 0
+                        ? formatQtd(consumoDiaValor)
+                        : "—";
+                    const prevTerminoLabel = formatDatePtBr(p.prevTermino);
 
                     return (
                       <tr key={rowId} className={rowHover ? "st-row-hover" : ""}>
@@ -1192,6 +1073,12 @@ function formatVal(v) {
   return Number.isNaN(dt.getTime()) ? String(v) : dt.toLocaleDateString("pt-BR");
 }
 
+function formatDatePtBr(v) {
+  if (v == null || String(v).trim() === "") return "—";
+  const dt = new Date(v);
+  return Number.isNaN(dt.getTime()) ? "—" : dt.toLocaleDateString("pt-BR");
+}
+
 function formatQtd(v) {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return "0";
@@ -1216,25 +1103,6 @@ const thBtnStyle = {
 };
 
 /* ===================== ADAPTERS ===================== */
-function dbToUiProduto(d) {
-  return {
-    id: d.id,
-    nomeComercial: d.nome_comercial ?? "",
-    categoria: d.categoria ?? "",
-    unidade: d.unidade_medida ?? d.unidade ?? "",
-    formaCompra: d.forma_compra ?? null,
-    tipoEmbalagem: d.tipo_embalagem ?? null,
-    tamanhoPorEmbalagem: d.tamanho_por_embalagem ?? null,
-    compradoTotal: 0,
-    quantidade: 0,
-    valorTotal: 0,
-    validade: null,
-    prevTerminoDias: null,
-    meta: {},
-    _raw: d,
-  };
-}
-
 function uiToDbProduto(p) {
   const nome = String(p?.nomeComercial || "").trim();
   const categoria = String(p?.categoria || "").trim();
@@ -1256,60 +1124,6 @@ function uiToDbProduto(p) {
         ? Number(String(p.tamanho_por_embalagem).replace(",", "."))
         : null,
   };
-}
-
-/* ===================== LOTES -> AGREGADOS (tolerante) ===================== */
-function agregarLotesPorProduto(lotesDb) {
-  const lotes = Array.isArray(lotesDb) ? lotesDb : [];
-  const by = {};
-  const hoje = new Date().toISOString().slice(0, 10);
-
-  for (const l of lotes) {
-    const pid = l.produto_id;
-    if (!pid) continue;
-
-    const qtdAtual = safeNum(l.quantidade_atual ?? l.quantidade ?? 0, 0);
-    const qtdIni = safeNum(l.quantidade_inicial ?? l.quantidade_inicial_original ?? l.quantidade ?? 0, 0);
-
-    const valorTotalLote = safeNum(l.valor_total ?? l.valor_total_pago ?? 0, 0);
-    const unit = qtdIni > 0 ? valorTotalLote / qtdIni : 0;
-
-    if (!by[pid]) {
-      by[pid] = {
-        compradoTotal: 0,
-        emEstoque: 0,
-        valorTotalRestante: 0,
-        validadeFuturaMin: null,
-        validadePassadaMin: null,
-      };
-    }
-
-    by[pid].compradoTotal += qtdIni;
-    by[pid].emEstoque += qtdAtual;
-    by[pid].valorTotalRestante += qtdAtual * unit;
-
-    const validade = l.validade ?? l.data_validade ?? null;
-
-    if (qtdAtual > 0 && validade) {
-      const validadeISO = String(validade).slice(0, 10);
-      if (validadeISO >= hoje) {
-        if (!by[pid].validadeFuturaMin || validadeISO < by[pid].validadeFuturaMin) {
-          by[pid].validadeFuturaMin = validadeISO;
-        }
-      } else if (!by[pid].validadePassadaMin || validadeISO < by[pid].validadePassadaMin) {
-        by[pid].validadePassadaMin = validadeISO;
-      }
-    }
-  }
-
-  Object.keys(by).forEach((pid) => {
-    by[pid].compradoTotal = safeNum(by[pid].compradoTotal, 0);
-    by[pid].emEstoque = safeNum(by[pid].emEstoque, 0);
-    by[pid].valorTotalRestante = safeNum(by[pid].valorTotalRestante, 0);
-    by[pid].validadeMaisProxima = by[pid].validadeFuturaMin || by[pid].validadePassadaMin || null;
-  });
-
-  return by;
 }
 
 /* ===================== TOUROS (mock) ===================== */
