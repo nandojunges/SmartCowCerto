@@ -215,15 +215,29 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
     }
 
     // ✅ NÃO peça colunas que não existem (isso estava causando 400)
-    const { data: produtos, error } = await supabase
-      .from("public.estoque_produtos")
+    const produtosQuery = supabase
+      .from("estoque_produtos")
       .select("id, nome_comercial, unidade, categoria, fazenda_id")
       .eq("fazenda_id", fazendaAtualId)
       .eq("categoria", CATEGORIA_INGREDIENTE)
       .order("nome_comercial", { ascending: true });
 
+    const { data: produtos, error } = await produtosQuery;
+
     if (error) {
-      console.error("loadProdutos erro:", error);
+      console.error("loadProdutos erro:", {
+        status: error?.status,
+        message: error?.message,
+        details: error?.details,
+        query: {
+          from: "estoque_produtos",
+          filters: {
+            fazenda_id: fazendaAtualId,
+            categoria: CATEGORIA_INGREDIENTE,
+          },
+          orderBy: "nome_comercial.asc",
+        },
+      });
       setProdutosCozinha([]);
       setPrecosMap({});
       setProdutosLoading(false);
