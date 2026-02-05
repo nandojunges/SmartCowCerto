@@ -126,6 +126,8 @@ const NavItem = ({ icon: Icon, label, description, active, onClick, color }) => 
 export default function VisaoGeral({ open = false, animal = null, initialTab = null, onClose, onSaved }) {
   const { fazendaAtualId } = useFazenda();
   const animalId = useMemo(() => animal?.id ?? animal?.animal_id ?? null, [animal]);
+  const [inseminadores, setInseminadores] = useState([]);
+  const [touros, setTouros] = useState([]);
   
   const [selectedType, setSelectedType] = useState(initialTab);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -144,6 +146,72 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  useEffect(() => {
+    const fetchInseminadores = async () => {
+      if (!open || !fazendaAtualId) {
+        setInseminadores([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("inseminadores")
+        .select("id, nome")
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("ativo", true)
+        .order("nome", { ascending: true });
+
+      if (error) {
+        console.error("Erro ao carregar inseminadores:", error);
+        setInseminadores([]);
+        return;
+      }
+
+      setInseminadores(Array.isArray(data) ? data : []);
+    };
+
+    fetchInseminadores();
+  }, [open, fazendaAtualId]);
+
+  useEffect(() => {
+    const fetchTouros = async () => {
+      if (!open || !fazendaAtualId) {
+        setTouros([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("estoque_produtos")
+        .select("id, nome_comercial, saldo, quantidade_atual, quantidade")
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("ativo", true)
+        .eq("categoria", "Reprodução")
+        .in("sub_tipo", ["Sêmen", "Embrião"])
+        .order("nome_comercial", { ascending: true });
+
+      if (error) {
+        console.error("Erro ao carregar produtos de reprodução:", error);
+        setTouros([]);
+        return;
+      }
+
+      const mapped = (Array.isArray(data) ? data : []).map((item) => ({
+        id: item.id,
+        nome: item.nome_comercial,
+        restantes: Number.isFinite(+item?.saldo)
+          ? +item.saldo
+          : Number.isFinite(+item?.quantidade_atual)
+            ? +item.quantidade_atual
+            : Number.isFinite(+item?.quantidade)
+              ? +item.quantidade
+              : undefined,
+      }));
+
+      setTouros(mapped);
+    };
+
+    fetchTouros();
+  }, [open, fazendaAtualId]);
+
   const handleClose = () => {
     setSelectedType(null);
     onClose?.();
@@ -158,6 +226,11 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
     if (!fazendaAtualId || !animalId) return alert("Dados inválidos");
     
     try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      const userId = authData?.user?.id;
+      if (!userId) throw new Error("Sessão inválida (auth.uid vazio)");
+
       if (payload.kind === "DG") {
         const mapa = { Prenhe: "POSITIVO", Vazia: "NEGATIVO", "Não vista": "PENDENTE" };
         await insertReproEvento({
@@ -165,9 +238,27 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
           animal_id: animalId,
           tipo: "DG",
           data_evento: brToISO(payload.data) || toISODate(today()),
+          user_id: userId,
           resultado_dg: mapa[payload.dg] || "PENDENTE",
           observacoes: payload?.extras?.obs,
           meta: payload?.extras,
+        });
+      } else if (payload.kind === "IA") {
+        await insertReproEvento({
+          fazenda_id: fazendaAtualId,
+          animal_id: animalId,
+          tipo: "IA",
+          data_evento: brToISO(payload.data) || toISODate(today()),
+          user_id: userId,
+          inseminador_id: payload.inseminadorId || null,
+          touro_id: payload.touroId || null,
+          touro_nome: payload.touroNome || null,
+          razao: payload?.extras?.razao || null,
+          tipo_semen: payload?.extras?.tipoSemen || null,
+          palhetas: payload?.extras?.palhetas ?? null,
+          lote: payload?.extras?.lote || null,
+          observacoes: payload.obs || null,
+          meta: payload?.extras || null,
         });
       }
       await handleSaved();
@@ -434,6 +525,8 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
             ) : (
               <FormComponent 
                 animal={animal} 
+                inseminadores={inseminadores}
+                touros={touros}
                 onSubmit={handleSubmit}
                 key={selectedType} // Força remount ao trocar de aba
               />
