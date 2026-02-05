@@ -37,9 +37,55 @@ function safeNum(n) {
 
 function parseNumBR(v) {
   if (v == null) return 0;
-  const s = String(v).trim().replace(/\./g, "").replace(",", ".");
+  const raw = String(v).trim();
+  if (!raw) return 0;
+
+  const normalized = raw.replace(/\s+/g, "");
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+
+  let s = normalized;
+  if (hasComma && hasDot) {
+    const lastComma = normalized.lastIndexOf(",");
+    const lastDot = normalized.lastIndexOf(".");
+    const decimalSep = lastComma > lastDot ? "," : ".";
+
+    s = normalized
+      .replace(decimalSep === "," ? /\./g : /,/g, "")
+      .replace(decimalSep, ".");
+  } else if (hasComma) {
+    s = normalized.replace(",", ".");
+  }
+
+  s = s.replace(/[^0-9.-]/g, "");
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
+}
+
+function parseQuantidadeKgSeguro(valorDigitado, unidadeProduto) {
+  const raw = String(valorDigitado ?? "").trim();
+  if (!raw) return 0;
+
+  const text = raw.toLowerCase();
+  const unidade = String(unidadeProduto || "").trim().toLowerCase();
+  const valorBase = parseNumBR(raw);
+  if (!Number.isFinite(valorBase) || valorBase <= 0) return 0;
+
+  if (/(^|\s)kg($|\s)/i.test(text) || text.includes("kg")) {
+    return valorBase;
+  }
+
+  if (/(^|\s)g($|\s)/i.test(text) || text.includes("g")) {
+    return valorBase / 1000;
+  }
+
+  const valorSemUnidade = valorBase >= 10 && valorBase <= 5000;
+  if (valorSemUnidade) {
+    if (unidade === "mg") return valorBase / 1_000_000;
+    if (unidade === "g" || unidade === "ml") return valorBase / 1000;
+  }
+
+  return valorBase;
 }
 
 function formatBRL(n) {
@@ -286,14 +332,15 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
     const total = ingredientes.reduce((acc, ing) => {
       if (!ing.produto_id) return acc;
       const preco = safeNum(precosMap[ing.produto_id]);
-      const qtd = parseNumBR(ing.quantidade);
+      const produto = produtosCozinha.find((p) => p.id === ing.produto_id);
+      const qtd = parseQuantidadeKgSeguro(ing.quantidade, produto?.unidade);
       return acc + preco * qtd * numVacas;
     }, 0);
     return {
       total,
       porVaca: numVacas > 0 ? total / numVacas : 0,
     };
-  }, [precosMap]);
+  }, [precosMap, produtosCozinha]);
 
   const custos = useMemo(() => calcularCustos(form.ingredientes, form.numVacas), [calcularCustos, form.ingredientes, form.numVacas]);
 
@@ -356,7 +403,11 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
   const validate = () => {
     if (!form.lote_id) return "Selecione um lote";
     if (!form.ingredientes.length) return "Adicione pelo menos um ingrediente";
-    if (form.ingredientes.some((i) => !i.produto_id || parseNumBR(i.quantidade) <= 0)) {
+    if (form.ingredientes.some((i) => {
+      if (!i.produto_id) return true;
+      const produto = produtosCozinha.find((p) => p.id === i.produto_id);
+      return parseQuantidadeKgSeguro(i.quantidade, produto?.unidade) <= 0;
+    })) {
       return "Preencha todos os ingredientes com produto e quantidade válida";
     }
     return null;
@@ -384,14 +435,18 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
     // Offline
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       const dietaId = form.id || generateLocalId();
-      const itens = form.ingredientes.map((ing) => ({
+      const itens = form.ingredientes.map((ing) => {
+        const produto = produtosCozinha.find((p) => p.id === ing.produto_id);
+        const quantidadeKgVaca = parseQuantidadeKgSeguro(ing.quantidade, produto?.unidade);
+        return ({
         fazenda_id: resolvedFazendaId,
         dieta_id: dietaId,
         produto_id: ing.produto_id,
-        quantidade_kg_vaca: parseNumBR(ing.quantidade),
+        quantidade_kg_vaca: quantidadeKgVaca,
         preco_unitario_snapshot: safeNum(precosMap[ing.produto_id]),
-        custo_parcial_snapshot: safeNum(precosMap[ing.produto_id]) * parseNumBR(ing.quantidade) * form.numVacas,
-      }));
+        custo_parcial_snapshot: safeNum(precosMap[ing.produto_id]) * quantidadeKgVaca * form.numVacas,
+      });
+      });
 
       await enqueue(form.id ? "dieta.update" : "dieta.insert", { dieta: { ...payloadDieta, id: dietaId }, itens });
 
@@ -417,14 +472,18 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
         form.id = data.id;
       }
 
-      const itens = form.ingredientes.map((ing) => ({
+      const itens = form.ingredientes.map((ing) => {
+        const produto = produtosCozinha.find((p) => p.id === ing.produto_id);
+        const quantidadeKgVaca = parseQuantidadeKgSeguro(ing.quantidade, produto?.unidade);
+        return ({
         fazenda_id: resolvedFazendaId,
         dieta_id: form.id,
         produto_id: ing.produto_id,
-        quantidade_kg_vaca: parseNumBR(ing.quantidade),
+        quantidade_kg_vaca: quantidadeKgVaca,
         preco_unitario_snapshot: safeNum(precosMap[ing.produto_id]),
-        custo_parcial_snapshot: safeNum(precosMap[ing.produto_id]) * parseNumBR(ing.quantidade) * form.numVacas,
-      }));
+        custo_parcial_snapshot: safeNum(precosMap[ing.produto_id]) * quantidadeKgVaca * form.numVacas,
+      });
+      });
 
       if (itens.length) await supabase.from("dietas_itens").insert(itens);
       onSave?.({ ...payloadDieta, id: form.id });
@@ -560,7 +619,7 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
               form.ingredientes.map((ing, idx) => {
                 const produto = produtoOptions.find((p) => p.value === ing.produto_id);
                 const precoUnit = safeNum(precosMap[ing.produto_id]);
-                const qtd = parseNumBR(ing.quantidade);
+                const qtd = parseQuantidadeKgSeguro(ing.quantidade, produto?.unidade);
                 const subtotal = precoUnit * qtd * form.numVacas;
                 const subtotalPorVaca = precoUnit * qtd;
 
@@ -582,10 +641,10 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
                     <div style={styles.inputGroup}>
                       <label style={styles.label}>Quantidade (kg/vaca)</label>
                       <input
-                        type="number"
-                        step="0.1"
+                        type="text"
                         value={ing.quantidade}
                         onChange={(e) => handleUpdateIngrediente(idx, "quantidade", e.target.value)}
+                        placeholder="ex: 0,35 ou 350g"
                         style={{ ...styles.label, height: 44, border: "1px solid #e2e8f0", borderRadius: 10, padding: "0 12px", fontWeight: 600 }}
                       />
                       {produto?.unidade && <div style={styles.calcText}>Unidade: {produto.unidade}</div>}
