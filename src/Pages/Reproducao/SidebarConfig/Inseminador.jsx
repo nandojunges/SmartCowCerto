@@ -823,22 +823,102 @@ export default function Inseminador() {
   ];
 
   useEffect(() => {
-    // Trocar por fetch real depois (mantive tua estrutura)
-    setTimeout(() => {
-      setLista([
-        { id: 1, nome: "Carlos Silva", tipo: "Inseminador", registro: "", ativo: true, taxa_concepcao: 68, observacoes: "Especialista em IATF. Melhor desempenho em animais jersey." },
-        { id: 2, nome: "João Pereira", tipo: "Veterinário", registro: "CRMV-SP 12345", ativo: true, taxa_concepcao: 72, observacoes: "" },
-        { id: 3, nome: "Maria Santos", tipo: "Técnico", registro: "", ativo: false, taxa_concepcao: 0, observacoes: "Em período de treinamento." },
-        { id: 4, nome: "Pedro Costa", tipo: "Estagiário", registro: "", ativo: true, taxa_concepcao: 58, observacoes: "" },
-        { id: 5, nome: "Ana Beatriz", tipo: "Inseminador", registro: "", ativo: true, taxa_concepcao: 74, observacoes: "Excelente em manejo de estresse." },
-      ]);
+    const fetchInseminadores = async () => {
+      if (!fazendaAtualId) {
+        setLista([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("inseminadores")
+        .select("*")
+        .eq("fazenda_id", fazendaAtualId)
+        .order("nome", { ascending: true });
+
+      if (error) {
+        console.error("Erro ao buscar inseminadores:", error);
+        setLista([]);
+      } else {
+        setLista(
+          (data ?? []).map((item) => ({
+            ...item,
+            taxa_concepcao: item.taxa_concepcao ?? 0,
+          }))
+        );
+      }
       setLoading(false);
-    }, 600);
+    };
+
+    fetchInseminadores();
   }, [fazendaAtualId]);
 
-  const handleSave = (formData) => {
-    console.log("Salvando:", formData);
-    setModalOpen(false);
+  const getAuthUid = async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      console.error("Erro ao obter auth.uid():", error);
+    }
+    return data?.user?.id ?? null;
+  };
+
+  const handleSave = async (formData) => {
+    const authUid = await getAuthUid();
+    console.log("Inseminador salvar - fazendaAtualId:", fazendaAtualId, "auth.uid():", authUid);
+
+    const payload = {
+      nome: formData.nome?.trim(),
+      tipo: formData.tipo,
+      registro: formData.registro,
+      ativo: formData.ativo,
+      observacoes: formData.observacoes,
+      fazenda_id: fazendaAtualId,
+    };
+
+    try {
+      if (editando?.id) {
+        const { data, error } = await supabase
+          .from("inseminadores")
+          .update(payload)
+          .eq("id", editando.id)
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Erro ao atualizar inseminador:", error);
+          return;
+        }
+
+        setLista((prev) =>
+          prev.map((item) =>
+            item.id === editando.id
+              ? { ...data, taxa_concepcao: data?.taxa_concepcao ?? item.taxa_concepcao ?? 0 }
+              : item
+          )
+        );
+      } else {
+        console.log("Payload insert inseminador:", payload);
+        const { data, error } = await supabase
+          .from("inseminadores")
+          .insert(payload)
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Erro ao inserir inseminador:", error);
+          return;
+        }
+
+        setLista((prev) => [
+          { ...data, taxa_concepcao: data?.taxa_concepcao ?? 0 },
+          ...prev,
+        ]);
+      }
+      setModalOpen(false);
+      setEditando(null);
+    } catch (error) {
+      console.error("Erro ao salvar inseminador:", error);
+    }
   };
 
   const ranking = useMemo(() => {
