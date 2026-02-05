@@ -531,7 +531,11 @@ export default function Reproducao() {
       case "protocolos":
         return <Protocolos />;
       case "inseminador":
-        return <Inseminador />;
+        return fazendaAtualId ? (
+          <Inseminador />
+        ) : (
+          <div style={styles.emptyState}>Selecione uma fazenda para visualizar os inseminadores.</div>
+        );
       default:
         return (
           <>
