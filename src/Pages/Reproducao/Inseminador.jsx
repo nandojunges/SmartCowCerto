@@ -933,28 +933,53 @@ export default function Inseminador() {
           )
         );
       } else {
-        console.log("Payload insert inseminador:", payload);
+        // ✅ Payload compatível com a tabela public.inseminadores
+        const payloadDb = {
+          fazenda_id: fazendaAtualId,
+          nome: String(form?.nome_profissional || form?.nome || "").trim(),
+          tipo:
+            String(form?.tipo_profissional || form?.tipo || "Inseminador").trim() ||
+            "Inseminador",
+          registro: String(form?.registro || "").trim() || null,
+          ativo: form?.ativo !== false,
+          observacoes: String(form?.observacoes || form?.observacao || "").trim() || null,
+        };
+
+        if (!payloadDb.fazenda_id)
+          throw {
+            code: "VALIDATION",
+            message: "Selecione uma fazenda antes de salvar.",
+          };
+        if (!payloadDb.nome)
+          throw { code: "VALIDATION", message: "Informe o nome do inseminador." };
+
+        console.log("Payload insert inseminador (DB):", payloadDb);
         const { data, error } = await supabase
           .from("inseminadores")
-          .insert(payload)
-          .select()
-          .single();
+          .insert(payloadDb)
+          .select("*");
 
         if (error) {
           console.error("Erro ao inserir inseminador:", error);
           return;
         }
 
+        const inserted = Array.isArray(data) ? data[0] : data;
+
         setLista((prev) => [
           {
-            ...data,
-            nome: data.nome_profissional ?? payload.nome_profissional ?? "",
-            tipo: data.tipo_profissional ?? payload.tipo_profissional ?? "",
-            registro: data.permissoes?.registro ?? payload.permissoes?.registro ?? "",
-            observacoes: data.permissoes?.observacoes ?? payload.permissoes?.observacoes ?? "",
-            ativo: data.ativo ?? payload.ativo,
-            status: data.status ?? payload.status,
-            taxa_concepcao: data?.taxa_concepcao ?? 0,
+            ...inserted,
+            nome: inserted?.nome_profissional ?? payload.nome_profissional ?? "",
+            tipo: inserted?.tipo_profissional ?? payload.tipo_profissional ?? "",
+            registro:
+              inserted?.permissoes?.registro ?? payload.permissoes?.registro ?? "",
+            observacoes:
+              inserted?.permissoes?.observacoes ??
+              payload.permissoes?.observacoes ??
+              "",
+            ativo: inserted?.ativo ?? payload.ativo,
+            status: inserted?.status ?? payload.status,
+            taxa_concepcao: inserted?.taxa_concepcao ?? 0,
           },
           ...prev,
         ]);
