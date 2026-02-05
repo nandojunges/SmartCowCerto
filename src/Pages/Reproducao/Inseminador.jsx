@@ -936,13 +936,14 @@ export default function Inseminador() {
         // ✅ Payload compatível com a tabela public.inseminadores
         const payloadDb = {
           fazenda_id: fazendaAtualId,
-          nome: String(form?.nome_profissional || form?.nome || "").trim(),
+          nome: String(formData?.nome || formData?.nome_profissional || "").trim(),
           tipo:
-            String(form?.tipo_profissional || form?.tipo || "Inseminador").trim() ||
+            String(formData?.tipo || formData?.tipo_profissional || "Inseminador").trim() ||
             "Inseminador",
-          registro: String(form?.registro || "").trim() || null,
-          ativo: form?.ativo !== false,
-          observacoes: String(form?.observacoes || form?.observacao || "").trim() || null,
+          registro: String(formData?.registro || "").trim() || null,
+          ativo: formData?.ativo !== false,
+          observacoes:
+            String(formData?.observacoes || formData?.observacao || "").trim() || null,
         };
 
         if (!payloadDb.fazenda_id)
