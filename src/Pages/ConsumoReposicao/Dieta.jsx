@@ -179,6 +179,7 @@ export default function Dieta({ onCountChange }) {
           numvacas_snapshot,
           custo_total,
           custo_vaca_dia,
+          ativo,
           observacao,
           created_at,
           lotes ( nome )
@@ -202,6 +203,7 @@ export default function Dieta({ onCountChange }) {
       numVacas: Number(r.numvacas_snapshot || 0),
       custoTotal: Number(r.custo_total || 0),
       custoVacaDia: Number(r.custo_vaca_dia || 0),
+      ativo: r.ativo !== false,
       data: dateOnlyToISO(r.dia),
       dia_db: r.dia,
       observacao: r.observacao || "",
@@ -228,6 +230,7 @@ export default function Dieta({ onCountChange }) {
         numVacas: 0,
         ingredientes: [{ produto_id: "", quantidade: "" }],
         data: new Date().toISOString(),
+        ativo: true,
         observacao: "",
       },
     });
@@ -259,6 +262,7 @@ export default function Dieta({ onCountChange }) {
               lote_nome: dietaRow.lote,
               numVacas: dietaRow.numVacas,
               data: dietaRow.data,
+              ativo: dietaRow.ativo !== false,
               observacao: dietaRow.observacao || "",
               ingredientes,
             },
@@ -293,6 +297,7 @@ export default function Dieta({ onCountChange }) {
             lote_nome: dietaRow.lote,
             numVacas: dietaRow.numVacas,
             data: dietaRow.data,
+            ativo: dietaRow.ativo !== false,
             observacao: dietaRow.observacao || "",
             ingredientes: ingredientes.length ? ingredientes : [{ produto_id: "", quantidade: "" }],
           },
@@ -327,6 +332,44 @@ export default function Dieta({ onCountChange }) {
       await loadDietas();
     },
     [dietas, loadDietas, updateCache]
+  );
+
+  const toggleAtivo = useCallback(
+    async (dieta) => {
+      if (!dieta?.id) return;
+
+      const novoValor = !(dieta.ativo !== false);
+      const currentList = Array.isArray(dietas) ? dietas : [];
+      const nextList = currentList.map((item) =>
+        String(item.id) === String(dieta.id) ? { ...item, ativo: novoValor } : item
+      );
+
+      setErro("");
+      await updateCache(nextList);
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await enqueue("dieta.toggleAtivo", { id: dieta.id, ativo: novoValor });
+        return;
+      }
+
+      if (!fazendaAtualId) {
+        setErro("Selecione uma fazenda para alterar o status da dieta.");
+        return;
+      }
+
+      const { error } = await withFazendaId(
+        supabase.from("dietas").update({ ativo: novoValor }),
+        fazendaAtualId
+      ).eq("id", dieta.id);
+
+      if (error) {
+        console.error("Erro toggleAtivo dieta:", error);
+        await updateCache(currentList);
+        setErro(error?.message || "Erro ao alterar o status da dieta.");
+        await loadDietas();
+      }
+    },
+    [dietas, fazendaAtualId, loadDietas, updateCache]
   );
 
   /** ===================== EXCLUIR ===================== */
@@ -528,6 +571,10 @@ export default function Dieta({ onCountChange }) {
       fontSize: "13px",
       fontWeight: 600,
     },
+    loteBadgeInativo: {
+      backgroundColor: "#fef3c7",
+      color: "#92400e",
+    },
     numVacas: {
       fontFamily: "monospace",
       fontSize: "14px",
@@ -576,6 +623,11 @@ export default function Dieta({ onCountChange }) {
     },
     iconButtonDanger: {
       color: "#ef4444",
+    },
+    iconButtonToggleInativo: {
+      backgroundColor: "#fff7ed",
+      color: "#9a3412",
+      borderColor: "#fed7aa",
     },
     footer: {
       display: "flex",
@@ -793,7 +845,15 @@ export default function Dieta({ onCountChange }) {
                       onMouseLeave={() => setHoveredRowId(null)}
                     >
                       <td style={styles.td}>
-                        <span style={styles.loteBadge}>{dieta.lote}</span>
+                        <span
+                          style={{
+                            ...styles.loteBadge,
+                            ...(dieta.ativo === false ? styles.loteBadgeInativo : {}),
+                          }}
+                        >
+                          {dieta.lote}
+                          {dieta.ativo === false ? " (Pausada)" : ""}
+                        </span>
                       </td>
 
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
@@ -820,6 +880,18 @@ export default function Dieta({ onCountChange }) {
 
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
                         <div style={styles.actionButtons}>
+                          <button
+                            style={{
+                              ...styles.iconButton,
+                              ...(dieta.ativo === false ? styles.iconButtonToggleInativo : {}),
+                            }}
+                            onClick={() => toggleAtivo(dieta)}
+                            title={dieta.ativo === false ? "Ativar dieta" : "Pausar dieta"}
+                            disabled={loadingModal}
+                          >
+                            {dieta.ativo === false ? "▶️" : "⏸"}
+                          </button>
+
                           <button
                             style={styles.iconButton}
                             onClick={() => abrirEditar(dieta)}

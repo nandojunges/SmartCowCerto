@@ -114,6 +114,7 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
     lote_nome: "",
     numVacas: 0,
     data: new Date().toISOString(),
+    ativo: true,
     observacao: "",
     ingredientes: [],
   });
@@ -127,6 +128,7 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
         lote_nome: value.lote_nome ?? "",
         numVacas: Number(value.numVacas || value.numvacas_snapshot || 0),
         data: value.data || new Date().toISOString(),
+        ativo: value.ativo !== false,
         observacao: value.observacao ?? "",
         ingredientes: Array.isArray(value.ingredientes) ? value.ingredientes : [],
       });
@@ -375,6 +377,7 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
       numvacas_snapshot: form.numVacas,
       custo_total: custos.total,
       custo_vaca_dia: custos.porVaca,
+      ativo: form.id ? form.ativo !== false : true,
       observacao: form.observacao || null,
     };
 
