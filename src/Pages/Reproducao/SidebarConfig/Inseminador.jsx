@@ -833,19 +833,28 @@ export default function Inseminador() {
       setLoading(true);
       const { data, error } = await supabase
         .from("inseminadores")
-        .select("*")
+        .select("id, fazenda_id, user_id, ativo, status, tipo_profissional, nome_profissional, permissoes, created_at, updated_at")
         .eq("fazenda_id", fazendaAtualId)
-        .order("nome", { ascending: true });
+        .order("nome_profissional", { ascending: true });
 
       if (error) {
         console.error("Erro ao buscar inseminadores:", error);
         setLista([]);
       } else {
         setLista(
-          (data ?? []).map((item) => ({
-            ...item,
-            taxa_concepcao: item.taxa_concepcao ?? 0,
-          }))
+          (data ?? []).map((item) => {
+            const permissoes = item?.permissoes ?? {};
+            return {
+              ...item,
+              nome: item.nome_profissional ?? "",
+              tipo: item.tipo_profissional ?? "",
+              registro: permissoes?.registro ?? "",
+              observacoes: permissoes?.observacoes ?? "",
+              ativo: item.ativo ?? true,
+              status: item.status ?? (item.ativo ? "ATIVO" : "INATIVO"),
+              taxa_concepcao: item.taxa_concepcao ?? 0,
+            };
+          })
         );
       }
       setLoading(false);
@@ -863,15 +872,26 @@ export default function Inseminador() {
   };
 
   const handleSave = async (formData) => {
+    if (!fazendaAtualId) {
+      console.warn("Tentativa de salvar inseminador sem fazenda selecionada.");
+      return;
+    }
+
     const authUid = await getAuthUid();
     console.log("Inseminador salvar - fazendaAtualId:", fazendaAtualId, "auth.uid():", authUid);
 
+    const permissoes = {
+      registro: formData.registro ?? "",
+      observacoes: formData.observacoes ?? "",
+    };
+    const status = formData.ativo ? "ATIVO" : "INATIVO";
     const payload = {
-      nome: formData.nome?.trim(),
-      tipo: formData.tipo,
-      registro: formData.registro,
+      nome_profissional: formData.nome?.trim(),
+      tipo_profissional: formData.tipo,
       ativo: formData.ativo,
-      observacoes: formData.observacoes,
+      status,
+      permissoes,
+      user_id: authUid,
       fazenda_id: fazendaAtualId,
     };
 
@@ -879,7 +899,14 @@ export default function Inseminador() {
       if (editando?.id) {
         const { data, error } = await supabase
           .from("inseminadores")
-          .update(payload)
+          .update({
+            nome_profissional: payload.nome_profissional,
+            tipo_profissional: payload.tipo_profissional,
+            ativo: payload.ativo,
+            status: payload.status,
+            permissoes: payload.permissoes,
+            user_id: payload.user_id,
+          })
           .eq("id", editando.id)
           .select()
           .single();
@@ -892,7 +919,16 @@ export default function Inseminador() {
         setLista((prev) =>
           prev.map((item) =>
             item.id === editando.id
-              ? { ...data, taxa_concepcao: data?.taxa_concepcao ?? item.taxa_concepcao ?? 0 }
+              ? {
+                  ...data,
+                  nome: data.nome_profissional ?? item.nome,
+                  tipo: data.tipo_profissional ?? item.tipo,
+                  registro: data.permissoes?.registro ?? item.registro,
+                  observacoes: data.permissoes?.observacoes ?? item.observacoes,
+                  ativo: data.ativo ?? item.ativo,
+                  status: data.status ?? item.status,
+                  taxa_concepcao: data?.taxa_concepcao ?? item.taxa_concepcao ?? 0,
+                }
               : item
           )
         );
@@ -910,7 +946,16 @@ export default function Inseminador() {
         }
 
         setLista((prev) => [
-          { ...data, taxa_concepcao: data?.taxa_concepcao ?? 0 },
+          {
+            ...data,
+            nome: data.nome_profissional ?? payload.nome_profissional ?? "",
+            tipo: data.tipo_profissional ?? payload.tipo_profissional ?? "",
+            registro: data.permissoes?.registro ?? payload.permissoes?.registro ?? "",
+            observacoes: data.permissoes?.observacoes ?? payload.permissoes?.observacoes ?? "",
+            ativo: data.ativo ?? payload.ativo,
+            status: data.status ?? payload.status,
+            taxa_concepcao: data?.taxa_concepcao ?? 0,
+          },
           ...prev,
         ]);
       }

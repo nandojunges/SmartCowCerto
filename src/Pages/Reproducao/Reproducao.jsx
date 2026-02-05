@@ -523,43 +523,27 @@ export default function Reproducao() {
     </div>
   );
 
-  // =========================
-  // Conteúdo pela aba ativa
-  // =========================
-  const ConteudoAtivo = (() => {
-    switch (abaAtiva) {
-      case "protocolos":
-        return <Protocolos />;
-      case "inseminador":
-        return fazendaAtualId ? (
-          <Inseminador />
-        ) : (
-          <div style={styles.emptyState}>Selecione uma fazenda para visualizar os inseminadores.</div>
-        );
-      default:
-        return (
-          <>
-            <div style={styles.statusBar}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    backgroundColor: carregando ? "#f59e0b" : "#22c55e",
-                  }}
-                />
-                <span>{carregando ? "Carregando..." : `${linhas.length} animais`}</span>
-              </div>
-              <span style={{ color: "#cbd5e1" }}>•</span>
-              <span>{fazendaAtualId ? "Dados atualizados" : "Selecione uma fazenda"}</span>
-            </div>
+  const conteudoTabela = (
+    <>
+      <div style={styles.statusBar}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              backgroundColor: carregando ? "#f59e0b" : "#22c55e",
+            }}
+          />
+          <span>{carregando ? "Carregando..." : `${linhas.length} animais`}</span>
+        </div>
+        <span style={{ color: "#cbd5e1" }}>•</span>
+        <span>{fazendaAtualId ? "Dados atualizados" : "Selecione uma fazenda"}</span>
+      </div>
 
-            {TabelaModerna}
-          </>
-        );
-    }
-  })();
+      {TabelaModerna}
+    </>
+  );
 
   // =========================
   // Hover CSS real
@@ -583,7 +567,19 @@ export default function Reproducao() {
     <section style={styles.page}>
       <SidebarConfig abaAtiva={abaAtiva} onChangeAba={setAbaAtiva} />
 
-      <div style={styles.content}>{ConteudoAtivo}</div>
+      <div style={styles.content}>
+        <div style={{ display: abaAtiva === "protocolos" ? "block" : "none" }}>
+          <Protocolos />
+        </div>
+        <div style={{ display: abaAtiva === "inseminador" ? "block" : "none" }}>
+          {fazendaAtualId ? (
+            <Inseminador />
+          ) : (
+            <div style={styles.emptyState}>Selecione uma fazenda para visualizar os inseminadores.</div>
+          )}
+        </div>
+        <div style={{ display: abaAtiva === "tabela" ? "block" : "none" }}>{conteudoTabela}</div>
+      </div>
 
       <Manejo
         open={!!animalSelecionado}
