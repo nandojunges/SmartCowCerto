@@ -181,7 +181,7 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
 
       const { data, error } = await supabase
         .from("estoque_produtos")
-        .select("id, nome_comercial, saldo, quantidade_atual, quantidade")
+        .select("id, nome_comercial, categoria, sub_tipo, ativo")
         .eq("fazenda_id", fazendaAtualId)
         .eq("ativo", true)
         .eq("categoria", "Reprodução")
@@ -197,13 +197,7 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
       const mapped = (Array.isArray(data) ? data : []).map((item) => ({
         id: item.id,
         nome: item.nome_comercial,
-        restantes: Number.isFinite(+item?.saldo)
-          ? +item.saldo
-          : Number.isFinite(+item?.quantidade_atual)
-            ? +item.quantidade_atual
-            : Number.isFinite(+item?.quantidade)
-              ? +item.quantidade
-              : undefined,
+        restantes: undefined,
       }));
 
       setTouros(mapped);
