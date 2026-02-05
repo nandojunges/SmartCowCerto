@@ -372,20 +372,7 @@ export default function Reproducao() {
     <div style={styles.card}>
       <div style={styles.tableContainer}>
         <table style={styles.table} className="repro-table">
-          <colgroup>
-            <col style={{ width: 170 }} /> {/* Animal (com brinco dentro) */}
-            <col style={{ width: 110 }} /> {/* Categoria */}
-            <col style={{ width: 80 }} />  {/* Idade */}
-            <col style={{ width: 90 }} />  {/* Lactações */}
-            <col style={{ width: 160 }} /> {/* Situação Repro */}
-            <col style={{ width: 70 }} />  {/* DEL */}
-            <col style={{ width: 110 }} /> {/* Última IA */}
-            <col style={{ width: 70 }} />  {/* IAs */}
-            <col style={{ width: 120 }} /> {/* Último Parto */}
-            <col style={{ width: 130 }} /> {/* Última Secagem */}
-            <col style={{ width: 140 }} /> {/* Situação Prod */}
-            <col style={{ width: 90 }} />  {/* Ações */}
-          </colgroup>
+          <colgroup><col style={{ width: 170 }} /><col style={{ width: 110 }} /><col style={{ width: 80 }} /><col style={{ width: 90 }} /><col style={{ width: 160 }} /><col style={{ width: 70 }} /><col style={{ width: 110 }} /><col style={{ width: 70 }} /><col style={{ width: 120 }} /><col style={{ width: 130 }} /><col style={{ width: 140 }} /><col style={{ width: 90 }} /></colgroup>
 
           <thead>
             <tr>
