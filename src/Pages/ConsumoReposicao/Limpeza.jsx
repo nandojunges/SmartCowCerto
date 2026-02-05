@@ -23,6 +23,7 @@ import {
 
 /* ==================== Componente principal ==================== */
 export default function Limpeza() {
+  const MENSAGEM_NOME_DUPLICADO = "Já existe um ciclo com esse nome nesta fazenda. Use outro nome.";
   const { fazendaAtualId } = useFazenda();
 
   const [precoPorML] = useState({});
@@ -36,6 +37,7 @@ export default function Limpeza() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [filtros, setFiltros] = useState({ tipo: "__ALL__" });
   const [modal, setModal] = useState({ open: false, index: null, ciclo: null });
+  const [erroModal, setErroModal] = useState({ mensagem: "", nomeDuplicado: false });
   const [planoDe, setPlanoDe] = useState(null);
   const [excluirCicloId, setExcluirCicloId] = useState(null);
   const [pausandoCiclos, setPausandoCiclos] = useState({});
@@ -211,33 +213,56 @@ export default function Limpeza() {
 
   // ===== Ações CRUD =====
   const abrirCadastro = () =>
-    setModal({
-      open: true,
-      index: null,
-      ciclo: {
-        id: null,
-        nome: "",
-        tipo: "Ordenhadeira",
-        diasSemana: [1, 2, 3, 4, 5],
-        frequencia: 2,
-        etapas: [
-          {
-            grupo_equivalencia: gruposFuncionaisOptions[0]?.value || "",
-            quantidade: "",
-            unidade: "mL",
-            condicao: { tipo: "sempre" },
-            complementar: false,
-          },
-        ],
-      },
-    });
+    {
+      setErroModal({ mensagem: "", nomeDuplicado: false });
+      setModal({
+        open: true,
+        index: null,
+        ciclo: {
+          id: null,
+          nome: "",
+          tipo: "Ordenhadeira",
+          diasSemana: [1, 2, 3, 4, 5],
+          frequencia: 2,
+          etapas: [
+            {
+              grupo_equivalencia: gruposFuncionaisOptions[0]?.value || "",
+              quantidade: "",
+              unidade: "mL",
+              condicao: { tipo: "sempre" },
+              complementar: false,
+            },
+          ],
+        },
+      });
+    };
 
   const abrirEdicao = (ciclo) =>
-    setModal({
-      open: true,
-      index: null,
-      ciclo: JSON.parse(JSON.stringify(ciclo)),
+    {
+      setErroModal({ mensagem: "", nomeDuplicado: false });
+      setModal({
+        open: true,
+        index: null,
+        ciclo: JSON.parse(JSON.stringify(ciclo)),
+      });
+    };
+
+  const normalizeNome = (nome) => String(nome || "").trim().toLowerCase();
+
+  const nomeDuplicado = (nome, idAtual) => {
+    const nomeNormalizado = normalizeNome(nome);
+    if (!nomeNormalizado) return false;
+
+    return ciclos.some((ciclo) => {
+      const mesmoId = String(ciclo?.id || ciclo?.ciclo_id || "") === String(idAtual || "");
+      return !mesmoId && normalizeNome(ciclo?.nome) === nomeNormalizado;
     });
+  };
+
+  const isErroNomeDuplicado = (error) => {
+    const mensagem = String(error?.message || "");
+    return error?.code === "23505" || mensagem.includes("limpeza_ciclos_fazenda_id_nome_key");
+  };
 
   const validarCiclo = (c) => {
     if (!String(c?.nome || "").trim()) return "Informe o nome do ciclo.";
@@ -257,6 +282,8 @@ export default function Limpeza() {
   };
 
   const salvar = async (cicloFinal) => {
+    setErroModal({ mensagem: "", nomeDuplicado: false });
+
     const msg = validarCiclo(cicloFinal);
     if (msg) {
       alert(`❌ ${msg}`);
@@ -268,9 +295,15 @@ export default function Limpeza() {
       return;
     }
 
+    const cicloIdAtual = String(cicloFinal?.id || cicloFinal?.ciclo_id || "").trim();
+    if (nomeDuplicado(cicloFinal?.nome, cicloIdAtual)) {
+      setErroModal({ mensagem: MENSAGEM_NOME_DUPLICADO, nomeDuplicado: true });
+      return;
+    }
+
     setLoading(true);
 
-    const cicloId = String(cicloFinal.id || cicloFinal.ciclo_id || "").trim() || crypto.randomUUID();
+    const cicloId = cicloIdAtual || crypto.randomUUID();
 
     const cicloPayload = {
       id: cicloId,
@@ -282,70 +315,60 @@ export default function Limpeza() {
       ativo: true,
     };
 
-    const { data: cicloSalvo, error: cicloError } = await supabase
-      .from("limpeza_ciclos")
-      .upsert(cicloPayload, { onConflict: "id" })
-      .select("id")
-      .single();
-
-    if (cicloError) {
-      console.error("Erro ao salvar ciclo:", cicloError);
-      setErro("Falha ao salvar ciclo de limpeza.");
-      setLoading(false);
-      return;
-    }
-
-    const cicloIdSalvo = cicloSalvo?.id || cicloId;
-
-    const { error: delEtapasError } = await supabase
-      .from("limpeza_etapas")
-      .delete()
-      .eq("fazenda_id", fazendaAtualId)
-      .eq("ciclo_id", cicloIdSalvo);
-
-    if (delEtapasError) {
-      console.error("Erro ao limpar etapas antigas:", delEtapasError);
-      setErro("Falha ao atualizar etapas do ciclo.");
-      setLoading(false);
-      return;
-    }
-
-    const etapasPayload = (cicloFinal.etapas || []).map((etapa, idx) => {
-      const quantidadeConvertida = convToMl(etapa.quantidade ?? etapa.quantidade_ml, etapa.unidade);
-      const quantidadeMl = Number.parseFloat(quantidadeConvertida);
-
-      return {
-        fazenda_id: fazendaAtualId,
-        ciclo_id: cicloIdSalvo,
-        ordem: idx + 1,
-        grupo_equivalencia: String(etapa.grupo_equivalencia || "").trim(),
-        quantidade_ml: Number.isFinite(quantidadeMl) ? quantidadeMl : null,
-        condicao: condicaoParaBanco(etapa.condicao),
-        complementar: !!etapa.complementar,
-      };
-    });
-
-    if (etapasPayload.length > 0) {
-      const { error: etapasError } = await supabase.from("limpeza_etapas").insert(etapasPayload);
-      if (etapasError) {
-        console.error("Erro ao inserir etapas:", etapasError);
-        setErro("Falha ao salvar etapas de limpeza.");
-        setLoading(false);
-        return;
-      }
-    }
-
     try {
+      const { data: cicloSalvo, error: cicloError } = await supabase
+        .from("limpeza_ciclos")
+        .upsert(cicloPayload, { onConflict: "id" })
+        .select("id")
+        .single();
+
+      if (cicloError) throw cicloError;
+
+      const cicloIdSalvo = cicloSalvo?.id || cicloId;
+
+      const { error: delEtapasError } = await supabase
+        .from("limpeza_etapas")
+        .delete()
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("ciclo_id", cicloIdSalvo);
+
+      if (delEtapasError) throw delEtapasError;
+
+      const etapasPayload = (cicloFinal.etapas || []).map((etapa, idx) => {
+        const quantidadeConvertida = convToMl(etapa.quantidade ?? etapa.quantidade_ml, etapa.unidade);
+        const quantidadeMl = Number.parseFloat(quantidadeConvertida);
+
+        return {
+          fazenda_id: fazendaAtualId,
+          ciclo_id: cicloIdSalvo,
+          ordem: idx + 1,
+          grupo_equivalencia: String(etapa.grupo_equivalencia || "").trim(),
+          quantidade_ml: Number.isFinite(quantidadeMl) ? quantidadeMl : null,
+          condicao: condicaoParaBanco(etapa.condicao),
+          complementar: !!etapa.complementar,
+        };
+      });
+
+      if (etapasPayload.length > 0) {
+        const { error: etapasError } = await supabase.from("limpeza_etapas").insert(etapasPayload);
+        if (etapasError) throw etapasError;
+      }
+
       await carregarCiclosComEtapas();
+
+      setModal({ open: false, index: null, ciclo: null });
+      setErro("");
+      setErroModal({ mensagem: "", nomeDuplicado: false });
     } catch (error) {
-      console.error("Erro ao recarregar ciclos:", error);
-      setErro("Falha ao recarregar os ciclos de limpeza.");
+      if (isErroNomeDuplicado(error)) {
+        setErroModal({ mensagem: MENSAGEM_NOME_DUPLICADO, nomeDuplicado: true });
+      } else {
+        console.error("Erro ao salvar ciclo de limpeza:", error);
+        setErro("Falha ao salvar ciclo de limpeza.");
+      }
       setLoading(false);
       return;
     }
-
-    setModal({ open: false, index: null, ciclo: null });
-    setErro("");
     setLoading(false);
   };
 
@@ -813,15 +836,24 @@ export default function Limpeza() {
       {modal.open && (
         <Modal
           title={modal.ciclo?.id ? "✏️ Editar Ciclo" : "➕ Novo Ciclo de Limpeza"}
-          onClose={() => setModal({ open: false, index: null, ciclo: null })}
+          onClose={() => {
+            setModal({ open: false, index: null, ciclo: null });
+            setErroModal({ mensagem: "", nomeDuplicado: false });
+          }}
         >
           <CadastroCicloModal
             value={modal.ciclo}
-            onCancel={() => setModal({ open: false, index: null, ciclo: null })}
+            onCancel={() => {
+              setModal({ open: false, index: null, ciclo: null });
+              setErroModal({ mensagem: "", nomeDuplicado: false });
+            }}
             onSave={salvar}
             tipos={TIPOS}
             gruposFuncionaisOptions={gruposFuncionaisOptions}
             precoPorML={precoPorML}
+            erroValidacao={erroModal.mensagem}
+            erroNomeDuplicado={erroModal.nomeDuplicado}
+            onClearErroValidacao={() => setErroModal({ mensagem: "", nomeDuplicado: false })}
           />
         </Modal>
       )}

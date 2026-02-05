@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
 
 /** =========================================================
@@ -164,9 +164,20 @@ export function Modal({ title, children, onClose }) {
 }
 
 /* =================== Cadastro (form modal) =================== */
-export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFuncionaisOptions, precoPorML }) {
+export function CadastroCicloModal({
+  value,
+  onCancel,
+  onSave,
+  tipos,
+  gruposFuncionaisOptions,
+  precoPorML,
+  erroValidacao = "",
+  erroNomeDuplicado = false,
+  onClearErroValidacao,
+}) {
   const [form, setForm] = useState(value);
   const [previewCusto, setPreviewCusto] = useState(0);
+  const nomeInputRef = useRef(null);
 
   useEffect(() => {
     setForm(value);
@@ -228,6 +239,8 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
     });
   }, [gruposFuncionaisOptions]);
 
+  const getQuantidadeEtapa = (etapa) => etapa?.quantidade ?? etapa?.quantidade_ml ?? "";
+
   useEffect(() => {
     const freq = Number(form.frequencia) || 1;
     const custo = (form.etapas || []).reduce((acc, e) => {
@@ -241,6 +254,11 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
   }, [form, precoPorML]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    if (!erroNomeDuplicado) return;
+    nomeInputRef.current?.focus();
+  }, [erroNomeDuplicado]);
 
   const toggleDia = (d) =>
     set(
@@ -260,8 +278,6 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
     const parsed = parseCond(condicao);
     return condicaoOptions.find((c) => c.value === parsed?.tipo) || condicaoOptions[0];
   };
-
-  const getQuantidadeEtapa = (etapa) => etapa?.quantidade ?? etapa?.quantidade_ml ?? "";
 
   const addEtapa = () =>
     set("etapas", [
@@ -347,6 +363,18 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
     },
     previewLabel: { fontSize: "13px", color: "#166534", fontWeight: 600 },
     previewValue: { fontSize: "18px", fontWeight: 700, color: "#059669" },
+    erroBanner: {
+      marginBottom: "16px",
+      backgroundColor: "#fef2f2",
+      color: "#b91c1c",
+      borderWidth: "1px",
+      borderStyle: "solid",
+      borderColor: "#fecaca",
+      borderRadius: "8px",
+      padding: "10px 12px",
+      fontSize: "13px",
+      fontWeight: 500,
+    },
 
     buttonGroup: {
       display: "flex",
@@ -416,12 +444,27 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
         <span style={styles.previewValue}>{formatBRL(previewCusto)} / dia</span>
       </div>
 
+      {erroValidacao ? <div style={styles.erroBanner}>{erroValidacao}</div> : null}
+
       <div style={styles.formGroup}>
         <label style={styles.label}>Nome do Ciclo *</label>
         <input
-          style={styles.input}
+          ref={nomeInputRef}
+          style={{
+            ...styles.input,
+            ...(erroNomeDuplicado
+              ? {
+                  borderWidth: "1px",
+                  borderStyle: "solid",
+                  borderColor: "#ef4444",
+                }
+              : null),
+          }}
           value={form.nome}
-          onChange={(e) => set("nome", e.target.value)}
+          onChange={(e) => {
+            if (erroValidacao) onClearErroValidacao?.();
+            set("nome", e.target.value);
+          }}
           placeholder="Ex: CIP Ordenhadeira Tarde"
         />
       </div>
