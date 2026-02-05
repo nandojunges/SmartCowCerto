@@ -1,4 +1,4 @@
-// src/pages/ConsumoReposicao/Estoque.jsx
+// src/Pages/ConsumoReposicao/Estoque.jsx
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Select from "react-select";
 import { supabase } from "../../lib/supabaseClient";
@@ -185,6 +185,10 @@ export default function Estoque({ onCountChange }) {
   const [produtoParaExcluir, setProdutoParaExcluir] = useState(null);
   const [editar, setEditar] = useState({ abrir: false, item: null });
 
+  if (import.meta.env.DEV) {
+    console.log("ESTOQUE ACTIVE FILE:", "src/Pages/ConsumoReposicao/Estoque.jsx");
+  }
+
   useEffect(() => {
     MEMO_ESTOQUE.data = {
       produtos,
@@ -333,13 +337,12 @@ export default function Estoque({ onCountChange }) {
 
         console.log("[ESTOQUE] view first row:", estoqueDb?.[0]);
         console.log(
-          "[ESTOQUE] view sample:",
-          (estoqueDb || []).slice(0, 5).map((r) => ({
+          "VIEW sample",
+          estoqueDb?.slice(0, 3).map((r) => ({
             nome: r.nome_comercial,
             consumo: r.consumo_dia,
             prev: r.prev_termino,
-            produto_id: r.produto_id,
-            id: r.id,
+            pid: r.produto_id,
           }))
         );
 
@@ -368,8 +371,8 @@ export default function Estoque({ onCountChange }) {
           quantidade: safeNum(d.em_estoque ?? d.quantidade ?? 0, 0),
           valorTotal: safeNum(d.valor_em_estoque ?? d.valor_total ?? 0, 0),
           validade: d.validade_mais_proxima ?? d.validade ?? null,
-          consumoDia: d.consumo_dia,
-          prevTermino: d.prev_termino,
+          consumoDia: d.consumo_dia ?? null,
+          prevTermino: d.prev_termino ?? null,
           prevTerminoDias: null,
           meta: {},
           _raw: d,
