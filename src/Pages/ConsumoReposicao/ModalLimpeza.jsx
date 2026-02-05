@@ -233,7 +233,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
     const custo = (form.etapas || []).reduce((acc, e) => {
       const cond = parseCond(e.condicao);
       const vezes = vezesPorDia(cond, freq);
-      const ml = convToMl(e.quantidade, e.unidade);
+      const ml = convToMl(getQuantidadeEtapa(e), e.unidade);
       const preco = precoPorML?.[e.grupo_equivalencia] ?? 0;
       return acc + ml * vezes * preco;
     }, 0);
@@ -255,6 +255,13 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
     arr[i] = { ...arr[i], [campo]: val };
     set("etapas", arr);
   };
+
+  const getCondicaoOption = (condicao) => {
+    const parsed = parseCond(condicao);
+    return condicaoOptions.find((c) => c.value === parsed?.tipo) || condicaoOptions[0];
+  };
+
+  const getQuantidadeEtapa = (etapa) => etapa?.quantidade ?? etapa?.quantidade_ml ?? "";
 
   const addEtapa = () =>
     set("etapas", [
@@ -494,7 +501,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
                 <input
                   type="number"
                   style={styles.input}
-                  value={etapa.quantidade}
+                  value={getQuantidadeEtapa(etapa)}
                   onChange={(e) => setEtapa(i, "quantidade", e.target.value)}
                 />
               </div>
@@ -515,7 +522,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
                 <Select
                   styles={rsStyles}
                   options={condicaoOptions}
-                  value={condicaoOptions.find((c) => c.value === etapa.condicao?.tipo) || condicaoOptions[0]}
+                  value={getCondicaoOption(etapa.condicao)}
                   onChange={(option) =>
                     setEtapa(i, "condicao", {
                       tipo: option?.value || "sempre",

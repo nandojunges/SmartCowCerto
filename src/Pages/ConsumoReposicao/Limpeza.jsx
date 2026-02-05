@@ -81,12 +81,41 @@ export default function Limpeza() {
   }, [fazendaAtualId]);
 
   const condicaoParaBanco = (condicao) => {
+    if (!condicao || (typeof condicao === "string" && !condicao.trim())) return "SEMPRE";
     const cond = parseCond(condicao);
     if (cond?.tipo === "cada") return `A cada ${Number(cond.intervalo) || 1} ordenhas`;
     if (cond?.tipo === "manha") return "Somente manhã";
     if (cond?.tipo === "tarde") return "Somente tarde";
-    return "Sempre";
+    return "SEMPRE";
   };
+
+  const SQL_MIGRACAO_CONDICAO =
+    "ALTER TABLE public.limpeza_etapas ADD COLUMN IF NOT EXISTS condicao text DEFAULT 'SEMPRE';";
+
+  const getMensagemMigracaoCondicao =
+    () => `A tabela public.limpeza_etapas não possui a coluna condicao. Rode a migração SQL: ${SQL_MIGRACAO_CONDICAO}`;
+
+  const erroColunaCondicaoAusente = (error) => {
+    const msg = String(error?.message || "").toLowerCase();
+    return msg.includes("condicao") && msg.includes("does not exist");
+  };
+
+  const colunaCondicaoExiste = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("information_schema.columns")
+      .select("column_name")
+      .eq("table_schema", "public")
+      .eq("table_name", "limpeza_etapas")
+      .eq("column_name", "condicao")
+      .limit(1);
+
+    if (error) {
+      console.warn("Não foi possível validar coluna condicao:", error);
+      return true;
+    }
+
+    return Array.isArray(data) && data.length > 0;
+  }, []);
 
   useEffect(() => {
     const carregarDados = async () => {
@@ -98,6 +127,13 @@ export default function Limpeza() {
 
       setLoading(true);
       setErro("");
+
+      const temColunaCondicao = await colunaCondicaoExiste();
+      if (!temColunaCondicao) {
+        setErro(getMensagemMigracaoCondicao());
+        setLoading(false);
+        return;
+      }
 
       const ciclosRes = await supabase
         .from("limpeza_ciclos")
@@ -130,6 +166,11 @@ export default function Limpeza() {
           .order("ordem", { ascending: true });
 
         if (etapasRes.error) {
+          if (erroColunaCondicaoAusente(etapasRes.error)) {
+            setErro(getMensagemMigracaoCondicao());
+            setLoading(false);
+            return;
+          }
           console.error("Erro ao carregar etapas de limpeza:", etapasRes.error);
           setErro("Não foi possível carregar as etapas de limpeza.");
           setLoading(false);
@@ -166,7 +207,7 @@ export default function Limpeza() {
     };
 
     carregarDados();
-  }, [carregarGruposFuncionais, fazendaAtualId]);
+  }, [carregarGruposFuncionais, colunaCondicaoExiste, fazendaAtualId]);
 
   const tipoOptions = useMemo(() => {
     return Array.from(new Set(ciclos.map((c) => c.tipo).filter(Boolean))).sort();
@@ -242,6 +283,13 @@ export default function Limpeza() {
 
     setLoading(true);
 
+    const temColunaCondicao = await colunaCondicaoExiste();
+    if (!temColunaCondicao) {
+      setErro(getMensagemMigracaoCondicao());
+      setLoading(false);
+      return;
+    }
+
     const cicloId = String(cicloFinal.id || "").trim() || crypto.randomUUID();
 
     const cicloPayload = {
@@ -287,7 +335,7 @@ export default function Limpeza() {
       ciclo_id: cicloIdSalvo,
       ordem: idx + 1,
       grupo_equivalencia: String(etapa.grupo_equivalencia || "").trim(),
-      quantidade_ml: Number(convToMl(etapa.quantidade, etapa.unidade)),
+      quantidade_ml: Number(convToMl(etapa.quantidade ?? etapa.quantidade_ml, etapa.unidade)),
       condicao: condicaoParaBanco(etapa.condicao),
       complementar: !!etapa.complementar,
     }));
@@ -295,6 +343,11 @@ export default function Limpeza() {
     if (etapasPayload.length > 0) {
       const { error: etapasError } = await supabase.from("limpeza_etapas").insert(etapasPayload);
       if (etapasError) {
+        if (erroColunaCondicaoAusente(etapasError)) {
+          setErro(getMensagemMigracaoCondicao());
+          setLoading(false);
+          return;
+        }
         console.error("Erro ao inserir etapas:", etapasError);
         setErro("Falha ao salvar etapas de limpeza.");
         setLoading(false);
