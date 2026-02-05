@@ -1,4 +1,6 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
+import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
 import {
   Modal,
   CadastroCicloModal,
@@ -11,89 +13,127 @@ import {
   parseCond,
   vezesPorDia,
   isNum,
-  cryptoId,
 } from "./ModalLimpeza";
 
 /** =========================================================
  *  LIMPEZA — LAYOUT MODERNO + FUNCIONALIDADE MELHORADA
- *  - CRUD em memória (preparado para plugar no novo banco)
+ *  - CRUD integrado ao Supabase
  *  - UX: chips de dias, badges visuais, tooltips
  * ========================================================= */
 
-let MEMO_LIMPEZA = {
-  data: null,
-  lastAt: 0,
-};
-
 /* ==================== Componente principal ==================== */
 export default function Limpeza() {
-  const memoData = MEMO_LIMPEZA.data || {};
+  const { fazendaAtualId } = useFazenda();
 
-  const [precoPorML, setPrecoPorML] = useState(
-    () =>
-      memoData.precoPorML ?? {
-        "Detergente Alcalino": 0.012,
-        "Ácido Nítrico": 0.02,
-        Sanitizante: 0.03,
-      }
-  );
-
-  const [estoqueML, setEstoqueML] = useState(
-    () =>
-      memoData.estoqueML ?? {
-        "Detergente Alcalino": 25000,
-        "Ácido Nítrico": 12000,
-        Sanitizante: 8000,
-      }
-  );
-
-  const [ciclos, setCiclos] = useState(
-    () =>
-      memoData.ciclos ?? [
-        {
-          id: "c1",
-          nome: "CIP Ordenhadeira",
-          tipo: "Ordenhadeira",
-          diasSemana: [1, 2, 3, 4, 5, 6],
-          frequencia: 2,
-          etapas: [
-            {
-              produto: "Detergente Alcalino",
-              quantidade: 200,
-              unidade: "mL",
-              condicao: { tipo: "sempre" },
-              complementar: false,
-            },
-            {
-              produto: "Sanitizante",
-              quantidade: 100,
-              unidade: "mL",
-              condicao: { tipo: "tarde" },
-              complementar: true,
-            },
-          ],
-        },
-      ]
-  );
-
+  const [precoPorML] = useState({});
+  const [estoqueML] = useState({});
+  const [produtosDisponiveis, setProdutosDisponiveis] = useState([]);
+  const [ciclos, setCiclos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
+
   const [hoveredRowId, setHoveredRowId] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [filtros, setFiltros] = useState({ tipo: "__ALL__" });
   const [modal, setModal] = useState({ open: false, index: null, ciclo: null });
   const [planoDe, setPlanoDe] = useState(null);
-  const [excluirIdx, setExcluirIdx] = useState(null);
+  const [excluirCicloId, setExcluirCicloId] = useState(null);
 
-  // Persistência em memória
+  const condicaoParaBanco = (condicao) => {
+    const cond = parseCond(condicao);
+    if (cond?.tipo === "cada") return `A cada ${Number(cond.intervalo) || 1} ordenhas`;
+    if (cond?.tipo === "manha") return "Somente manhã";
+    if (cond?.tipo === "tarde") return "Somente tarde";
+    return "Sempre";
+  };
+
   useEffect(() => {
-    MEMO_LIMPEZA.data = { precoPorML, estoqueML, ciclos };
-    MEMO_LIMPEZA.lastAt = Date.now();
-  }, [precoPorML, estoqueML, ciclos]);
+    const carregarDados = async () => {
+      if (!fazendaAtualId) {
+        setCiclos([]);
+        setProdutosDisponiveis([]);
+        return;
+      }
 
-  const produtosDisponiveis = useMemo(() => {
-    return Object.keys(precoPorML || {}).sort((a, b) => a.localeCompare(b));
-  }, [precoPorML]);
+      setLoading(true);
+      setErro("");
+
+      const ciclosRes = await supabase
+        .from("limpeza_ciclos")
+        .select("id,nome,tipo,dias_semana,frequencia")
+        .eq("fazenda_id", fazendaAtualId)
+        .order("nome", { ascending: true });
+
+      const produtosRes = await supabase
+        .from("estoque_produtos")
+        .select("grupo_funcional")
+        .eq("fazenda_id", fazendaAtualId)
+        .or("categoria.ilike.%higiene%,categoria.ilike.%limpeza%")
+        .not("grupo_funcional", "is", null);
+
+      if (ciclosRes.error || produtosRes.error) {
+        console.error("Erro ao carregar limpeza:", ciclosRes.error || produtosRes.error);
+        setErro("Não foi possível carregar os ciclos de limpeza.");
+        setLoading(false);
+        return;
+      }
+
+      const cicloIds = (ciclosRes.data || []).map((ciclo) => ciclo.id).filter(Boolean);
+      let etapasData = [];
+      if (cicloIds.length > 0) {
+        const etapasRes = await supabase
+          .from("limpeza_etapas")
+          .select("id,ciclo_id,ordem,grupo_funcional,quantidade_ml,condicao,complementar")
+          .eq("fazenda_id", fazendaAtualId)
+          .in("ciclo_id", cicloIds)
+          .order("ordem", { ascending: true });
+
+        if (etapasRes.error) {
+          console.error("Erro ao carregar etapas de limpeza:", etapasRes.error);
+          setErro("Não foi possível carregar as etapas de limpeza.");
+          setLoading(false);
+          return;
+        }
+        etapasData = etapasRes.data || [];
+      }
+
+      const etapasPorCiclo = (etapasData || []).reduce((acc, etapa) => {
+        const cicloId = etapa.ciclo_id;
+        if (!acc[cicloId]) acc[cicloId] = [];
+        acc[cicloId].push({
+          produto: etapa.grupo_funcional || "",
+          quantidade: Number(etapa.quantidade_ml) || "",
+          unidade: "mL",
+          condicao: parseCond(etapa.condicao),
+          complementar: !!etapa.complementar,
+        });
+        return acc;
+      }, {});
+
+      const ciclosMontados = (ciclosRes.data || []).map((ciclo) => ({
+        id: ciclo.id,
+        nome: ciclo.nome || "",
+        tipo: ciclo.tipo || "",
+        diasSemana: Array.isArray(ciclo.dias_semana) ? ciclo.dias_semana : [],
+        frequencia: Number(ciclo.frequencia) || 1,
+        etapas: etapasPorCiclo[ciclo.id] || [],
+      }));
+
+      const grupos = Array.from(
+        new Set(
+          (produtosRes.data || [])
+            .map((p) => String(p.grupo_funcional || "").trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b));
+
+      setCiclos(ciclosMontados);
+      setProdutosDisponiveis(grupos);
+      setLoading(false);
+    };
+
+    carregarDados();
+  }, [fazendaAtualId]);
 
   const tipoOptions = useMemo(() => {
     return Array.from(new Set(ciclos.map((c) => c.tipo).filter(Boolean))).sort();
@@ -155,35 +195,144 @@ export default function Limpeza() {
     return null;
   };
 
-  const salvar = (cicloFinal) => {
+  const salvar = async (cicloFinal) => {
     const msg = validarCiclo(cicloFinal);
     if (msg) {
       alert(`❌ ${msg}`);
       return;
     }
 
-    setCiclos((prev) => {
-      const list = [...prev];
-      const id = cicloFinal.id || cryptoId();
-      const payload = { ...cicloFinal, id };
+    if (!fazendaAtualId) {
+      alert("❌ Selecione uma fazenda antes de salvar.");
+      return;
+    }
 
-      const idx = list.findIndex((c) => c.id === id);
-      if (idx >= 0) list[idx] = payload;
-      else list.push(payload);
+    setLoading(true);
 
-      return list.sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
-    });
+    const cicloPayload = {
+      id: cicloFinal.id || undefined,
+      fazenda_id: fazendaAtualId,
+      nome: String(cicloFinal.nome || "").trim(),
+      tipo: cicloFinal.tipo,
+      dias_semana: cicloFinal.diasSemana || [],
+      frequencia: Number(cicloFinal.frequencia) || 1,
+    };
+
+    const { data: cicloSalvo, error: cicloError } = await supabase
+      .from("limpeza_ciclos")
+      .upsert(cicloPayload, { onConflict: "id" })
+      .select("id")
+      .single();
+
+    if (cicloError) {
+      console.error("Erro ao salvar ciclo:", cicloError);
+      setErro("Falha ao salvar ciclo de limpeza.");
+      setLoading(false);
+      return;
+    }
+
+    const cicloId = cicloSalvo?.id || cicloFinal.id;
+
+    const { error: delEtapasError } = await supabase
+      .from("limpeza_etapas")
+      .delete()
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("ciclo_id", cicloId);
+
+    if (delEtapasError) {
+      console.error("Erro ao limpar etapas antigas:", delEtapasError);
+      setErro("Falha ao atualizar etapas do ciclo.");
+      setLoading(false);
+      return;
+    }
+
+    const etapasPayload = (cicloFinal.etapas || []).map((etapa, idx) => ({
+      fazenda_id: fazendaAtualId,
+      ciclo_id: cicloId,
+      ordem: idx + 1,
+      grupo_funcional: String(etapa.produto || "").trim(),
+      quantidade_ml: convToMl(etapa.quantidade, etapa.unidade),
+      condicao: condicaoParaBanco(etapa.condicao),
+      complementar: !!etapa.complementar,
+    }));
+
+    if (etapasPayload.length > 0) {
+      const { error: etapasError } = await supabase.from("limpeza_etapas").insert(etapasPayload);
+      if (etapasError) {
+        console.error("Erro ao inserir etapas:", etapasError);
+        setErro("Falha ao salvar etapas de limpeza.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    const { data: ciclosAtualizados } = await supabase
+      .from("limpeza_ciclos")
+      .select("id,nome,tipo,dias_semana,frequencia")
+      .eq("fazenda_id", fazendaAtualId)
+      .order("nome", { ascending: true });
+
+    const cicloIdsAtualizados = (ciclosAtualizados || []).map((ciclo) => ciclo.id).filter(Boolean);
+    let etapasAtualizadas = [];
+    if (cicloIdsAtualizados.length > 0) {
+      const { data } = await supabase
+        .from("limpeza_etapas")
+        .select("ciclo_id,ordem,grupo_funcional,quantidade_ml,condicao,complementar")
+        .eq("fazenda_id", fazendaAtualId)
+        .in("ciclo_id", cicloIdsAtualizados)
+        .order("ordem", { ascending: true });
+      etapasAtualizadas = data || [];
+    }
+
+    const etapasPorCiclo = (etapasAtualizadas || []).reduce((acc, etapa) => {
+      if (!acc[etapa.ciclo_id]) acc[etapa.ciclo_id] = [];
+      acc[etapa.ciclo_id].push({
+        produto: etapa.grupo_funcional || "",
+        quantidade: Number(etapa.quantidade_ml) || "",
+        unidade: "mL",
+        condicao: parseCond(etapa.condicao),
+        complementar: !!etapa.complementar,
+      });
+      return acc;
+    }, {});
+
+    setCiclos(
+      (ciclosAtualizados || []).map((ciclo) => ({
+        id: ciclo.id,
+        nome: ciclo.nome || "",
+        tipo: ciclo.tipo || "",
+        diasSemana: Array.isArray(ciclo.dias_semana) ? ciclo.dias_semana : [],
+        frequencia: Number(ciclo.frequencia) || 1,
+        etapas: etapasPorCiclo[ciclo.id] || [],
+      }))
+    );
 
     setModal({ open: false, index: null, ciclo: null });
+    setErro("");
+    setLoading(false);
   };
 
-  const confirmarExclusao = () => {
-    setCiclos((prev) => prev.filter((_, i) => i !== excluirIdx));
-    setExcluirIdx(null);
+  const confirmarExclusao = async () => {
+    if (!fazendaAtualId || !excluirCicloId) return;
+
+    const { error: excluirError } = await supabase
+      .from("limpeza_ciclos")
+      .delete()
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("id", excluirCicloId);
+
+    if (excluirError) {
+      console.error("Erro ao excluir ciclo:", excluirError);
+      setErro("Não foi possível excluir o ciclo.");
+      return;
+    }
+
+    setCiclos((prev) => prev.filter((c) => c.id !== excluirCicloId));
+    setExcluirCicloId(null);
   };
 
   // ===== Cálculos =====
-  const custoDiarioValor = (c) => {
+  const custoDiarioValor = useCallback((c) => {
     const freq = Number(c?.frequencia) || 1;
     return (c?.etapas || []).reduce((acc, e) => {
       const cond = parseCond(e.condicao);
@@ -192,7 +341,7 @@ export default function Limpeza() {
       const preco = precoPorML?.[e.produto] ?? 0;
       return acc + ml * vezes * preco;
     }, 0);
-  };
+  }, [precoPorML]);
 
   const duracaoEstimadaValor = (c) => {
     const freq = Number(c?.frequencia) || 1;
@@ -227,7 +376,7 @@ export default function Limpeza() {
       });
     }
     return lista;
-  }, [ciclos, filtros, sortConfig, precoPorML]);
+  }, [ciclos, filtros, sortConfig, custoDiarioValor]);
 
   const resumo = useMemo(() => {
     const total = ciclosExibidos.length;
@@ -239,7 +388,7 @@ export default function Limpeza() {
       custoMedio: total ? custoTotal / total : 0,
       custoTotal,
     };
-  }, [ciclosExibidos]);
+  }, [ciclosExibidos, custoDiarioValor]);
 
   // ===== Estilos =====
   const styles = {
@@ -413,9 +562,9 @@ export default function Limpeza() {
             <button style={styles.secondaryButton} onClick={() => window.location.reload()}>
               ↻ Atualizar
             </button>
-            <button style={styles.primaryButton} onClick={abrirCadastro}>
+            <button style={styles.primaryButton} onClick={abrirCadastro} disabled={loading}>
               <span>+</span>
-              <span>Novo Ciclo</span>
+              <span>{loading ? "Carregando..." : "Novo Ciclo"}</span>
             </button>
           </div>
         </div>
@@ -548,11 +697,7 @@ export default function Limpeza() {
                           <button style={styles.iconButton} onClick={() => abrirEdicao(i)} title="Editar">
                             ✏️
                           </button>
-                          <button
-                            style={{ ...styles.iconButton, ...styles.iconButtonDanger }}
-                            onClick={() => setExcluirIdx(i)}
-                            title="Excluir"
-                          >
+                          <button style={{ ...styles.iconButton, ...styles.iconButtonDanger }} onClick={() => setExcluirCicloId(c.id)} title="Excluir">
                             🗑️
                           </button>
                           <button style={styles.iconButton} onClick={() => setPlanoDe(c)} title="Ver Plano">
@@ -618,15 +763,21 @@ export default function Limpeza() {
         </Modal>
       )}
 
-      {excluirIdx !== null && (
-        <Modal title="⚠️ Confirmar Exclusão" onClose={() => setExcluirIdx(null)}>
+      {erro ? (
+        <div style={{ position: "fixed", right: 20, bottom: 20, background: "#fee2e2", color: "#991b1b", padding: "12px 16px", borderRadius: 8, border: "1px solid #fecaca" }}>
+          {erro}
+        </div>
+      ) : null}
+
+      {excluirCicloId !== null && (
+        <Modal title="⚠️ Confirmar Exclusão" onClose={() => setExcluirCicloId(null)}>
           <div style={{ color: "#374151", marginBottom: "20px", lineHeight: 1.6 }}>
-            Deseja realmente excluir o ciclo <strong>"{ciclos?.[excluirIdx]?.nome}"</strong>?
+            Deseja realmente excluir o ciclo <strong>"{ciclos?.find((c) => c.id === excluirCicloId)?.nome}"</strong>?
             <br />
             <span style={{ fontSize: "13px", color: "#ef4444" }}>Esta ação não poderá ser desfeita.</span>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
-            <button style={styles.secondaryButton} onClick={() => setExcluirIdx(null)}>
+            <button style={styles.secondaryButton} onClick={() => setExcluirCicloId(null)}>
               Cancelar
             </button>
             <button
