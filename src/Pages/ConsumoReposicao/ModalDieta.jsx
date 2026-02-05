@@ -6,7 +6,7 @@ import { withFazendaId } from "../../lib/fazendaScope";
 import { useFazenda } from "../../context/FazendaContext";
 import { enqueue, kvGet } from "../../offline/localDB";
 
-const CATEGORIA_INGREDIENTE = "cozinha";
+const CATEGORIA_INGREDIENTE = "Cozinha";
 const TIPOS_ENTRADA = ["ENTRADA", "entrada", "Entrada", "E", "e"];
 
 const CACHE_ESTOQUE_KEY = "cache:estoque:list";
@@ -167,7 +167,7 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
       // ✅ categoria cozinha + (se tiver quantidade) >0
       const cozinha = list.filter((p) => {
         const cat = String(p?.categoria || "").toLowerCase();
-        if (!cat.includes("cozinha")) return false;
+        if (!cat.includes(CATEGORIA_INGREDIENTE.toLowerCase())) return false;
 
         const qtd = Number(
           p?.quantidade_atual ??
@@ -187,7 +187,7 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
         id: p.id,
         nome_comercial: p.nomeComercial || p.nome_comercial || p.nome || "—",
         unidade: p.unidade || p.unidade_medida || "un",
-        categoria: p.categoria || "cozinha",
+        categoria: p.categoria || CATEGORIA_INGREDIENTE,
       }));
 
       setProdutosCozinha(normalized);
@@ -215,13 +215,12 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
     }
 
     // ✅ NÃO peça colunas que não existem (isso estava causando 400)
-    const { data: produtos, error } = await withFazendaId(
-      supabase
-        .from("estoque_produtos")
-        .select("id, nome_comercial, unidade, categoria")
-        .ilike("categoria", "%cozinha%"),
-      fazendaAtualId
-    ).order("nome_comercial", { ascending: true });
+    const { data: produtos, error } = await supabase
+      .from("public.estoque_produtos")
+      .select("id, nome_comercial, unidade, categoria, fazenda_id")
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("categoria", CATEGORIA_INGREDIENTE)
+      .order("nome_comercial", { ascending: true });
 
     if (error) {
       console.error("loadProdutos erro:", error);
@@ -232,6 +231,7 @@ export default function ModalDieta({ title = "Cadastro de Dieta", value, onCance
     }
 
     const list = Array.isArray(produtos) ? produtos : [];
+    console.log("loadProdutos OK -> itens:", list.length, list.slice(0, 3));
     setProdutosCozinha(list);
 
     // ✅ preços por movimentos (mantém teu cálculo)
