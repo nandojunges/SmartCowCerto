@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 
 /* =========================================================
@@ -169,7 +169,7 @@ export default function Inseminacao({
   animal,
   touros = [],
   inseminadores = [],
-  onSubmit,
+  onChangeDraft,
   vwpDias = 50,
   dg30 = [28, 35],
   dg60 = [55, 75],
@@ -182,7 +182,6 @@ export default function Inseminacao({
   const [razao, setRazao] = useState("");
   const [tipoSemen, setTipoSemen] = useState("Convencional");
   const [palhetas, setPalhetas] = useState(1);
-  const [errors, setErrors] = useState({});
 
   // Sort touros
   const tourosOrdenados = useMemo(() => {
@@ -247,40 +246,20 @@ export default function Inseminacao({
     return parts.join(" | ");
   }, [razao, tipoSemen, palhetas]);
 
-  const handleSalvar = (e) => {
-    e?.preventDefault?.();
-    const dataISO = brToISO(data);
-    const nextErrors = {
-      data: dataISO ? "" : "Informe uma data válida no formato dd/mm/aaaa.",
-      inseminador: insId ? "" : "Selecione o inseminador.",
-      touro: touroId ? "" : "Selecione o touro.",
-      palhetas: Number.isFinite(+palhetas) && +palhetas >= 1 ? "" : "Informe ao menos 1 palheta.",
-    };
-
-    if (estoqueInsuficiente) {
-      nextErrors.palhetas = `Quantidade acima do estoque disponível (${restanteTouro}).`;
-    }
-    if (semEstoque) {
-      nextErrors.touro = "Touro selecionado sem estoque disponível.";
-    }
-
-    setErrors(nextErrors);
-    if (Object.values(nextErrors).some(Boolean)) return;
-
-    const obsFinal = [obs?.trim(), extrasResumo].filter(Boolean).join(" || ");
-    onSubmit?.({
-      kind: "IA",
-      data: dataISO,
-      touroId,
-      touroNome: touroSel?.nome || null,
+  useEffect(() => {
+    onChangeDraft?.({
+      data,
       inseminadorId: insId,
-      obs: obsFinal,
-      extras: { razao, tipoSemen, palhetas },
+      touroId,
+      razao,
+      tipoSemen,
+      palhetas,
+      obs,
     });
-  };
+  }, [data, insId, touroId, razao, tipoSemen, palhetas, obs, onChangeDraft]);
 
   return (
-    <form id="form-IA" onSubmit={handleSalvar} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+    <form id="form-IA" onSubmit={(e) => e.preventDefault()} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       
       {/* SEÇÃO 1: DADOS PRINCIPAIS */}
       <div style={{
@@ -290,12 +269,11 @@ export default function Inseminacao({
       }}>
         {/* Data */}
         <div style={{ gridColumn: "span 3" }}>
-          <InputGroup label="Data da IA" icon={Icons.calendar} help="Formato: dd/mm/aaaa" error={errors.data}>
+          <InputGroup label="Data da IA" icon={Icons.calendar} help="Formato: dd/mm/aaaa" error={!brToISO(data) ? "Informe uma data válida no formato dd/mm/aaaa." : null}>
             <input
               value={data}
               onChange={(e) => {
                 setData(e.target.value);
-                if (errors.data) setErrors((prev) => ({ ...prev, data: "" }));
               }}
               placeholder="dd/mm/aaaa"
               style={{
@@ -310,14 +288,13 @@ export default function Inseminacao({
 
         {/* Inseminador */}
         <div style={{ gridColumn: "span 5" }}>
-          <InputGroup label="Inseminador" icon={Icons.user} error={errors.inseminador}>
+          <InputGroup label="Inseminador" icon={Icons.user} error={!insId ? "Selecione o inseminador." : null}>
             <Select
               styles={selectStyles}
               options={inseminadorOptions}
               value={insId ? (inseminadorOptions.find(o => o.value === insId) || null) : null}
               onChange={(opt) => {
                 setInsId(opt?.value || "");
-                if (errors.inseminador) setErrors((prev) => ({ ...prev, inseminador: "" }));
               }}
               placeholder="Selecione..."
               isClearable
@@ -356,14 +333,13 @@ export default function Inseminacao({
 
         {/* Touro */}
         <div style={{ gridColumn: "span 6" }}>
-          <InputGroup label="Touro" icon={Icons.cow} error={errors.touro || (semEstoque ? "Sem estoque disponível" : null)}>
+          <InputGroup label="Touro" icon={Icons.cow} error={!touroId ? "Selecione o touro." : (semEstoque ? "Sem estoque disponível" : null)}>
             <Select
               styles={selectStyles}
               options={touroOptions}
               value={touroId ? selectedTouro : null}
               onChange={(opt) => {
                 setTouroId(opt?.value || "");
-                if (errors.touro) setErrors((prev) => ({ ...prev, touro: "" }));
               }}
               placeholder="Selecione o touro..."
               isOptionDisabled={(o) => o.isDisabled}
@@ -400,7 +376,7 @@ export default function Inseminacao({
 
         {/* Palhetas */}
         <div style={{ gridColumn: "span 2" }}>
-          <InputGroup label="Palhetas" icon={() => <span>🔢</span>} error={errors.palhetas || (estoqueInsuficiente ? "Insuficiente" : null)}>
+          <InputGroup label="Palhetas" icon={() => <span>🔢</span>} error={Number.isFinite(+palhetas) && +palhetas >= 1 ? (estoqueInsuficiente ? "Insuficiente" : null) : "Informe ao menos 1 palheta."}>
             <input
               type="number"
               min={1}
@@ -409,7 +385,6 @@ export default function Inseminacao({
               onChange={(e) => {
                 const parsed = parseInt(e.target.value || "0", 10);
                 setPalhetas(Number.isFinite(parsed) ? parsed : 0);
-                if (errors.palhetas) setErrors((prev) => ({ ...prev, palhetas: "" }));
               }}
               style={{
                 width: "100%", padding: "10px 12px", fontSize: "14px",

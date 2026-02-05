@@ -139,6 +139,9 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
   
   const [selectedType, setSelectedType] = useState(initialTab);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [draftIA, setDraftIA] = useState(null);
+  const [erroSalvar, setErroSalvar] = useState("");
+  const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -146,6 +149,11 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
       setTimeout(() => setIsAnimating(false), 300);
     }
   }, [open]);
+
+  useEffect(() => {
+    setErroSalvar("");
+    if (selectedType !== "IA") setDraftIA(null);
+  }, [selectedType]);
 
   useEffect(() => {
     if (!open) return;
@@ -216,6 +224,9 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
 
   const handleClose = () => {
     setSelectedType(null);
+    setDraftIA(null);
+    setErroSalvar("");
+    setSalvando(false);
     onClose?.();
   };
 
@@ -225,9 +236,14 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
   };
 
   const handleSubmit = async (payload) => {
-    if (!fazendaAtualId || !animalId) return;
+    if (!fazendaAtualId || !animalId) {
+      setErroSalvar("Não foi possível salvar: fazenda ou animal não identificado.");
+      return;
+    }
     
     try {
+      setErroSalvar("");
+      setSalvando(true);
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
       const userId = authData?.user?.id;
@@ -269,8 +285,72 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
       await handleSaved();
     } catch (e) {
       console.error(e);
-      alert(e?.message || "Erro ao salvar");
+      const msg = [e?.message || "Erro ao salvar", e?.code ? `Código: ${e.code}` : ""].filter(Boolean).join(" | ");
+      setErroSalvar(msg);
+    } finally {
+      setSalvando(false);
     }
+  };
+
+  const handleSalvarRegistro = async () => {
+    setErroSalvar("");
+
+    if (!selectedType) {
+      setErroSalvar("Selecione um tipo de evento para salvar.");
+      return;
+    }
+
+    if (selectedType === "IA") {
+      if (!draftIA) {
+        setErroSalvar("Preencha os dados da inseminação antes de salvar.");
+        return;
+      }
+
+      const dataEvento = brToISO(draftIA.data);
+      if (!dataEvento) {
+        setErroSalvar("Data inválida. Use o formato dd/mm/aaaa.");
+        return;
+      }
+
+      if (!draftIA.inseminadorId) {
+        setErroSalvar("Selecione o inseminador para salvar o registro.");
+        return;
+      }
+
+      if (!draftIA.touroId) {
+        setErroSalvar("Selecione o touro para salvar o registro.");
+        return;
+      }
+
+      if (!(Number.isFinite(+draftIA.palhetas) && +draftIA.palhetas >= 1)) {
+        setErroSalvar("Informe ao menos 1 palheta para salvar o registro.");
+        return;
+      }
+
+      const touroSelecionado = touros.find((t) => String(t.id) === String(draftIA.touroId));
+
+      await handleSubmit({
+        kind: "IA",
+        data: draftIA.data,
+        inseminadorId: draftIA.inseminadorId,
+        touroId: draftIA.touroId,
+        touroNome: touroSelecionado?.nome || null,
+        obs: draftIA.obs || null,
+        extras: {
+          razao: draftIA.razao || null,
+          tipoSemen: draftIA.tipoSemen || null,
+          palhetas: draftIA.palhetas,
+        },
+      });
+      return;
+    }
+
+    const form = document.getElementById(`form-${selectedType}`);
+    if (!form) {
+      setErroSalvar("Formulário não encontrado para o tipo selecionado.");
+      return;
+    }
+    form.requestSubmit();
   };
 
   if (!open) return null;
@@ -533,6 +613,7 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
                 inseminadores={inseminadores}
                 touros={touros}
                 onSubmit={handleSubmit}
+                onChangeDraft={selectedType === "IA" ? setDraftIA : undefined}
                 key={selectedType} // Força remount ao trocar de aba
               />
             )}
@@ -569,9 +650,8 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
               </button>
               
               <button
-                onClick={() => {
-                  document.getElementById(`form-${selectedType}`)?.requestSubmit();
-                }}
+                onClick={handleSalvarRegistro}
+                disabled={salvando}
                 style={{
                   padding: "8px 20px",
                   fontSize: "13px",
@@ -580,27 +660,42 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
                   background: theme.colors.accent[600],
                   border: "none",
                   borderRadius: theme.radius.md,
-                  cursor: "pointer",
+                  cursor: salvando ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: "8px",
                   boxShadow: "0 1px 2px 0 rgba(0,0,0,0.1)",
                   transition: "all 0.15s",
+                  opacity: salvando ? 0.7 : 1,
                 }}
                 onMouseEnter={(e) => {
+                  if (salvando) return;
                   e.currentTarget.style.background = theme.colors.accent[700];
                   e.currentTarget.style.transform = "translateY(-1px)";
                   e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0,0,0,0.1)";
                 }}
                 onMouseLeave={(e) => {
+                  if (salvando) return;
                   e.currentTarget.style.background = theme.colors.accent[600];
                   e.currentTarget.style.transform = "translateY(0)";
                   e.currentTarget.style.boxShadow = "0 1px 2px 0 rgba(0,0,0,0.1)";
                 }}
               >
                 <Icons.check />
-                Salvar Registro
+                {salvando ? "Salvando..." : "Salvar Registro"}
               </button>
+            </div>
+          )}
+          {selectedType && erroSalvar && (
+            <div style={{
+              padding: "10px 24px 14px",
+              background: theme.colors.slate[50],
+              borderTop: `1px solid ${theme.colors.slate[200]}`,
+              color: theme.colors.danger,
+              fontSize: "13px",
+              fontWeight: 500,
+            }}>
+              {erroSalvar}
             </div>
           )}
         </div>
