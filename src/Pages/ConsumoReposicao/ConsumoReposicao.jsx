@@ -453,8 +453,42 @@ export default function ConsumoReposicao() {
         }
       }
 
+      const { data: consumoData, error: consumoError } = await supabase
+        .from("v_estoque_consumo_previsao")
+        .select("produto_id,consumo_dia,prev_termino")
+        .eq("fazenda_id", fazendaAtualId);
+
+      if (consumoError) {
+        logSb("[v_estoque_consumo_previsao]", consumoError);
+        throw consumoError;
+      }
+
+      const consumoMap = {};
+      for (const item of consumoData || []) {
+        if (!item?.produto_id) continue;
+        consumoMap[item.produto_id] = {
+          consumo_dia: item.consumo_dia,
+          prev_termino: item.prev_termino,
+        };
+      }
+
+      const formatConsumoDia = (value) => {
+        const n = numOrNull(value);
+        if (n === null) return "—";
+        return n.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+      };
+
+      const formatPrevTermino = (value) => {
+        const iso = toISODateOnly(value);
+        if (!iso) return "—";
+        const [year, month, day] = iso.split("-");
+        if (!year || !month || !day) return "—";
+        return `${day}/${month}/${year}`;
+      };
+
       const adaptados = (data || []).map((row) => {
         const lotesInfo = lotesMap[row.id] || {};
+        const consumoInfo = consumoMap[row.id] || {};
         const validadeMin = lotesInfo.validadeFuturaMin || lotesInfo.validadePassadaMin || null;
 
         return {
@@ -466,8 +500,8 @@ export default function ConsumoReposicao() {
           comprado: toNumber(lotesInfo.comprado, 0),
           estoque: toNumber(lotesInfo.estoque, 0),
           validade: validadeMin || "—",
-          consumo: "—",
-          prevTermino: "—",
+          consumo: formatConsumoDia(consumoInfo.consumo_dia),
+          prevTermino: formatPrevTermino(consumoInfo.prev_termino),
           alertaEstoque: "OK",
 
           _raw: row,
