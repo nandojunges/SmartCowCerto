@@ -71,6 +71,20 @@ export function cryptoId() {
   return `id_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 }
 
+export const formatGrupoEquivalenciaLabel = (value) => {
+  const bruto = String(value || "").trim();
+  if (!bruto) return "";
+
+  const semPrefixo = bruto.startsWith("HIGIENE_") ? bruto.slice("HIGIENE_".length) : bruto;
+
+  return semPrefixo
+    .split("_")
+    .map((parte) => parte.trim())
+    .filter(Boolean)
+    .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1).toLowerCase())
+    .join(" ");
+};
+
 /* =================== Modal base =================== */
 export function Modal({ title, children, onClose }) {
   useEffect(() => {
@@ -205,8 +219,10 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
       if (!prev) return prev;
       const fallbackGrupo = gruposFuncionaisOptions[0].value;
       const etapas = (prev.etapas || []).map((etapa) => {
-        const grupoAtual = String(etapa?.grupo_funcional || etapa?.produto || "").trim();
-        return { ...etapa, grupo_funcional: grupoAtual || fallbackGrupo };
+        const grupoAtual = String(
+          etapa?.grupo_equivalencia || etapa?.grupo_funcional || etapa?.produto || ""
+        ).trim();
+        return { ...etapa, grupo_equivalencia: grupoAtual || fallbackGrupo };
       });
       return { ...prev, etapas };
     });
@@ -218,7 +234,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
       const cond = parseCond(e.condicao);
       const vezes = vezesPorDia(cond, freq);
       const ml = convToMl(e.quantidade, e.unidade);
-      const preco = precoPorML?.[e.grupo_funcional] ?? 0;
+      const preco = precoPorML?.[e.grupo_equivalencia] ?? 0;
       return acc + ml * vezes * preco;
     }, 0);
     setPreviewCusto(custo);
@@ -244,7 +260,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
     set("etapas", [
       ...form.etapas,
       {
-        grupo_funcional: gruposFuncionaisOptions?.[0]?.value || "",
+        grupo_equivalencia: gruposFuncionaisOptions?.[0]?.value || "",
         quantidade: "",
         unidade: "mL",
         condicao: { tipo: "sempre" },
@@ -384,7 +400,7 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
             fontSize: "13px",
           }}
         >
-          Nenhum produto de Higiene/Limpeza encontrado no estoque. Cadastre um produto com grupo funcional.
+          Cadastre produtos com categoria Higiene e grupo_equivalencia no estoque.
         </div>
       )}
 
@@ -467,9 +483,9 @@ export function CadastroCicloModal({ value, onCancel, onSave, tipos, gruposFunci
                 <Select
                   styles={rsStyles}
                   options={gruposFuncionaisOptions || []}
-                  value={(gruposFuncionaisOptions || []).find((o) => o.value === etapa.grupo_funcional) || null}
-                  onChange={(option) => setEtapa(i, "grupo_funcional", option?.value || "")}
-                  placeholder={(gruposFuncionaisOptions || []).length === 0 ? "Cadastre produtos de limpeza no estoque" : "Selecione o grupo funcional..."}
+                  value={(gruposFuncionaisOptions || []).find((o) => o.value === etapa.grupo_equivalencia) || null}
+                  onChange={(option) => setEtapa(i, "grupo_equivalencia", option?.value || "")}
+                  placeholder={(gruposFuncionaisOptions || []).length === 0 ? "Cadastre produtos com categoria Higiene e grupo_equivalencia no estoque." : "Selecione o grupo funcional..."}
                   isDisabled={!(gruposFuncionaisOptions || []).length}
                 />
               </div>
@@ -577,7 +593,10 @@ export function PlanoSemanal({ ciclo }) {
             else if (cond.tipo === "manha") aplicar = horario === "Manhã";
             else if (cond.tipo === "tarde") aplicar = horario === "Tarde";
 
-            if (aplicar) itens.push(`${e.quantidade}${e.unidade} de ${e.grupo_funcional}`);
+            if (aplicar) {
+              const grupoLabel = formatGrupoEquivalenciaLabel(e.grupo_equivalencia || e.grupo_funcional);
+              itens.push(`${e.quantidade}${e.unidade} de ${grupoLabel || "—"}`);
+            }
           });
 
           if (itens.length) execs.push({ horario, itens });

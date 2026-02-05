@@ -13,6 +13,7 @@ import {
   parseCond,
   vezesPorDia,
   isNum,
+  formatGrupoEquivalenciaLabel,
 } from "./ModalLimpeza";
 
 /** =========================================================
@@ -28,6 +29,7 @@ export default function Limpeza() {
   const [precoPorML] = useState({});
   const [estoqueML] = useState({});
   const [gruposFuncionaisOptions, setGruposFuncionaisOptions] = useState([]);
+  const [avisoGruposHigiene, setAvisoGruposHigiene] = useState("");
   const [ciclos, setCiclos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
@@ -42,75 +44,39 @@ export default function Limpeza() {
   const carregarGruposFuncionais = useCallback(async () => {
     if (!fazendaAtualId) {
       setGruposFuncionaisOptions([]);
+      setAvisoGruposHigiene("");
       return [];
     }
 
-    const [higieneRes, limpezaRes] = await Promise.all([
-      supabase
-        .from("estoque_produtos")
-        .select("grupo_funcional,categoria")
-        .eq("fazenda_id", fazendaAtualId)
-        .ilike("categoria", "%higiene%"),
-      supabase
-        .from("estoque_produtos")
-        .select("grupo_funcional,categoria")
-        .eq("fazenda_id", fazendaAtualId)
-        .ilike("categoria", "%limpeza%"),
-    ]);
+    const produtosRes = await supabase
+      .from("estoque_produtos")
+      .select("grupo_equivalencia,categoria")
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("categoria", "Higiene");
 
-    if (higieneRes.error || limpezaRes.error) {
-      throw higieneRes.error || limpezaRes.error;
+    if (produtosRes.error) {
+      throw produtosRes.error;
     }
-
-    const produtosData = [...(higieneRes.data || []), ...(limpezaRes.data || [])];
 
     const grupos = Array.from(
       new Set(
-        produtosData
-          .map((p) => String(p.grupo_funcional || "").trim())
+        (produtosRes.data || [])
+          .map((p) => String(p.grupo_equivalencia || "").trim())
           .filter(Boolean)
       )
     ).sort((a, b) => a.localeCompare(b));
 
-    if (!grupos.length) {
-      console.warn(
-        "Nenhum grupo funcional encontrado por categoria em estoque_produtos. Executando fallback sem filtro de categoria.",
-        { fazendaAtualId }
-      );
+    const options = grupos.map((grupoEquivalencia) => ({
+      value: grupoEquivalencia,
+      label: formatGrupoEquivalenciaLabel(grupoEquivalencia),
+    }));
 
-      const fallbackRes = await supabase
-        .from("estoque_produtos")
-        .select("grupo_funcional,categoria")
-        .eq("fazenda_id", fazendaAtualId)
-        .not("grupo_funcional", "is", null)
-        .limit(200);
-
-      if (fallbackRes.error) {
-        throw fallbackRes.error;
-      }
-
-      const fallbackGrupos = Array.from(
-        new Set(
-          (fallbackRes.data || [])
-            .map((p) => String(p.grupo_funcional || "").trim())
-            .filter(Boolean)
-        )
-      ).sort((a, b) => a.localeCompare(b));
-
-      if (!fallbackGrupos.length) {
-        console.warn(
-          "Fallback sem categoria também não retornou grupos funcionais. Verifique o nome da coluna de categoria.",
-          { fazendaAtualId, amostra: fallbackRes.data?.slice?.(0, 5) || [] }
-        );
-      }
-
-      const fallbackOptions = fallbackGrupos.map((gf) => ({ value: gf, label: gf }));
-      setGruposFuncionaisOptions(fallbackOptions);
-      return fallbackOptions;
-    }
-
-    const options = grupos.map((gf) => ({ value: gf, label: gf }));
     setGruposFuncionaisOptions(options);
+    setAvisoGruposHigiene(
+      options.length
+        ? ""
+        : "Cadastre produtos com categoria Higiene e grupo_equivalencia no estoque."
+    );
     return options;
   }, [fazendaAtualId]);
 
@@ -158,7 +124,7 @@ export default function Limpeza() {
       if (cicloIds.length > 0) {
         const etapasRes = await supabase
           .from("limpeza_etapas")
-          .select("id,ciclo_id,ordem,grupo_funcional,quantidade_ml,condicao,complementar")
+          .select("id,ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar")
           .eq("fazenda_id", fazendaAtualId)
           .in("ciclo_id", cicloIds)
           .order("ordem", { ascending: true });
@@ -176,7 +142,7 @@ export default function Limpeza() {
         const cicloId = etapa.ciclo_id;
         if (!acc[cicloId]) acc[cicloId] = [];
         acc[cicloId].push({
-          grupo_funcional: etapa.grupo_funcional || "",
+          grupo_equivalencia: etapa.grupo_equivalencia || "",
           quantidade: Number(etapa.quantidade_ml) || "",
           unidade: "mL",
           condicao: parseCond(etapa.condicao),
@@ -228,7 +194,7 @@ export default function Limpeza() {
         frequencia: 2,
         etapas: [
           {
-            grupo_funcional: gruposFuncionaisOptions[0]?.value || "",
+            grupo_equivalencia: gruposFuncionaisOptions[0]?.value || "",
             quantidade: "",
             unidade: "mL",
             condicao: { tipo: "sempre" },
@@ -255,7 +221,7 @@ export default function Limpeza() {
     if (!Array.isArray(c?.etapas) || c.etapas.length === 0) return "Adicione ao menos uma etapa.";
     for (let i = 0; i < c.etapas.length; i++) {
       const e = c.etapas[i];
-      if (!String(e?.grupo_funcional || "").trim()) return `Selecione o grupo funcional da Etapa ${i + 1}.`;
+      if (!String(e?.grupo_equivalencia || "").trim()) return `Selecione o grupo funcional da Etapa ${i + 1}.`;
       if (!isNum(e?.quantidade) || Number(e.quantidade) <= 0)
         return `Informe a quantidade válida na Etapa ${i + 1}.`;
     }
@@ -317,7 +283,7 @@ export default function Limpeza() {
       fazenda_id: fazendaAtualId,
       ciclo_id: cicloId,
       ordem: idx + 1,
-      grupo_funcional: String(etapa.grupo_funcional || "").trim(),
+      grupo_equivalencia: String(etapa.grupo_equivalencia || "").trim(),
       quantidade_ml: convToMl(etapa.quantidade, etapa.unidade),
       condicao: condicaoParaBanco(etapa.condicao),
       complementar: !!etapa.complementar,
@@ -344,7 +310,7 @@ export default function Limpeza() {
     if (cicloIdsAtualizados.length > 0) {
       const { data } = await supabase
         .from("limpeza_etapas")
-        .select("ciclo_id,ordem,grupo_funcional,quantidade_ml,condicao,complementar")
+        .select("ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar")
         .eq("fazenda_id", fazendaAtualId)
         .in("ciclo_id", cicloIdsAtualizados)
         .order("ordem", { ascending: true });
@@ -354,7 +320,7 @@ export default function Limpeza() {
     const etapasPorCiclo = (etapasAtualizadas || []).reduce((acc, etapa) => {
       if (!acc[etapa.ciclo_id]) acc[etapa.ciclo_id] = [];
       acc[etapa.ciclo_id].push({
-        grupo_funcional: etapa.grupo_funcional || "",
+        grupo_equivalencia: etapa.grupo_equivalencia || "",
         quantidade: Number(etapa.quantidade_ml) || "",
         unidade: "mL",
         condicao: parseCond(etapa.condicao),
@@ -405,7 +371,7 @@ export default function Limpeza() {
       const cond = parseCond(e.condicao);
       const vezes = vezesPorDia(cond, freq);
       const ml = convToMl(e.quantidade, e.unidade);
-      const preco = precoPorML?.[e.grupo_funcional] ?? 0;
+      const preco = precoPorML?.[e.grupo_equivalencia] ?? 0;
       return acc + ml * vezes * preco;
     }, 0);
   }, [precoPorML]);
@@ -418,7 +384,7 @@ export default function Limpeza() {
       const cond = parseCond(e.condicao);
       const vezes = vezesPorDia(cond, freq);
       const mlDia = convToMl(e.quantidade, e.unidade) * vezes;
-      const estoque = estoqueML?.[e.grupo_funcional] ?? 0;
+      const estoque = estoqueML?.[e.grupo_equivalencia] ?? 0;
       if (mlDia > 0) minDias = Math.min(minDias, estoque / mlDia);
     });
 
@@ -743,12 +709,12 @@ export default function Limpeza() {
                       <td style={styles.td}>
                         <div
                           style={styles.etapasText}
-                          title={c.etapas?.map((e) => `${e.grupo_funcional} (${e.quantidade}${e.unidade})`).join(" → ")}
+                          title={c.etapas?.map((e) => `${formatGrupoEquivalenciaLabel(e.grupo_equivalencia)} (${e.quantidade}${e.unidade})`).join(" → ")}
                         >
                           {c.etapas?.map((e, idx) => (
                             <span key={idx}>
                               {idx > 0 && <span style={{ color: "#cbd5e1", margin: "0 4px" }}>→</span>}
-                              <span style={{ fontWeight: 500 }}>{e.grupo_funcional}</span>
+                              <span style={{ fontWeight: 500 }}>{formatGrupoEquivalenciaLabel(e.grupo_equivalencia)}</span>
                               <span style={{ color: "#94a3b8", fontSize: "12px" }}>
                                 {" "}
                                 ({e.quantidade}
@@ -829,6 +795,24 @@ export default function Limpeza() {
           </div>
         </Modal>
       )}
+
+
+      {avisoGruposHigiene ? (
+        <div
+          style={{
+            position: "fixed",
+            right: 20,
+            bottom: erro ? 84 : 20,
+            background: "#fffbeb",
+            color: "#92400e",
+            padding: "12px 16px",
+            borderRadius: 8,
+            border: "1px solid #fde68a",
+          }}
+        >
+          {avisoGruposHigiene}
+        </div>
+      ) : null}
 
       {erro ? (
         <div style={{ position: "fixed", right: 20, bottom: 20, background: "#fee2e2", color: "#991b1b", padding: "12px 16px", borderRadius: 8, border: "1px solid #fecaca" }}>
