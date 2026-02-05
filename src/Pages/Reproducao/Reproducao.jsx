@@ -5,7 +5,7 @@ import { useFazenda } from "../../context/FazendaContext";
 import Manejo from "./Manejo/Manejo";
 import SidebarConfig from "./SidebarConfig/SidebarConfig";
 import Protocolos from "./Protocolos";
-import Inseminador from "./SidebarConfig/Inseminador";
+import Inseminador from "./Inseminador";
 
 export default function Reproducao() {
   const { fazendaAtualId } = useFazenda();
