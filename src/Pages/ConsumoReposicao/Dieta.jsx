@@ -37,6 +37,7 @@ function formatDateBR(iso) {
 export default function Dieta({ onCountChange }) {
   const { fazendaAtualId } = useFazenda();
   const memoData = MEMO_DIETA.data || {};
+
   const [dietas, setDietas] = useState(() => memoData.dietas ?? []);
   const [hoveredRowId, setHoveredRowId] = useState(null);
   const [sortConfig, setSortConfig] = useState(
@@ -44,8 +45,11 @@ export default function Dieta({ onCountChange }) {
   );
   const [filtros, setFiltros] = useState(() => memoData.filtros ?? { lote: "__ALL__" });
 
-  const [loading, setLoading] = useState(() => !memoData.dietas);
-  const [atualizando, setAtualizando] = useState(false);
+  // ✅ separa os loadings
+  const [loadingLista, setLoadingLista] = useState(() => !memoData.dietas);
+  const [atualizandoLista, setAtualizandoLista] = useState(false);
+  const [loadingModal, setLoadingModal] = useState(false);
+
   const [erro, setErro] = useState(() => memoData.erro ?? "");
 
   const [modal, setModal] = useState({ open: false, dieta: null });
@@ -78,9 +82,9 @@ export default function Dieta({ onCountChange }) {
   useEffect(() => onCountChange?.(dietas.length), [dietas.length, onCountChange]);
 
   const loteOptions = useMemo(() => {
-    const values = Array.from(
-      new Set((dietas || []).map((d) => d.lote).filter(Boolean))
-    ).sort((a, b) => a.localeCompare(b));
+    const values = Array.from(new Set((dietas || []).map((d) => d.lote).filter(Boolean))).sort(
+      (a, b) => a.localeCompare(b)
+    );
     return values;
   }, [dietas]);
 
@@ -137,29 +141,29 @@ export default function Dieta({ onCountChange }) {
   const loadDietas = useCallback(async () => {
     const memoFresh = MEMO_DIETA.data && Date.now() - MEMO_DIETA.lastAt < 30000;
     const hasData = Array.isArray(dietas) && dietas.length > 0;
+
     if (memoFresh && hasData) {
-      setLoading(false);
-      setAtualizando(false);
+      setLoadingLista(false);
+      setAtualizandoLista(false);
       return;
     }
-    if (hasData) {
-      setAtualizando(true);
-    } else {
-      setLoading(true);
-    }
+
+    if (hasData) setAtualizandoLista(true);
+    else setLoadingLista(true);
+
     setErro("");
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       const cache = normalizeDietaCache(await kvGet(CACHE_DIETA_KEY));
       setDietas(cache);
-      setLoading(false);
-      setAtualizando(false);
+      setLoadingLista(false);
+      setAtualizandoLista(false);
       return;
     }
 
     if (!fazendaAtualId) {
-      setLoading(false);
-      setAtualizando(false);
+      setLoadingLista(false);
+      setAtualizandoLista(false);
       setErro("Selecione uma fazenda para carregar as dietas.");
       return;
     }
@@ -167,7 +171,8 @@ export default function Dieta({ onCountChange }) {
     const { data, error } = await withFazendaId(
       supabase
         .from("dietas")
-        .select(`
+        .select(
+          `
           id,
           lote_id,
           dia,
@@ -177,15 +182,16 @@ export default function Dieta({ onCountChange }) {
           observacao,
           created_at,
           lotes ( nome )
-        `),
+        `
+        ),
       fazendaAtualId
     ).order("dia", { ascending: false });
 
     if (error) {
       console.error("Erro loadDietas:", error);
       setErro(error?.message || "Erro ao carregar dietas.");
-      setLoading(false);
-      setAtualizando(false);
+      setLoadingLista(false);
+      setAtualizandoLista(false);
       return;
     }
 
@@ -202,8 +208,8 @@ export default function Dieta({ onCountChange }) {
     }));
 
     await updateCache(list);
-    setLoading(false);
-    setAtualizando(false);
+    setLoadingLista(false);
+    setAtualizandoLista(false);
   }, [dietas, fazendaAtualId, normalizeDietaCache, updateCache]);
 
   useEffect(() => {
@@ -211,7 +217,8 @@ export default function Dieta({ onCountChange }) {
   }, [loadDietas]);
 
   /** ===================== NOVO / EDITAR ===================== */
-  const abrirNovo = () =>
+  const abrirNovo = useCallback(() => {
+    // ✅ abre SEM depender do loading da lista
     setModal({
       open: true,
       dieta: {
@@ -224,38 +231,46 @@ export default function Dieta({ onCountChange }) {
         observacao: "",
       },
     });
+  }, []);
 
   const abrirEditar = useCallback(
     async (dietaRow) => {
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        const ingredientes = Array.isArray(dietaRow?.ingredientes) && dietaRow.ingredientes.length
-          ? dietaRow.ingredientes
-          : null;
-
-        if (!ingredientes) {
-          setErro("Sem itens da dieta em cache para edição offline.");
-          return;
-        }
-
-        setModal({
-          open: true,
-          dieta: {
-            id: dietaRow.id,
-            lote_id: dietaRow.lote_id,
-            lote_nome: dietaRow.lote,
-            numVacas: dietaRow.numVacas,
-            data: dietaRow.data,
-            observacao: dietaRow.observacao || "",
-            ingredientes,
-          },
-        });
-        return;
-      }
-
-      setLoading(true);
+      // ✅ loading só do modal (não trava a lista com overlay)
+      setLoadingModal(true);
       setErro("");
 
       try {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          const ingredientes =
+            Array.isArray(dietaRow?.ingredientes) && dietaRow.ingredientes.length
+              ? dietaRow.ingredientes
+              : null;
+
+          if (!ingredientes) {
+            setErro("Sem itens da dieta em cache para edição offline.");
+            return;
+          }
+
+          setModal({
+            open: true,
+            dieta: {
+              id: dietaRow.id,
+              lote_id: dietaRow.lote_id,
+              lote_nome: dietaRow.lote,
+              numVacas: dietaRow.numVacas,
+              data: dietaRow.data,
+              observacao: dietaRow.observacao || "",
+              ingredientes,
+            },
+          });
+          return;
+        }
+
+        if (!fazendaAtualId) {
+          setErro("Selecione uma fazenda para editar dietas.");
+          return;
+        }
+
         const { data: itens, error: eItens } = await withFazendaId(
           supabase.from("dietas_itens").select("produto_id, quantidade_kg_vaca"),
           fazendaAtualId
@@ -286,7 +301,7 @@ export default function Dieta({ onCountChange }) {
         console.error("Erro abrirEditar (itens):", err);
         setErro(err?.message || "Erro ao abrir edição.");
       } finally {
-        setLoading(false);
+        setLoadingModal(false);
       }
     },
     [fazendaAtualId]
@@ -296,20 +311,19 @@ export default function Dieta({ onCountChange }) {
   const salvar = useCallback(
     async (saved) => {
       setModal({ open: false, dieta: null });
+
       if (saved?.offline) {
         const nextList = (() => {
           const base = Array.isArray(dietas) ? [...dietas] : [];
           const idx = base.findIndex((d) => String(d.id) === String(saved.id));
-          if (idx >= 0) {
-            base[idx] = { ...base[idx], ...saved };
-          } else {
-            base.push(saved);
-          }
+          if (idx >= 0) base[idx] = { ...base[idx], ...saved };
+          else base.push(saved);
           return base.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
         })();
         await updateCache(nextList);
         return;
       }
+
       await loadDietas();
     },
     [dietas, loadDietas, updateCache]
@@ -333,7 +347,7 @@ export default function Dieta({ onCountChange }) {
       return;
     }
 
-    setLoading(true);
+    setLoadingLista(true);
     setErro("");
 
     try {
@@ -343,10 +357,8 @@ export default function Dieta({ onCountChange }) {
       ).eq("dieta_id", d.id);
       if (eItens) throw eItens;
 
-      const { error: eDiet } = await withFazendaId(
-        supabase.from("dietas").delete(),
-        fazendaAtualId
-      ).eq("id", d.id);
+      const { error: eDiet } = await withFazendaId(supabase.from("dietas").delete(), fazendaAtualId)
+        .eq("id", d.id);
       if (eDiet) throw eDiet;
 
       setExcluir({ open: false, dieta: null });
@@ -356,7 +368,7 @@ export default function Dieta({ onCountChange }) {
       setErro(err?.message || "Erro ao excluir dieta.");
       setExcluir({ open: false, dieta: null });
     } finally {
-      setLoading(false);
+      setLoadingLista(false);
     }
   }, [dietas, excluir.dieta, fazendaAtualId, loadDietas, updateCache]);
 
@@ -629,18 +641,12 @@ export default function Dieta({ onCountChange }) {
             <p style={styles.subtitle}>Planeje e acompanhe as dietas dos lotes</p>
           </div>
           <div style={styles.headerActions}>
-            <button 
-              style={styles.secondaryButton} 
-              onClick={loadDietas}
-              disabled={atualizando}
-            >
-              {atualizando ? "Atualizando..." : "↻ Atualizar"}
+            <button style={styles.secondaryButton} onClick={loadDietas} disabled={atualizandoLista}>
+              {atualizandoLista ? "Atualizando..." : "↻ Atualizar"}
             </button>
-            <button 
-              style={styles.primaryButton} 
-              onClick={abrirNovo}
-              disabled={loading}
-            >
+
+            {/* ✅ não bloqueia abrir modal por loading da lista */}
+            <button style={styles.primaryButton} onClick={abrirNovo}>
               <span>+</span>
               <span>Nova Dieta</span>
             </button>
@@ -658,14 +664,16 @@ export default function Dieta({ onCountChange }) {
         <div style={styles.filtersBar}>
           <div style={styles.filterGroup}>
             <label style={styles.filterLabel}>Filtrar por Lote</label>
-            <select 
+            <select
               style={styles.select}
               value={filtros.lote}
-              onChange={(e) => setFiltros(prev => ({ ...prev, lote: e.target.value }))}
+              onChange={(e) => setFiltros((prev) => ({ ...prev, lote: e.target.value }))}
             >
               <option value="__ALL__">Todos os lotes</option>
-              {loteOptions.map(opt => (
-                <option key={opt} value={opt}>{opt}</option>
+              {loteOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
               ))}
             </select>
           </div>
@@ -673,7 +681,7 @@ export default function Dieta({ onCountChange }) {
 
         {/* Tabela Moderna */}
         <div style={styles.tableContainer}>
-          {loading && !hasDietas && (
+          {loadingLista && !hasDietas && (
             <div style={styles.loadingOverlay}>
               <div>Carregando dietas...</div>
             </div>
@@ -683,18 +691,16 @@ export default function Dieta({ onCountChange }) {
             <thead style={styles.thead}>
               <tr>
                 <th style={styles.th}>
-                  <div 
-                    style={styles.thSortable}
-                    onClick={() => toggleSort("lote")}
-                  >
+                  <div style={styles.thSortable} onClick={() => toggleSort("lote")}>
                     <span>Lote</span>
                     {sortConfig.key === "lote" && (
                       <span>{sortConfig.direction === "asc" ? "↑" : "↓"}</span>
                     )}
                   </div>
                 </th>
+
                 <th style={{ ...styles.th, textAlign: "center" }}>
-                  <div 
+                  <div
                     style={{ ...styles.thSortable, justifyContent: "center" }}
                     onClick={() => toggleSort("numVacas")}
                   >
@@ -704,8 +710,9 @@ export default function Dieta({ onCountChange }) {
                     )}
                   </div>
                 </th>
+
                 <th style={{ ...styles.th, textAlign: "right" }}>
-                  <div 
+                  <div
                     style={{ ...styles.thSortable, justifyContent: "flex-end" }}
                     onClick={() => toggleSort("custoVacaDia")}
                   >
@@ -715,8 +722,9 @@ export default function Dieta({ onCountChange }) {
                     )}
                   </div>
                 </th>
+
                 <th style={{ ...styles.th, textAlign: "right" }}>
-                  <div 
+                  <div
                     style={{ ...styles.thSortable, justifyContent: "flex-end" }}
                     onClick={() => toggleSort("custoTotal")}
                   >
@@ -726,11 +734,13 @@ export default function Dieta({ onCountChange }) {
                     )}
                   </div>
                 </th>
+
                 <th style={{ ...styles.th, textAlign: "right" }}>
                   <span>Custo Vaca/mês</span>
                 </th>
+
                 <th style={{ ...styles.th, textAlign: "center" }}>
-                  <div 
+                  <div
                     style={{ ...styles.thSortable, justifyContent: "center" }}
                     onClick={() => toggleSort("data")}
                   >
@@ -740,20 +750,29 @@ export default function Dieta({ onCountChange }) {
                     )}
                   </div>
                 </th>
+
                 <th style={{ ...styles.th, textAlign: "center" }}>Ações</th>
               </tr>
             </thead>
+
             <tbody>
-              {!loading && dietasExibidas.length === 0 ? (
+              {!loadingLista && dietasExibidas.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={styles.emptyState}>
                     <div style={{ fontSize: "48px", marginBottom: "16px" }}>🥗</div>
-                    <div style={{ fontSize: "16px", fontWeight: 600, color: "#374151", marginBottom: "8px" }}>
+                    <div
+                      style={{
+                        fontSize: "16px",
+                        fontWeight: 600,
+                        color: "#374151",
+                        marginBottom: "8px",
+                      }}
+                    >
                       Nenhuma dieta encontrada
                     </div>
                     <div style={{ fontSize: "14px" }}>
-                      {dietas.length === 0 
-                        ? "Cadastre sua primeira dieta para começar" 
+                      {dietas.length === 0
+                        ? "Cadastre sua primeira dieta para começar"
                         : "Tente ajustar os filtros para ver mais resultados"}
                     </div>
                   </td>
@@ -762,9 +781,9 @@ export default function Dieta({ onCountChange }) {
                 dietasExibidas.map((dieta) => {
                   const rowId = dieta.id;
                   const isHovered = hoveredRowId === rowId;
-                  
+
                   return (
-                    <tr 
+                    <tr
                       key={rowId}
                       style={{
                         ...styles.tr,
@@ -776,36 +795,45 @@ export default function Dieta({ onCountChange }) {
                       <td style={styles.td}>
                         <span style={styles.loteBadge}>{dieta.lote}</span>
                       </td>
+
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
                         <span style={styles.numVacas}>{dieta.numVacas}</span>
                       </td>
+
                       <td style={{ ...styles.td, textAlign: "right" }}>
                         <span style={styles.currency}>{formatBRL(dieta.custoVacaDia)}</span>
                       </td>
+
                       <td style={{ ...styles.td, textAlign: "right" }}>
                         <span style={styles.currencyTotal}>{formatBRL(dieta.custoTotal)}</span>
                       </td>
+
                       <td style={{ ...styles.td, textAlign: "right" }}>
                         <span style={{ ...styles.currency, opacity: 0.8 }}>
                           {formatBRL(Number(dieta.custoVacaDia || 0) * 30)}
                         </span>
                       </td>
+
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
                         <span style={styles.date}>{formatDateBR(dieta.data)}</span>
                       </td>
+
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
                         <div style={styles.actionButtons}>
-                          <button 
+                          <button
                             style={styles.iconButton}
                             onClick={() => abrirEditar(dieta)}
                             title="Editar"
+                            disabled={loadingModal}
                           >
-                            ✏️
+                            {loadingModal ? "…" : "✏️"}
                           </button>
-                          <button 
+
+                          <button
                             style={{ ...styles.iconButton, ...styles.iconButtonDanger }}
                             onClick={() => pedirExclusao(dieta)}
                             title="Excluir"
+                            disabled={loadingModal}
                           >
                             🗑️
                           </button>
@@ -842,7 +870,7 @@ export default function Dieta({ onCountChange }) {
         </div>
       </div>
 
-      {/* Modais mantidos intactos */}
+      {/* ✅ Modal abre independente do loading da lista */}
       {modal.open && (
         <ModalDieta
           value={modal.dieta}
@@ -879,17 +907,16 @@ export default function Dieta({ onCountChange }) {
             <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: "#0f172a" }}>
               Confirmar exclusão
             </div>
+
             <div style={{ color: "#64748b", marginBottom: 24, lineHeight: 1.5 }}>
               Deseja excluir a dieta do lote <strong>"{excluir.dieta?.lote || "—"}"</strong> na data{" "}
               <strong>{formatDateBR(excluir.dieta?.data)}</strong>?
               <br />
-              <span style={{ fontSize: 13, color: "#ef4444" }}>
-                Esta ação não pode ser desfeita.
-              </span>
+              <span style={{ fontSize: 13, color: "#ef4444" }}>Esta ação não pode ser desfeita.</span>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-              <button 
+              <button
                 style={{
                   padding: "10px 20px",
                   backgroundColor: "#f3f4f6",
@@ -904,7 +931,8 @@ export default function Dieta({ onCountChange }) {
               >
                 Cancelar
               </button>
-              <button 
+
+              <button
                 style={{
                   padding: "10px 20px",
                   backgroundColor: "#ef4444",
