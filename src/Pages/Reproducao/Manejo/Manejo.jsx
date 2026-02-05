@@ -36,13 +36,21 @@ const Icons = {
 /* =========================================================
    HELPERS
    ========================================================= */
-const today = () => new Date();
 function toISODate(dt) { return dt.toISOString().split('T')[0]; }
 function brToISO(br) {
   const m = String(br || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})/);
   if (!m) return null;
   const dt = new Date(+m[3], +m[2] - 1, +m[1]);
   return Number.isFinite(dt.getTime()) ? toISODate(dt) : null;
+}
+
+
+function normalizePayloadDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return brToISO(raw);
+  return null;
 }
 
 async function insertReproEvento(payload) {
@@ -217,7 +225,7 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
   };
 
   const handleSubmit = async (payload) => {
-    if (!fazendaAtualId || !animalId) return alert("Dados inválidos");
+    if (!fazendaAtualId || !animalId) return;
     
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -226,23 +234,27 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
       if (!userId) throw new Error("Sessão inválida (auth.uid vazio)");
 
       if (payload.kind === "DG") {
+        const dataEvento = normalizePayloadDate(payload.data);
+        if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
         const mapa = { Prenhe: "POSITIVO", Vazia: "NEGATIVO", "Não vista": "PENDENTE" };
         await insertReproEvento({
           fazenda_id: fazendaAtualId,
           animal_id: animalId,
           tipo: "DG",
-          data_evento: brToISO(payload.data) || toISODate(today()),
+          data_evento: dataEvento,
           user_id: userId,
           resultado_dg: mapa[payload.dg] || "PENDENTE",
           observacoes: payload?.extras?.obs,
           meta: payload?.extras,
         });
       } else if (payload.kind === "IA") {
+        const dataEvento = normalizePayloadDate(payload.data);
+        if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
         await insertReproEvento({
           fazenda_id: fazendaAtualId,
           animal_id: animalId,
           tipo: "IA",
-          data_evento: brToISO(payload.data) || toISODate(today()),
+          data_evento: dataEvento,
           user_id: userId,
           inseminador_id: payload.inseminadorId || null,
           touro_id: payload.touroId || null,
@@ -250,7 +262,6 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
           razao: payload?.extras?.razao || null,
           tipo_semen: payload?.extras?.tipoSemen || null,
           palhetas: payload?.extras?.palhetas ?? null,
-          lote: payload?.extras?.lote || null,
           observacoes: payload.obs || null,
           meta: payload?.extras || null,
         });
