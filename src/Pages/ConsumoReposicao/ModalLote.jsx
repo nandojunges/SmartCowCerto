@@ -1,694 +1,881 @@
-// src/pages/ConsumoReposicao/ModalLote.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/pages/ConsumoReposicao/ModalDieta.jsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
+import { supabase } from "../../lib/supabaseClient";
+import { withFazendaId } from "../../lib/fazendaScope";
+import { useFazenda } from "../../context/FazendaContext";
+import { enqueue, kvGet } from "../../offline/localDB";
 
-/* ===================== ÍCONES POR FUNÇÃO ===================== */
-const FUNCOES_ICONS = {
-  "Lactação": "🥛",
-  "Tratamento": "💊", 
-  "Descarte": "🚫",
-  "Secagem": "🛑",
-  "Pré-parto": "🐄",
-  "Novilhas": "🌱",
-  "Outro": "📋"
+const CATEGORIA_INGREDIENTE = "cozinha";
+const TIPOS_ENTRADA = ["ENTRADA", "entrada", "Entrada", "E", "e"];
+
+const CACHE_ESTOQUE_KEY = "cache:estoque:list";
+const CACHE_LOTES_KEY = "cache:lotes:list";
+
+/* ===== Ícones e Cores ===== */
+const ICONS = {
+  lote: "🐄",
+  data: "📅",
+  ingrediente: "🌾",
+  dinheiro: "💰",
+  alerta: "⚠️",
+  sucesso: "✓",
 };
 
-const FUNCOES_CORES = {
-  "Lactação": { bg: "#dbeafe", border: "#3b82f6", text: "#1e40af" },
-  "Tratamento": { bg: "#fef3c7", border: "#f59e0b", text: "#92400e" },
-  "Descarte": { bg: "#fee2e2", border: "#ef4444", text: "#991b1b" },
-  "Secagem": { bg: "#f3e8ff", border: "#8b5cf6", text: "#5b21b6" },
-  "Pré-parto": { bg: "#fce7f3", border: "#ec4899", text: "#9d174d" },
-  "Novilhas": { bg: "#d1fae5", border: "#10b981", text: "#065f46" },
-  "Outro": { bg: "#f3f4f6", border: "#6b7280", text: "#374151" }
-};
+function generateLocalId() {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  } catch {}
+  return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
 
-/* ===================== REACT SELECT CUSTOMIZADO ===================== */
-const selectTheme = (base) => ({
-  ...base,
-  colors: {
-    ...base.colors,
-    primary: "#3b82f6",
-    primary75: "#60a5fa",
-    primary50: "#bfdbfe",
-    primary25: "#eff6ff",
-    danger: "#ef4444",
-    dangerLight: "#fee2e2",
-    neutral0: "#ffffff",
-    neutral5: "#f8fafc",
-    neutral10: "#f1f5f9",
-    neutral20: "#e2e8f0",
-    neutral30: "#cbd5e1",
-    neutral40: "#94a3b8",
-    neutral50: "#64748b",
-    neutral60: "#475569",
-    neutral70: "#334155",
-    neutral80: "#1e293b",
-    neutral90: "#0f172a",
-  },
-});
+/* ===== Helpers Numéricos ===== */
+function safeNum(n) {
+  const x = Number(n);
+  return Number.isFinite(x) ? x : 0;
+}
 
-const selectStyles = {
-  container: (base) => ({ ...base, width: "100%" }),
-  control: (base, state) => ({
-    ...base,
-    minHeight: 48,
-    borderRadius: 12,
-    borderColor: state.isFocused ? "#3b82f6" : "#e2e8f0",
-    boxShadow: state.isFocused ? "0 0 0 3px rgba(59, 130, 246, 0.1)" : "none",
-    backgroundColor: "#fff",
-    transition: "all 0.2s ease",
-    "&:hover": { borderColor: "#3b82f6" },
-  }),
-  valueContainer: (base) => ({ ...base, padding: "0 16px" }),
-  indicatorsContainer: (base) => ({ ...base, height: 48 }),
-  menuPortal: (base) => ({ ...base, zIndex: 99999 }),
-  menu: (base) => ({ 
-    ...base, 
-    zIndex: 99999, 
-    borderRadius: 12,
-    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
-    border: "1px solid #e2e8f0"
-  }),
-  option: (base, state) => ({
-    ...base,
-    backgroundColor: state.isSelected ? "#eff6ff" : state.isFocused ? "#f8fafc" : "#fff",
-    color: state.isSelected ? "#1e40af" : "#334155",
-    fontWeight: state.isSelected ? 600 : 500,
-    padding: "12px 16px",
-    cursor: "pointer",
-  }),
-  singleValue: (base) => ({ ...base, color: "#0f172a", fontWeight: 600 }),
-  placeholder: (base) => ({ ...base, color: "#94a3b8" }),
-};
+function parseNumBR(v) {
+  if (v == null) return 0;
+  const s = String(v).trim().replace(/\./g, "").replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
 
-/* ===================== MODAL BASE MODERNO ===================== */
-function ModalBase({ title, children, onClose, icon = "📋" }) {
+function formatBRL(n) {
+  try {
+    return (Number(n) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  } catch {
+    return `R$ ${(Number(n) || 0).toFixed(2)}`;
+  }
+}
+
+function formatDateBR(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
+}
+
+function isoToDateOnly(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function sameDayISO(a, b) {
+  if (!a || !b) return false;
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
+}
+
+function pickMostRecentRow(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const getTime = (r) => {
+    const raw = r?.created_at ?? r?.data ?? r?.dia ?? r?.updated_at ?? null;
+    const t = raw ? new Date(raw).getTime() : NaN;
+    return Number.isFinite(t) ? t : 0;
+  };
+  return rows.reduce((best, curr) => (getTime(curr) > getTime(best) ? curr : best), rows[0]);
+}
+
+function extractUnitPriceFromMov(m) {
+  if (!m) return 0;
+  const direct = m?.valor_unitario_aplicado ?? m?.valor_unitario ?? m?.preco_unitario ?? m?.preco ?? null;
+  if (direct != null && direct !== "") return safeNum(direct);
+  const total = m?.valor_total ?? m?.total ?? null;
+  const qtd = m?.quantidade ?? m?.qtd ?? null;
+  const t = safeNum(total);
+  const q = safeNum(qtd);
+  return q > 0 && t > 0 ? t / q : 0;
+}
+
+// 🔧 helper: pega quantidade disponível do produto (vários nomes possíveis)
+function getQtdDisponivel(p) {
+  const cand =
+    p?.quantidade_atual ??
+    p?.qtd_atual ??
+    p?.saldo ??
+    p?.estoque ??
+    p?.quantidade ??
+    p?.qtd ??
+    p?.qtdDisponivel ??
+    p?.qtd_disponivel ??
+    null;
+  return safeNum(cand);
+}
+
+// 🔧 helper: normaliza categoria
+function normCat(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+/* ===== Componente Principal ===== */
+export default function ModalDieta({ title = "Cadastro de Dieta", value, onCancel, onSave }) {
+  const { fazendaAtualId } = useFazenda();
+  const wrapRef = useRef(null);
+
+  // Estados de dados externos
+  const [lotesDb, setLotesDb] = useState([]);
+  const [lotesLoading, setLotesLoading] = useState(false);
+
+  // ✅ aqui fica só "cozinha" e com saldo > 0
+  const [produtosCozinha, setProdutosCozinha] = useState([]);
+  const [produtosLoading, setProdutosLoading] = useState(false);
+
+  const [precosMap, setPrecosMap] = useState({});
+  const [numVacasLoading, setNumVacasLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Form state
+  const [form, setForm] = useState({
+    id: null,
+    lote_id: "",
+    lote_nome: "",
+    numVacas: 0,
+    data: new Date().toISOString(),
+    observacao: "",
+    ingredientes: [],
+  });
+
+  // Inicialização
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    if (value) {
+      setForm({
+        id: value.id ?? null,
+        lote_id: value.lote_id ?? "",
+        lote_nome: value.lote_nome ?? "",
+        numVacas: Number(value.numVacas || value.numvacas_snapshot || 0),
+        data: value.data || new Date().toISOString(),
+        observacao: value.observacao ?? "",
+        ingredientes: Array.isArray(value.ingredientes) ? value.ingredientes : [],
+      });
+    }
+  }, [value]);
 
-  return (
-    <div style={overlay} onMouseDown={onClose}>
-      <div style={modalCard} onMouseDown={(e) => e.stopPropagation()}>
-        <div style={modalHeader}>
-          <div style={headerContent}>
-            <span style={headerIcon}>{icon}</span>
-            <div>
-              <div style={headerTitle}>{title}</div>
-              <div style={headerSubtitle}>Preencha os dados do lote</div>
-            </div>
-          </div>
-          <button style={closeButton} onClick={onClose} title="Fechar (ESC)">
-            ×
-          </button>
-        </div>
-        <div style={modalBody}>{children}</div>
-      </div>
-    </div>
+  /* ===== Carregamento de Dados ===== */
+  const loadLotes = useCallback(async () => {
+    setLotesLoading(true);
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const cache = await kvGet(CACHE_LOTES_KEY);
+      const list = Array.isArray(cache) ? cache : [];
+      setLotesDb(list.filter((l) => l?.ativo !== false).map((l) => ({ id: l.id, nome: l.nome })));
+      setLotesLoading(false);
+      return;
+    }
+
+    if (!fazendaAtualId) {
+      setLotesDb([]);
+      setLotesLoading(false);
+      return;
+    }
+
+    const { data, error } = await withFazendaId(
+      supabase.from("lotes").select("id, nome").eq("ativo", true),
+      fazendaAtualId
+    ).order("nome", { ascending: true });
+
+    if (!error) setLotesDb(Array.isArray(data) ? data : []);
+    setLotesLoading(false);
+  }, [fazendaAtualId]);
+
+  const loadProdutos = useCallback(async () => {
+    setProdutosLoading(true);
+
+    // ===== OFFLINE =====
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const cache = await kvGet(CACHE_ESTOQUE_KEY);
+      const list = Array.isArray(cache) ? cache : [];
+
+      // ✅ filtra categoria cozinha + disponível (>0)
+      const cozinha = list.filter((p) => {
+        const cat = normCat(p?.categoria);
+        const okCat = cat.includes(CATEGORIA_INGREDIENTE);
+        const qtd = getQtdDisponivel(p);
+        return okCat && qtd > 0;
+      });
+
+      // ✅ padroniza shape para o Select
+      const normalized = cozinha.map((p) => ({
+        id: p.id,
+        nome_comercial: p.nomeComercial || p.nome_comercial || p.nome || "—",
+        unidade: p.unidade || p.unidade_medida || "un",
+        quantidade_atual: getQtdDisponivel(p),
+      }));
+
+      setProdutosCozinha(normalized);
+
+      // preços aproximados pelo cache
+      const prices = {};
+      normalized.forEach((p) => {
+        const original = cozinha.find((x) => String(x.id) === String(p.id));
+        const qtd = safeNum(original?.quantidade ?? original?.qtd ?? p.quantidade_atual);
+        const total = safeNum(original?.valorTotal ?? original?.valor_total);
+        prices[p.id] = qtd > 0 ? total / qtd : 0;
+      });
+
+      setPrecosMap(prices);
+      setProdutosLoading(false);
+      return;
+    }
+
+    // ===== ONLINE =====
+    if (!fazendaAtualId) {
+      setProdutosCozinha([]);
+      setPrecosMap({});
+      setProdutosLoading(false);
+      return;
+    }
+
+    // ✅ ilike com wildcard + tenta trazer um campo de quantidade (se existir)
+    const { data: produtos, error } = await withFazendaId(
+      supabase
+        .from("estoque_produtos")
+        .select("id, nome_comercial, unidade, quantidade_atual, quantidade")
+        .ilike("categoria", `%${CATEGORIA_INGREDIENTE}%`),
+      fazendaAtualId
+    ).order("nome_comercial", { ascending: true });
+
+    if (error) {
+      setProdutosCozinha([]);
+      setPrecosMap({});
+      setProdutosLoading(false);
+      return;
+    }
+
+    const list = Array.isArray(produtos) ? produtos : [];
+
+    // ✅ disponível no estoque: filtra se tiver campo de quantidade
+    // se o teu banco NÃO tiver quantidade_atual/quantidade, isso não corta nada (fica tudo)
+    const filtered = list.filter((p) => {
+      const qtd = getQtdDisponivel(p);
+      // se não existe campo, getQtdDisponivel retorna 0 -> não queremos eliminar tudo
+      // então: só filtra quando houver algum campo de estoque de fato.
+      const hasAnyQtdField =
+        p?.quantidade_atual != null || p?.quantidade != null || p?.saldo != null || p?.estoque != null;
+      if (!hasAnyQtdField) return true;
+      return qtd > 0;
+    });
+
+    setProdutosCozinha(filtered);
+
+    // Buscar preços (últimas entradas)
+    const nextPrices = {};
+    for (const p of filtered) {
+      const { data: movs } = await withFazendaId(
+        supabase
+          .from("estoque_movimentos")
+          .select("*")
+          .eq("produto_id", p.id)
+          .in("tipo", TIPOS_ENTRADA),
+        fazendaAtualId
+      ).limit(20);
+
+      const last = pickMostRecentRow(movs);
+      nextPrices[p.id] = extractUnitPriceFromMov(last);
+    }
+
+    setPrecosMap(nextPrices);
+    setProdutosLoading(false);
+  }, [fazendaAtualId]);
+
+  useEffect(() => {
+    loadLotes();
+    loadProdutos();
+  }, [loadLotes, loadProdutos]);
+
+  /* ===== Helpers de Cálculo ===== */
+  const calcularCustos = useCallback(
+    (ingredientes, numVacas) => {
+      const total = ingredientes.reduce((acc, ing) => {
+        if (!ing.produto_id) return acc;
+        const preco = safeNum(precosMap[ing.produto_id]);
+        const qtd = parseNumBR(ing.quantidade);
+        return acc + preco * qtd * numVacas;
+      }, 0);
+      return {
+        total,
+        porVaca: numVacas > 0 ? total / numVacas : 0,
+      };
+    },
+    [precosMap]
   );
-}
 
-/* ===================== COMPONENTES EXPORTADOS ===================== */
-
-export function ModalLoteCadastro({ title, initialValue, onClose, onCancel, onSave }) {
-  const isEdit = !!initialValue?.id;
-  const funcaoAtual = initialValue?.funcao || "Lactação";
-  const icon = FUNCOES_ICONS[funcaoAtual] || "📋";
-  
-  return (
-    <ModalBase 
-      title={isEdit ? "✏️ Editar Lote" : "➕ Novo Lote"} 
-      onClose={onClose}
-      icon={icon}
-    >
-      <CadastroLoteForm 
-        value={initialValue} 
-        onCancel={onCancel} 
-        onSave={onSave}
-      />
-    </ModalBase>
+  const custos = useMemo(
+    () => calcularCustos(form.ingredientes, form.numVacas),
+    [calcularCustos, form.ingredientes, form.numVacas]
   );
-}
 
-export function ModalLoteInfo({ lote, onClose }) {
-  const icon = FUNCOES_ICONS[lote?.funcao] || "📋";
-  const cor = FUNCOES_CORES[lote?.funcao] || FUNCOES_CORES["Outro"];
-  
-  return (
-    <ModalBase title={lote?.nome || "Detalhes do Lote"} onClose={onClose} icon={icon}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <div style={{ 
-          padding: "16px 20px", 
-          backgroundColor: cor.bg, 
-          border: `2px solid ${cor.border}`,
-          borderRadius: 12,
-          display: "flex",
-          alignItems: "center",
-          gap: 16
-        }}>
-          <div style={{ fontSize: 32 }}>{icon}</div>
-          <div>
-            <div style={{ fontSize: 12, color: cor.text, opacity: 0.8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              {lote?.funcao || "Lote"}
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: cor.text }}>
-              {lote?.nome}
-            </div>
-          </div>
-          <div style={{ marginLeft: "auto", textAlign: "right" }}>
-            <div style={{ 
-              display: "inline-flex", 
-              padding: "6px 14px", 
-              borderRadius: 999, 
-              fontSize: 13, 
-              fontWeight: 700,
-              backgroundColor: lote?.ativo ? "#dcfce7" : "#f3f4f6",
-              color: lote?.ativo ? "#166534" : "#6b7280",
-              border: `2px solid ${lote?.ativo ? "#86efac" : "#e5e7eb"}`
-            }}>
-              {lote?.ativo ? "● Ativo" : "○ Inativo"}
-            </div>
-          </div>
-        </div>
+  /* ===== Ações do Form ===== */
+  const fetchNumVacas = useCallback(
+    async (loteId) => {
+      if (!loteId) return 0;
+      setNumVacasLoading(true);
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <InfoCard label="Função" value={lote?.funcao} />
-          {lote?.nivelProducao && <InfoCard label="Nível Produtivo" value={lote?.nivelProducao} />}
-          {lote?.tipoTratamento && <InfoCard label="Tratamento" value={lote?.tipoTratamento} />}
-          {lote?.motivoDescarte && <InfoCard label="Motivo" value={lote?.motivoDescarte} />}
-        </div>
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        const cache = await kvGet(CACHE_LOTES_KEY);
+        const found = (cache || []).find((l) => String(l.id) === String(loteId));
+        setNumVacasLoading(false);
+        return Number(found?.numVacas || 0);
+      }
 
-        {lote?.descricao && (
-          <div style={{ 
-            padding: 16, 
-            backgroundColor: "#f8fafc", 
-            borderRadius: 12,
-            border: "1px solid #e2e8f0"
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4, textTransform: "uppercase" }}>Descrição</div>
-            <div style={{ fontSize: 14, color: "#334155", lineHeight: 1.6 }}>{lote.descricao}</div>
-          </div>
-        )}
+      if (!fazendaAtualId) {
+        setNumVacasLoading(false);
+        return 0;
+      }
 
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-          <button style={primaryButton} onClick={onClose}>
-            Fechar
-          </button>
-        </div>
-      </div>
-    </ModalBase>
+      const { count } = await withFazendaId(
+        supabase
+          .from("animais")
+          .select("id", { count: "exact", head: true })
+          .eq("ativo", true)
+          .eq("lote_id", loteId),
+        fazendaAtualId
+      );
+
+      setNumVacasLoading(false);
+      return Number(count || 0);
+    },
+    [fazendaAtualId]
   );
-}
 
-export function ModalConfirmarExclusao({ title = "Confirmar exclusão", onClose, onCancel, onConfirm }) {
-  return (
-    <ModalBase title={title} onClose={onClose} icon="⚠️">
-      <div style={{ textAlign: "center", padding: "20px 0" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🗑️</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
-          Tem certeza que deseja excluir?
-        </div>
-        <div style={{ fontSize: 14, color: "#64748b", marginBottom: 24, lineHeight: 1.6 }}>
-          Esta ação não poderá ser desfeita. Todos os dados associados a este lote serão removidos permanentemente.
-        </div>
-        
-        <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
-          <button style={secondaryButton} onClick={onCancel}>
-            Cancelar
-          </button>
-          <button style={{...primaryButton, backgroundColor: "#ef4444", boxShadow: "0 1px 3px rgba(239, 68, 68, 0.3)"}} onClick={onConfirm}>
-            Sim, excluir lote
-          </button>
-        </div>
-      </div>
-    </ModalBase>
-  );
-}
-
-/* ===================== FORMULÁRIO PRINCIPAL ===================== */
-function CadastroLoteForm({ value, onCancel, onSave }) {
-  const funcoes = useMemo(() => Object.keys(FUNCOES_ICONS), []);
-  const niveis = useMemo(() => ["Alta Produção", "Média Produção", "Baixa Produção"], []);
-  const tratamentos = useMemo(() => ["Mastite", "Pós-parto", "Metrite", "Laminites", "Outro"], []);
-  const motivos = useMemo(() => ["Produção baixa", "Lesão/Acidente", "Problemas podais", "Mastite crônica", "Idade avançada", "Outro"], []);
-
-  const [form, setForm] = useState(value || { ativo: true });
-  const [errors, setErrors] = useState({});
-  const [apiError, setApiError] = useState(null);
-
-  useEffect(() => setForm(value || { ativo: true }), [value]);
-  useEffect(() => setApiError(null), [value?.id]);
-
-  const set = (k, v) => {
-    setForm((f) => ({ ...f, [k]: v }));
-    if (errors[k]) setErrors(e => ({...e, [k]: null}));
-    // se o usuário está corrigindo o nome, some com o aviso
-    if (k === "nome" && apiError) setApiError(null);
+  const handleSelectLote = async (loteId) => {
+    const lote = lotesDb.find((l) => l.id === loteId);
+    const numVacas = await fetchNumVacas(loteId);
+    setForm((f) => ({
+      ...f,
+      lote_id: loteId,
+      lote_nome: lote?.nome || "",
+      numVacas,
+    }));
   };
 
-  // Limpa campos dependentes quando troca função
-  useEffect(() => {
-    if (!form) return;
-    if (form.funcao !== "Lactação") set("nivelProducao", undefined);
-    if (form.funcao !== "Tratamento") set("tipoTratamento", undefined);
-    if (form.funcao !== "Descarte") set("motivoDescarte", undefined);
-  }, [form?.funcao]);
+  const handleAddIngrediente = () => {
+    setForm((f) => ({
+      ...f,
+      ingredientes: [
+        ...(f.ingredientes || []),
+        { id: generateLocalId(), produto_id: "", quantidade: "" },
+      ],
+    }));
+  };
 
-  // Validação
+  const handleRemoveIngrediente = (idx) => {
+    setForm((f) => ({
+      ...f,
+      ingredientes: (f.ingredientes || []).filter((_, i) => i !== idx),
+    }));
+  };
+
+  const handleUpdateIngrediente = (idx, field, value) => {
+    setForm((f) => {
+      const ings = [...(f.ingredientes || [])];
+      ings[idx] = { ...ings[idx], [field]: value };
+      return { ...f, ingredientes: ings };
+    });
+  };
+
+  /* ===== Validação e Save ===== */
   const validate = () => {
-    const errs = {};
-    if (!form?.nome?.trim()) errs.nome = "Nome é obrigatório";
-    if (!form?.funcao) errs.funcao = "Função é obrigatória";
-    if (form?.funcao === "Lactação" && !form?.nivelProducao) errs.nivelProducao = "Nível produtivo é obrigatório";
-    if (form?.funcao === "Tratamento" && !form?.tipoTratamento) errs.tipoTratamento = "Tipo de tratamento é obrigatório";
-    if (form?.funcao === "Descarte" && !form?.motivoDescarte) errs.motivoDescarte = "Motivo é obrigatório";
-    
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
+    if (!form.lote_id) return "Selecione um lote";
+    if (!form.ingredientes.length) return "Adicione pelo menos um ingrediente";
+    if (form.ingredientes.some((i) => !i.produto_id || parseNumBR(i.quantidade) <= 0)) {
+      return "Preencha todos os ingredientes com produto e quantidade válida";
+    }
+    return null;
   };
 
   const handleSave = async () => {
-    setApiError(null);
-    if (!validate()) return;
-    try {
-      // suporta onSave sync ou async
-      await Promise.resolve(onSave(form));
-    } catch (err) {
-      // Supabase costuma vir: { code: '23505', message: 'duplicate key value...' }
-      const code = err?.code;
-      const msg = String(err?.message || "");
-      const isDuplicate =
-        code === "23505" ||
-        msg.toLowerCase().includes("duplicate key") ||
-        msg.includes("lotes_user_nome_ux");
+    const err = validate();
+    if (err) return alert(err);
 
-      if (isDuplicate) {
-        setApiError("Já existe um lote com esse nome. Escolha outro nome para continuar.");
-        setErrors((e) => ({ ...e, nome: "Este nome de lote já existe" }));
-        // foca no campo nome (se existir)
-        setTimeout(() => refNome.current?.focus(), 50);
-        return;
+    setSaving(true);
+
+    const resolvedFazendaId = fazendaAtualId || null;
+    const dia = isoToDateOnly(form.data);
+
+    const payloadDieta = {
+      fazenda_id: resolvedFazendaId,
+      lote_id: form.lote_id,
+      dia,
+      numvacas_snapshot: form.numVacas,
+      custo_total: custos.total,
+      custo_vaca_dia: custos.porVaca,
+      observacao: form.observacao || null,
+    };
+
+    // Offline
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const dietaId = form.id || generateLocalId();
+      const itens = form.ingredientes.map((ing) => ({
+        fazenda_id: resolvedFazendaId,
+        dieta_id: dietaId,
+        produto_id: ing.produto_id,
+        quantidade_kg_vaca: parseNumBR(ing.quantidade),
+        preco_unitario_snapshot: safeNum(precosMap[ing.produto_id]),
+        custo_parcial_snapshot:
+          safeNum(precosMap[ing.produto_id]) * parseNumBR(ing.quantidade) * form.numVacas,
+      }));
+
+      await enqueue(form.id ? "dieta.update" : "dieta.insert", {
+        dieta: { ...payloadDieta, id: dietaId },
+        itens,
+      });
+
+      onSave?.({
+        ...payloadDieta,
+        id: dietaId,
+        lote: form.lote_nome,
+        numVacas: form.numVacas,
+        ingredientes: form.ingredientes,
+        offline: true,
+      });
+
+      setSaving(false);
+      return;
+    }
+
+    // Online
+    try {
+      if (form.id) {
+        await withFazendaId(
+          supabase.from("dietas").update(payloadDieta),
+          resolvedFazendaId
+        ).eq("id", form.id);
+
+        await withFazendaId(
+          supabase.from("dietas_itens").delete(),
+          resolvedFazendaId
+        ).eq("dieta_id", form.id);
+      } else {
+        const { data } = await supabase.from("dietas").insert(payloadDieta).select("id").single();
+        form.id = data.id;
       }
 
-      setApiError("Não foi possível salvar o lote agora. Tente novamente.");
-      // opcional: manter no console para debug
-      console.error("Erro ao salvar lote:", err);
+      const itens = form.ingredientes.map((ing) => ({
+        fazenda_id: resolvedFazendaId,
+        dieta_id: form.id,
+        produto_id: ing.produto_id,
+        quantidade_kg_vaca: parseNumBR(ing.quantidade),
+        preco_unitario_snapshot: safeNum(precosMap[ing.produto_id]),
+        custo_parcial_snapshot:
+          safeNum(precosMap[ing.produto_id]) * parseNumBR(ing.quantidade) * form.numVacas,
+      }));
+
+      if (itens.length) await supabase.from("dietas_itens").insert(itens);
+      onSave?.({ ...payloadDieta, id: form.id });
+    } catch (err2) {
+      console.error(err2);
+      alert("Erro ao salvar: " + (err2.message || "Erro desconhecido"));
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Refs para navegação
-  const refNome = useRef(null);
-  const refDesc = useRef(null);
-  
-  useEffect(() => {
-    setTimeout(() => refNome.current?.focus(), 100);
+  /* ===== Options ===== */
+  const loteOptions = useMemo(() => lotesDb.map((l) => ({ value: l.id, label: l.nome })), [lotesDb]);
+
+  // ✅ garante label certo tanto online quanto offline
+  const produtoOptions = useMemo(() => {
+    const list = Array.isArray(produtosCozinha) ? produtosCozinha : [];
+    return list.map((p) => ({
+      value: p.id,
+      label: p.nome_comercial || p.nomeComercial || p.nome || "—",
+      unidade: p.unidade,
+      quantidade_atual: getQtdDisponivel(p),
+    }));
+  }, [produtosCozinha]);
+
+  const dataOptions = useMemo(() => {
+    const opts = [];
+    for (let i = 0; i <= 30; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const iso = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
+      opts.push({ value: iso, label: i === 0 ? "Hoje" : formatDateBR(iso) });
+    }
+    return opts;
   }, []);
 
-  const corAtual = FUNCOES_CORES[form?.funcao] || FUNCOES_CORES["Outro"];
+  const selectedLote = loteOptions.find((o) => o.value === form.lote_id) || null;
+  const selectedData = dataOptions.find((o) => sameDayISO(o.value, form.data)) || null;
+
+  /* ===== Estilos Inline ===== */
+  const styles = {
+    overlay: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(15, 23, 42, 0.6)",
+      backdropFilter: "blur(4px)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 99999,
+      padding: 20,
+    },
+    card: {
+      width: "100%",
+      maxWidth: 900,
+      maxHeight: "90vh",
+      background: "#fff",
+      borderRadius: 20,
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column",
+      boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)",
+    },
+    header: {
+      background: "linear-gradient(135deg, #059669 0%, #10b981 100%)",
+      padding: "20px 24px",
+      color: "#fff",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    headerTitle: { fontSize: 20, fontWeight: 800, display: "flex", alignItems: "center", gap: 12 },
+    body: { flex: 1, overflow: "auto", padding: 24, background: "#f8fafc" },
+    section: {
+      background: "#fff",
+      borderRadius: 16,
+      padding: 20,
+      marginBottom: 20,
+      border: "1px solid #e2e8f0",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+    },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: 800,
+      color: "#0f172a",
+      marginBottom: 16,
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+    },
+    grid2: { display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 },
+    inputGroup: { display: "flex", flexDirection: "column", gap: 6 },
+    label: { fontSize: 13, fontWeight: 700, color: "#374151" },
+    badge: {
+      display: "inline-flex",
+      padding: "4px 12px",
+      borderRadius: 20,
+      fontSize: 12,
+      fontWeight: 700,
+      background: "#dbeafe",
+      color: "#1e40af",
+    },
+    badgeWarning: { background: "#fef3c7", color: "#92400e" },
+    ingredienteCard: {
+      background: "#fff",
+      border: "1px solid #e2e8f0",
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      display: "grid",
+      gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
+      gap: 12,
+      alignItems: "end",
+      transition: "all 0.2s",
+    },
+    calcText: { fontSize: 11, color: "#64748b", marginTop: 4, fontStyle: "italic" },
+    emptyState: {
+      textAlign: "center",
+      padding: 40,
+      color: "#64748b",
+      border: "2px dashed #cbd5e1",
+      borderRadius: 12,
+      marginBottom: 20,
+    },
+    footer: {
+      background: "#fff",
+      borderTop: "1px solid #e2e8f0",
+      padding: "16px 24px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    btnPrimary: {
+      padding: "12px 24px",
+      background: "#059669",
+      color: "#fff",
+      border: "none",
+      borderRadius: 10,
+      fontSize: 14,
+      fontWeight: 700,
+      cursor: "pointer",
+      boxShadow: "0 1px 3px rgba(5, 150, 105, 0.3)",
+    },
+    btnSecondary: {
+      padding: "12px 24px",
+      background: "#fff",
+      color: "#64748b",
+      border: "1px solid #e2e8f0",
+      borderRadius: 10,
+      fontSize: 14,
+      fontWeight: 600,
+      cursor: "pointer",
+      marginRight: 12,
+    },
+    btnAdd: {
+      width: "100%",
+      padding: 12,
+      border: "2px dashed #cbd5e1",
+      background: "#f8fafc",
+      color: "#64748b",
+      borderRadius: 10,
+      cursor: "pointer",
+      fontWeight: 600,
+      transition: "all 0.2s",
+    },
+    btnRemove: {
+      width: 36,
+      height: 36,
+      borderRadius: 8,
+      border: "1px solid #fecaca",
+      background: "#fef2f2",
+      color: "#ef4444",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 18,
+    },
+  };
+
+  // React Select styles
+  const selectStyles = {
+    control: (base, state) => ({
+      ...base,
+      minHeight: 44,
+      borderRadius: 10,
+      borderColor: state.isFocused ? "#10b981" : "#e2e8f0",
+      boxShadow: state.isFocused ? "0 0 0 3px rgba(16, 185, 129, 0.1)" : "none",
+    }),
+    menuPortal: (base) => ({ ...base, zIndex: 999999 }),
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Aviso de erro amigável */}
-      {apiError && (
-        <div style={{
-          padding: "12px 14px",
-          borderRadius: 12,
-          border: "1px solid #fecaca",
-          backgroundColor: "#fff1f2",
-          color: "#991b1b",
-          fontWeight: 700,
-          fontSize: 13,
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 10,
-        }}>
-          <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
-          <div style={{ lineHeight: 1.4 }}>
-            {apiError}
-            <div style={{ fontWeight: 600, fontSize: 12, color: "#b91c1c", marginTop: 4, opacity: 0.9 }}>
-              Dica: use um padrão tipo “Lote 1”, “Lote 2”, “Pré-parto”, “Secagem”, etc.
+    <div style={styles.overlay} onClick={onCancel}>
+      <div style={styles.card} onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div style={styles.header}>
+          <div style={styles.headerTitle}>
+            <span>{ICONS.ingrediente}</span>
+            {title}
+          </div>
+          <button
+            onClick={onCancel}
+            style={{
+              background: "rgba(255,255,255,0.2)",
+              border: "none",
+              color: "#fff",
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              cursor: "pointer",
+              fontSize: 20,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={styles.body} ref={wrapRef}>
+          {/* Seção 1: Lote e Data */}
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>{ICONS.lote} Informações Básicas</div>
+            <div style={styles.grid2}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Lote *</label>
+                <Select
+                  value={selectedLote}
+                  onChange={(opt) => handleSelectLote(opt?.value)}
+                  options={loteOptions}
+                  placeholder={lotesLoading ? "Carregando..." : "Selecione o lote..."}
+                  isLoading={lotesLoading}
+                  styles={selectStyles}
+                  menuPortalTarget={document.body}
+                />
+                {form.lote_id && (
+                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={styles.badge}>
+                      {numVacasLoading ? "..." : `${form.numVacas} vacas`} no lote
+                    </span>
+                    {!numVacasLoading && form.numVacas === 0 && (
+                      <span style={{ ...styles.badge, ...styles.badgeWarning }}>
+                        Atenção: Lote vazio
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Data da Dieta</label>
+                <Select
+                  value={selectedData}
+                  onChange={(opt) => setForm((f) => ({ ...f, data: opt?.value }))}
+                  options={dataOptions}
+                  styles={selectStyles}
+                  menuPortalTarget={document.body}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Card de Identificação */}
-      <div style={sectionCard}>
-        <div style={sectionTitle}>Identificação</div>
-        
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div style={inputGroup}>
-            <label style={labelStyle}>Nome do Lote *</label>
-            <input
-              ref={refNome}
-              type="text"
-              value={form?.nome || ""}
-              onChange={(e) => set("nome", e.target.value)}
-              placeholder="Ex: Lote Alta Produção 01"
-              style={{
-                ...inputStyle,
-                borderColor: errors.nome ? "#ef4444" : "#e2e8f0",
-                boxShadow: errors.nome ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none"
-              }}
-            />
-            {errors.nome && <span style={errorStyle}>{errors.nome}</span>}
-          </div>
+          {/* Seção 2: Ingredientes */}
+          <div style={styles.section}>
+            <div style={{ ...styles.sectionTitle, justifyContent: "space-between" }}>
+              <span>{ICONS.ingrediente} Composição da Dieta</span>
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                {form.ingredientes.length} ingrediente(s)
+              </span>
+            </div>
 
-          <div style={inputGroup}>
-            <label style={labelStyle}>Função *</label>
-            <Select
-              value={form?.funcao ? { value: form.funcao, label: `${FUNCOES_ICONS[form.funcao]} ${form.funcao}` } : null}
-              onChange={(opt) => set("funcao", opt?.value)}
-              options={funcoes.map(f => ({ value: f, label: `${FUNCOES_ICONS[f]} ${f}` }))}
-              placeholder="Selecione..."
-              styles={selectStyles}
-              theme={selectTheme}
-              menuPortalTarget={document.body}
-            />
-            {errors.funcao && <span style={errorStyle}>{errors.funcao}</span>}
-          </div>
-        </div>
-      </div>
+            {form.ingredientes.length === 0 ? (
+              <div style={styles.emptyState}>
+                <div style={{ fontSize: 40, marginBottom: 8 }}>🌾</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Nenhum ingrediente adicionado</div>
+                <div style={{ fontSize: 13 }}>Adicione os produtos que compõem esta dieta</div>
+              </div>
+            ) : (
+              form.ingredientes.map((ing, idx) => {
+                const produto = produtoOptions.find((p) => p.value === ing.produto_id);
+                const precoUnit = safeNum(precosMap[ing.produto_id]);
+                const qtd = parseNumBR(ing.quantidade);
+                const subtotal = precoUnit * qtd * form.numVacas;
+                const subtotalPorVaca = precoUnit * qtd;
 
-      {/* Card Condicional - Específico da Função */}
-      {form?.funcao && (
-        <div style={{
-          ...sectionCard,
-          backgroundColor: corAtual.bg,
-          border: `2px solid ${corAtual.border}`,
-          animation: "slideIn 0.3s ease-out"
-        }}>
-          <div style={{...sectionTitle, color: corAtual.text}}>
-            Configurações de {form.funcao}
-          </div>
+                return (
+                  <div key={ing.id || idx} style={styles.ingredienteCard}>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Ingrediente</label>
+                      <Select
+                        value={produto || null}
+                        onChange={(opt) => handleUpdateIngrediente(idx, "produto_id", opt?.value)}
+                        options={produtoOptions}
+                        placeholder={produtosLoading ? "Carregando..." : "Selecione..."}
+                        styles={selectStyles}
+                        menuPortalTarget={document.body}
+                        isLoading={produtosLoading}
+                      />
+                      {/* ✅ opcional: mostra saldo */}
+                      {produto && (
+                        <div style={styles.calcText}>
+                          Disponível: {safeNum(produto.quantidade_atual) > 0 ? produto.quantidade_atual : "—"}
+                        </div>
+                      )}
+                    </div>
 
-          {form.funcao === "Lactação" && (
-            <div style={inputGroup}>
-              <label style={{...labelStyle, color: corAtual.text}}>Nível Produtivo *</label>
-              <Select
-                value={form?.nivelProducao ? { value: form.nivelProducao, label: form.nivelProducao } : null}
-                onChange={(opt) => set("nivelProducao", opt?.value)}
-                options={niveis.map(n => ({ value: n, label: n }))}
-                placeholder="Selecione o nível produtivo..."
-                styles={selectStyles}
-                theme={selectTheme}
-                menuPortalTarget={document.body}
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Quantidade (kg/vaca)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={ing.quantidade}
+                        onChange={(e) => handleUpdateIngrediente(idx, "quantidade", e.target.value)}
+                        style={{
+                          height: 44,
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 10,
+                          padding: "0 12px",
+                          fontWeight: 600,
+                          fontSize: 13,
+                          color: "#374151",
+                        }}
+                      />
+                      {produto?.unidade && <div style={styles.calcText}>Unidade: {produto.unidade}</div>}
+                    </div>
+
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Preço Unit.</label>
+                      <div style={{ height: 44, display: "flex", alignItems: "center", fontWeight: 700, color: "#374151" }}>
+                        {precoUnit ? formatBRL(precoUnit) : "—"}
+                      </div>
+                      {precoUnit > 0 && <div style={styles.calcText}>por {produto?.unidade || "un"}</div>}
+                    </div>
+
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Subtotal</label>
+                      <div style={{ height: 44, display: "flex", alignItems: "center", fontWeight: 800, color: "#059669" }}>
+                        {subtotal ? formatBRL(subtotal) : "—"}
+                      </div>
+                      {subtotalPorVaca > 0 && <div style={styles.calcText}>{formatBRL(subtotalPorVaca)}/vaca</div>}
+                    </div>
+
+                    <button style={styles.btnRemove} onClick={() => handleRemoveIngrediente(idx)} title="Remover">
+                      ×
+                    </button>
+                  </div>
+                );
+              })
+            )}
+
+            <button style={styles.btnAdd} onClick={handleAddIngrediente}>
+              + Adicionar Ingrediente
+            </button>
+
+            {/* Observação */}
+            <div style={{ marginTop: 16 }}>
+              <label style={styles.label}>Observações (opcional)</label>
+              <textarea
+                value={form.observacao}
+                onChange={(e) => setForm((f) => ({ ...f, observacao: e.target.value }))}
+                placeholder="Notas sobre esta dieta..."
+                style={{
+                  width: "100%",
+                  minHeight: 80,
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 10,
+                  padding: 12,
+                  fontFamily: "inherit",
+                  resize: "vertical",
+                }}
               />
-              {errors.nivelProducao && <span style={errorStyle}>{errors.nivelProducao}</span>}
             </div>
-          )}
-
-          {form.funcao === "Tratamento" && (
-            <div style={inputGroup}>
-              <label style={{...labelStyle, color: corAtual.text}}>Tipo de Tratamento *</label>
-              <Select
-                value={form?.tipoTratamento ? { value: form.tipoTratamento, label: form.tipoTratamento } : null}
-                onChange={(opt) => set("tipoTratamento", opt?.value)}
-                options={tratamentos.map(t => ({ value: t, label: t }))}
-                placeholder="Selecione o tipo de tratamento..."
-                styles={selectStyles}
-                theme={selectTheme}
-                menuPortalTarget={document.body}
-              />
-              {errors.tipoTratamento && <span style={errorStyle}>{errors.tipoTratamento}</span>}
-            </div>
-          )}
-
-          {form.funcao === "Descarte" && (
-            <div style={inputGroup}>
-              <label style={{...labelStyle, color: corAtual.text}}>Motivo do Descarte *</label>
-              <Select
-                value={form?.motivoDescarte ? { value: form.motivoDescarte, label: form.motivoDescarte } : null}
-                onChange={(opt) => set("motivoDescarte", opt?.value)}
-                options={motivos.map(m => ({ value: m, label: m }))}
-                placeholder="Selecione o motivo..."
-                styles={selectStyles}
-                theme={selectTheme}
-                menuPortalTarget={document.body}
-              />
-              {errors.motivoDescarte && <span style={errorStyle}>{errors.motivoDescarte}</span>}
-            </div>
-          )}
-
-          {(form.funcao === "Secagem" || form.funcao === "Pré-parto" || form.funcao === "Novilhas" || form.funcao === "Outro") && (
-            <div style={{ padding: "12px 0", color: corAtual.text, fontSize: 14 }}>
-              ℹ️ Não há configurações adicionais necessárias para lotes de <strong>{form.funcao}</strong>.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Descrição */}
-      <div style={sectionCard}>
-        <div style={sectionTitle}>Informações Adicionais</div>
-        <div style={inputGroup}>
-          <label style={labelStyle}>Descrição (opcional)</label>
-          <textarea
-            ref={refDesc}
-            value={form?.descricao || ""}
-            onChange={(e) => set("descricao", e.target.value)}
-            placeholder="Adicione observações relevantes sobre este lote..."
-            style={{...inputStyle, minHeight: 80, resize: "vertical", padding: 12}}
-          />
-        </div>
-      </div>
-
-      {/* Status Toggle Moderno */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "16px 20px",
-        backgroundColor: form?.ativo ? "#f0fdf4" : "#f8fafc",
-        border: `2px solid ${form?.ativo ? "#86efac" : "#e2e8f0"}`,
-        borderRadius: 12,
-        transition: "all 0.3s ease"
-      }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: form?.ativo ? "#166534" : "#374151" }}>
-            Status do Lote
-          </div>
-          <div style={{ fontSize: 12, color: form?.ativo ? "#22c55e" : "#64748b", marginTop: 2 }}>
-            {form?.ativo ? "Lote ativo e disponível para uso" : "Lote inativo (não aparecerá em listagens)"}
           </div>
         </div>
-        
-        <button
-          onClick={() => set("ativo", !form?.ativo)}
-          style={{
-            position: "relative",
-            width: 56,
-            height: 28,
-            borderRadius: 14,
-            border: "none",
-            backgroundColor: form?.ativo ? "#22c55e" : "#cbd5e1",
-            cursor: "pointer",
-            transition: "background-color 0.3s ease",
-            padding: 0
-          }}
-        >
-          <div style={{
-            position: "absolute",
-            top: 2,
-            left: form?.ativo ? 30 : 2,
-            width: 24,
-            height: 24,
-            borderRadius: "50%",
-            backgroundColor: "#fff",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-            transition: "left 0.3s ease"
-          }}/>
-        </button>
-      </div>
 
-      {/* Footer Actions */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
-        <button style={secondaryButton} onClick={onCancel}>
-          Cancelar
-        </button>
-        <button style={primaryButton} onClick={handleSave}>
-          💾 Salvar Lote
-        </button>
-      </div>
+        {/* Footer com Resumo */}
+        <div style={styles.footer}>
+          <div>
+            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>
+              {ICONS.dinheiro} Resumo Financeiro
+            </div>
+            <div style={{ display: "flex", gap: 16 }}>
+              <div>
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>Custo Total: </span>
+                <span style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>
+                  {formatBRL(custos.total)}
+                </span>
+              </div>
+              <div>
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>Custo/Vaca/Dia: </span>
+                <span style={{ fontSize: 16, fontWeight: 700, color: "#059669" }}>
+                  {formatBRL(custos.porVaca)}
+                </span>
+              </div>
+            </div>
+          </div>
 
-      <style>{`
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
+          <div>
+            <button style={styles.btnSecondary} onClick={onCancel} disabled={saving}>
+              Cancelar
+            </button>
+            <button style={styles.btnPrimary} onClick={handleSave} disabled={saving}>
+              {saving ? "Salvando..." : "Salvar Dieta"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-
-/* ===================== SUB-COMPONENTES ===================== */
-
-function InfoCard({ label, value }) {
-  return (
-    <div style={{ padding: 12, backgroundColor: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* ===================== ESTILOS ===================== */
-
-const overlay = {
-  position: "fixed",
-  inset: 0,
-  backgroundColor: "rgba(15, 23, 42, 0.6)",
-  backdropFilter: "blur(4px)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 9999,
-  padding: 20,
-};
-
-const modalCard = {
-  width: "100%",
-  maxWidth: 600,
-  maxHeight: "90vh",
-  backgroundColor: "#fff",
-  borderRadius: 20,
-  overflow: "hidden",
-  display: "flex",
-  flexDirection: "column",
-  boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
-};
-
-const modalHeader = {
-  background: "linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)",
-  padding: "20px 24px",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-};
-
-const headerContent = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-};
-
-const headerIcon = {
-  fontSize: 28,
-  filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.2))",
-};
-
-const headerTitle = {
-  fontSize: 18,
-  fontWeight: 800,
-  color: "#fff",
-  letterSpacing: "-0.025em",
-};
-
-const headerSubtitle = {
-  fontSize: 13,
-  color: "rgba(255,255,255,0.8)",
-  marginTop: 2,
-};
-
-const closeButton = {
-  width: 36,
-  height: 36,
-  borderRadius: 10,
-  border: "1px solid rgba(255,255,255,0.3)",
-  backgroundColor: "rgba(255,255,255,0.1)",
-  color: "#fff",
-  fontSize: 24,
-  fontWeight: 300,
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  transition: "all 0.2s",
-};
-
-const modalBody = {
-  padding: 24,
-  overflowY: "auto",
-  backgroundColor: "#f8fafc",
-};
-
-const sectionCard = {
-  backgroundColor: "#fff",
-  borderRadius: 12,
-  padding: 20,
-  border: "1px solid #e2e8f0",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-};
-
-const sectionTitle = {
-  fontSize: 12,
-  fontWeight: 800,
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: "0.05em",
-  marginBottom: 16,
-};
-
-const inputGroup = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-};
-
-const labelStyle = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#374151",
-};
-
-const inputStyle = {
-  width: "100%",
-  height: 48,
-  padding: "0 16px",
-  borderRadius: 12,
-  border: "1px solid #e2e8f0",
-  fontSize: 14,
-  fontFamily: "inherit",
-  transition: "all 0.2s",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const errorStyle = {
-  fontSize: 12,
-  color: "#ef4444",
-  fontWeight: 600,
-  marginTop: 4,
-};
-
-const primaryButton = {
-  padding: "12px 24px",
-  backgroundColor: "#3b82f6",
-  color: "#fff",
-  border: "none",
-  borderRadius: 10,
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: "pointer",
-  boxShadow: "0 1px 3px rgba(59, 130, 246, 0.3)",
-  transition: "all 0.2s",
-};
-
-const secondaryButton = {
-  padding: "12px 24px",
-  backgroundColor: "#fff",
-  color: "#64748b",
-  border: "1px solid #e2e8f0",
-  borderRadius: 10,
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: "pointer",
-  transition: "all 0.2s",
-};
