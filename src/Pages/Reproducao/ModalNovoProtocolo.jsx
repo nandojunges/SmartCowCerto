@@ -213,7 +213,7 @@ const TimelineItem = ({
   formOpen,
   formData,
   setFormData,
-  onSaveForm,
+  onSelectEtapa,
   onCancelForm,
 }) => {
   const hasEtapas = etapas && etapas.length > 0;
@@ -280,7 +280,7 @@ const TimelineItem = ({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onAdd(dia)}
+                onClick={() => (formOpen ? onCancelForm() : onAdd(dia))}
                 icon={formOpen ? "chevronUp" : "plus"}
                 style={{ color: TOKENS.colors.primary }}
               >
@@ -295,6 +295,7 @@ const TimelineItem = ({
               {etapas.map((etapa, idx) => (
                 <div
                   key={idx}
+                  onClick={() => onSelectEtapa(dia, idx)}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -303,6 +304,7 @@ const TimelineItem = ({
                     background: TOKENS.colors.gray50,
                     borderRadius: TOKENS.radii.md,
                     border: `1px solid ${TOKENS.colors.gray100}`,
+                    cursor: "pointer",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -321,10 +323,12 @@ const TimelineItem = ({
                         >
                           <Icon name="flask" size={14} color={TOKENS.colors.primary} />
                         </div>
-                        <div>
-                          <div style={{ fontWeight: "600", fontSize: "13px", color: TOKENS.colors.gray800 }}>{etapa.hormonio}</div>
-                          <div style={{ fontSize: "11px", color: TOKENS.colors.gray400 }}>Hormônio</div>
-                        </div>
+                          <div>
+                            <div style={{ fontWeight: "600", fontSize: "13px", color: TOKENS.colors.gray800 }}>{etapa.hormonio}</div>
+                            <div style={{ fontSize: "11px", color: TOKENS.colors.gray400 }}>
+                              Hormônio{etapa.dose_ml !== undefined && etapa.dose_ml !== "" ? ` • ${etapa.dose_ml} mL` : ""}
+                            </div>
+                          </div>
                       </>
                     ) : (
                       <>
@@ -350,7 +354,10 @@ const TimelineItem = ({
                   </div>
 
                   <button
-                    onClick={() => onRemoveEtapa(dia, idx)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveEtapa(dia, idx);
+                    }}
                     style={{
                       background: "transparent",
                       border: "none",
@@ -386,7 +393,13 @@ const TimelineItem = ({
                   </label>
                   <select
                     value={formData.hormonio}
-                    onChange={(e) => setFormData((f) => ({ ...f, hormonio: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((f) => ({
+                        ...f,
+                        hormonio: e.target.value,
+                        dose_ml: e.target.value ? f.dose_ml : "",
+                      }))
+                    }
                     style={{
                       width: "100%",
                       padding: "8px 12px",
@@ -432,12 +445,34 @@ const TimelineItem = ({
                 </div>
               </div>
 
+              {formData.hormonio && (
+                <div style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: TOKENS.colors.gray600, marginBottom: "6px" }}>Dose (mL)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.dose_ml ?? ""}
+                    onChange={(e) => setFormData((f) => ({ ...f, dose_ml: e.target.value }))}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      borderRadius: TOKENS.radii.md,
+                      border: `1px solid ${TOKENS.colors.gray200}`,
+                      background: "#fff",
+                      fontSize: "13px",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
                 <Button variant="ghost" size="sm" onClick={onCancelForm}>
                   Cancelar
                 </Button>
-                <Button variant="primary" size="sm" onClick={onSaveForm} disabled={!formData.hormonio && !formData.acao}>
-                  Adicionar Etapa
+                <Button variant="primary" size="sm" onClick={() => onAdd(dia)}>
+                  Nova Etapa no mesmo dia
                 </Button>
               </div>
             </div>
@@ -467,13 +502,14 @@ export default function ModalNovoProtocolo({ onFechar, onSalvar, protocoloInicia
     if (!protocoloInicial) return {};
     return (protocoloInicial?.etapas || []).reduce((acc, e) => {
       const d = e?.dia ?? 0;
-      (acc[d] ||= []).push({ hormonio: e?.hormonio || "", acao: e?.acao || "" });
+      (acc[d] ||= []).push({ hormonio: e?.hormonio || "", acao: e?.acao || "", dose_ml: e?.dose_ml ?? "" });
       return acc;
     }, {});
   });
 
   const [formDia, setFormDia] = useState(null);
-  const [form, setForm] = useState({ hormonio: "", acao: "" });
+  const [formEtapaIdx, setFormEtapaIdx] = useState(null);
+  const [form, setForm] = useState({ hormonio: "", acao: "", dose_ml: "" });
   const [activeTab, setActiveTab] = useState("builder"); // builder | preview
 
   const overlayRef = useRef(null);
@@ -499,12 +535,13 @@ export default function ModalNovoProtocolo({ onFechar, onSalvar, protocoloInicia
     if (!tpl) return;
     const novo = {};
     tpl.forEach((e) => {
-      (novo[e.dia] ||= []).push({ hormonio: e.hormonio || "", acao: e.acao || "" });
+      (novo[e.dia] ||= []).push({ hormonio: e.hormonio || "", acao: e.acao || "", dose_ml: e.dose_ml ?? "" });
     });
     const ds = Object.keys(novo).map(Number).sort((a, b) => a - b);
     setDias(ds);
     setEtapas(novo);
     setFormDia(null);
+    setFormEtapaIdx(null);
   };
 
   const adicionarDia = () => {
@@ -519,27 +556,81 @@ export default function ModalNovoProtocolo({ onFechar, onSalvar, protocoloInicia
       delete cp[d];
       return cp;
     });
-    if (formDia === d) setFormDia(null);
-  };
-
-  const abrirEtapa = (d) => {
-    if (formDia === d) setFormDia(null);
-    else {
-      setFormDia(d);
-      setForm({ hormonio: "", acao: "" });
+    if (formDia === d) {
+      setFormDia(null);
+      setFormEtapaIdx(null);
     }
   };
 
-  const salvarEtapaForm = () => {
-    if (formDia == null) return;
-    if (!form.hormonio && !form.acao) return;
+  const normalizeDose = (value) => {
+    if (value === "" || value == null) return "";
+    const normalized = String(value).replace(",", ".").trim();
+    if (!normalized) return "";
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : "";
+  };
 
-    setEtapas((prev) => {
-      const list = prev[formDia] ? [...prev[formDia]] : [];
-      list.push({ hormonio: form.hormonio || "", acao: form.acao || "" });
-      return { ...prev, [formDia]: list };
+  const abrirEtapa = (d) => {
+    const list = etapas[d] || [];
+    const novoIdx = list.length;
+    setEtapas((prev) => ({
+      ...prev,
+      [d]: [...(prev[d] || []), { hormonio: "", acao: "", dose_ml: "" }],
+    }));
+    setFormDia(d);
+    setFormEtapaIdx(novoIdx);
+    setForm({ hormonio: "", acao: "", dose_ml: "" });
+  };
+
+  const atualizarForm = (updater) => {
+    if (formDia == null || formEtapaIdx == null) return;
+    setForm((prevForm) => {
+      const nextForm = typeof updater === "function" ? updater(prevForm) : updater;
+      const etapaAtualizada = {
+        hormonio: nextForm.hormonio || "",
+        acao: nextForm.acao || "",
+        dose_ml: nextForm.hormonio ? normalizeDose(nextForm.dose_ml) : "",
+      };
+      setEtapas((prev) => {
+        const list = prev[formDia] ? [...prev[formDia]] : [];
+        if (!list[formEtapaIdx]) return prev;
+        list[formEtapaIdx] = etapaAtualizada;
+        return { ...prev, [formDia]: list };
+      });
+      return { ...nextForm, dose_ml: etapaAtualizada.dose_ml };
     });
-    setForm({ hormonio: "", acao: "" });
+  };
+
+  const cancelarFormularioEtapa = () => {
+    if (formDia == null || formEtapaIdx == null) {
+      setFormDia(null);
+      setFormEtapaIdx(null);
+      return;
+    }
+    const etapaAtual = etapas[formDia]?.[formEtapaIdx];
+    const vazia = !etapaAtual?.hormonio && !etapaAtual?.acao;
+    if (vazia) {
+      setEtapas((prev) => {
+        const list = prev[formDia] ? [...prev[formDia]] : [];
+        list.splice(formEtapaIdx, 1);
+        return { ...prev, [formDia]: list };
+      });
+    }
+    setFormDia(null);
+    setFormEtapaIdx(null);
+    setForm({ hormonio: "", acao: "", dose_ml: "" });
+  };
+
+  const selecionarEtapaParaEditar = (dia, idx) => {
+    const etapa = etapas[dia]?.[idx];
+    if (!etapa) return;
+    setFormDia(dia);
+    setFormEtapaIdx(idx);
+    setForm({
+      hormonio: etapa.hormonio || "",
+      acao: etapa.acao || "",
+      dose_ml: etapa.dose_ml ?? "",
+    });
   };
 
   const removerEtapa = (dia, idx) => {
@@ -548,9 +639,14 @@ export default function ModalNovoProtocolo({ onFechar, onSalvar, protocoloInicia
       list.splice(idx, 1);
       return { ...prev, [dia]: list };
     });
+    if (formDia === dia && formEtapaIdx === idx) {
+      setFormDia(null);
+      setFormEtapaIdx(null);
+      setForm({ hormonio: "", acao: "", dose_ml: "" });
+    }
   };
 
-  const totalEtapas = Object.values(etapas).reduce((s, arr) => s + (arr?.length || 0), 0);
+  const totalEtapas = Object.values(etapas).reduce((sum, arr) => sum + (arr || []).filter((e) => e?.hormonio || e?.acao).length, 0);
   const valido = nome.trim() && totalEtapas > 0 && tipo;
 
   const handleSalvar = () => {
@@ -558,7 +654,10 @@ export default function ModalNovoProtocolo({ onFechar, onSalvar, protocoloInicia
 
     const etapasList = [];
     Object.entries(etapas).forEach(([d, arr]) => {
-      (arr || []).forEach((e) => etapasList.push({ ...e, dia: parseInt(d, 10) }));
+      (arr || []).forEach((e) => {
+        if (!e?.hormonio && !e?.acao) return;
+        etapasList.push({ ...e, dia: parseInt(d, 10) });
+      });
     });
     etapasList.sort((a, b) => a.dia - b.dia);
 
@@ -794,9 +893,6 @@ export default function ModalNovoProtocolo({ onFechar, onSalvar, protocoloInicia
                 <div style={{ maxWidth: "600px", margin: "0 auto" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
                     <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: TOKENS.colors.gray800 }}>Linha do Tempo do Protocolo</h3>
-                    <Button variant="secondary" size="sm" onClick={adicionarDia} icon="plus">
-                      Adicionar Dia
-                    </Button>
                   </div>
 
                   <div>
@@ -808,15 +904,23 @@ export default function ModalNovoProtocolo({ onFechar, onSalvar, protocoloInicia
                         isLast={idx === dias.length - 1}
                         formOpen={formDia === d}
                         formData={form}
-                        setFormData={setForm}
+                        setFormData={atualizarForm}
                         onAdd={abrirEtapa}
+                        onSelectEtapa={selecionarEtapaParaEditar}
                         onRemoveDia={removerDia}
                         onRemoveEtapa={removerEtapa}
-                        onSaveForm={salvarEtapaForm}
-                        onCancelForm={() => setFormDia(null)}
+                        onCancelForm={cancelarFormularioEtapa}
                       />
                     ))}
                   </div>
+
+                  {dias.length > 0 && (
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
+                      <Button variant="secondary" size="sm" onClick={adicionarDia} icon="plus">
+                        Adicionar Dia
+                      </Button>
+                    </div>
+                  )}
 
                   {dias.length === 0 && (
                     <div style={{ textAlign: "center", padding: "40px", color: TOKENS.colors.gray400 }}>
