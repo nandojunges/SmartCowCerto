@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Select from "react-select";
 
 /* =========================================================
@@ -21,7 +21,6 @@ const Icons = {
   user: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
   cow: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9z"/><path d="M4 9V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/></svg>,
   alert: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
-  check: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
   syringe: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m10 17-5 5"/><path d="m14 14-2 2"/></svg>,
   dna: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 15c6.667-6 13.333 0 20-6"/><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993"/><path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993"/><path d="M17 6l-2.5-2.5"/><path d="M14 8l-1-1"/><path d="M7 18l2.5 2.5"/><path d="M3.5 14.5l.5.5"/><path d="M20 9l.5.5"/><path d="M6.5 12.5l1 1"/><path d="M16.5 10.5l1 1"/><path d="M10 16l1.5 1.5"/></svg>,
   packages: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
@@ -183,7 +182,7 @@ export default function Inseminacao({
   const [razao, setRazao] = useState("");
   const [tipoSemen, setTipoSemen] = useState("Convencional");
   const [palhetas, setPalhetas] = useState(1);
-  const [lote, setLote] = useState("");
+  const [errors, setErrors] = useState({});
 
   // Sort touros
   const tourosOrdenados = useMemo(() => {
@@ -208,17 +207,14 @@ export default function Inseminacao({
     return { value: t.id, label: `${t.nome} ${extra}`.trim(), isDisabled, raw: t };
   }), [tourosOrdenados]);
 
-  // Defaults
-  useEffect(() => { if (!insId && inseminadorOptions.length) setInsId(inseminadorOptions[0].value); }, [inseminadorOptions, insId]);
-  useEffect(() => { if (!touroId && touroOptions.length) { const first = touroOptions.find(o => !o.isDisabled) || touroOptions[0]; setTouroId(first?.value || ""); } }, [touroOptions, touroId]);
-
   const selectedTouro = useMemo(() => touroOptions.find(o => o.value === touroId) || null, [touroOptions, touroId]);
   const touroSel = useMemo(() => tourosOrdenados.find(t => t.id === touroId), [tourosOrdenados, touroId]);
 
   // Validações
-  const semEstoque = !touroSel || (Number.isFinite(+touroSel?.restantes) && touroSel.restantes <= 0);
-  const estoqueInsuficiente = Number.isFinite(+touroSel?.restantes) && palhetas > touroSel.restantes;
-  const podeSalvar = !!touroId && !!insId && !semEstoque && !estoqueInsuficiente && palhetas > 0;
+  const restanteTouro = +touroSel?.restantes;
+  const hasRestanteConfiavel = Number.isFinite(restanteTouro);
+  const semEstoque = hasRestanteConfiavel && restanteTouro <= 0;
+  const estoqueInsuficiente = hasRestanteConfiavel && palhetas > restanteTouro;
 
   // Cálculos datas
   const ultimaIA = parseAnyDate(animal?.ultima_ia);
@@ -248,25 +244,43 @@ export default function Inseminacao({
     if (razao) parts.push(`Razão: ${razao}`);
     if (tipoSemen) parts.push(`Sêmen: ${tipoSemen}`);
     if (Number.isFinite(+palhetas)) parts.push(`Palhetas: ${palhetas}`);
-    if (lote) parts.push(`Lote: ${lote}`);
     return parts.join(" | ");
-  }, [razao, tipoSemen, palhetas, lote]);
+  }, [razao, tipoSemen, palhetas]);
 
-  const handleSalvar = () => {
+  const handleSalvar = (e) => {
+    e?.preventDefault?.();
+    const dataISO = brToISO(data);
+    const nextErrors = {
+      data: dataISO ? "" : "Informe uma data válida no formato dd/mm/aaaa.",
+      inseminador: insId ? "" : "Selecione o inseminador.",
+      touro: touroId ? "" : "Selecione o touro.",
+      palhetas: Number.isFinite(+palhetas) && +palhetas >= 1 ? "" : "Informe ao menos 1 palheta.",
+    };
+
+    if (estoqueInsuficiente) {
+      nextErrors.palhetas = `Quantidade acima do estoque disponível (${restanteTouro}).`;
+    }
+    if (semEstoque) {
+      nextErrors.touro = "Touro selecionado sem estoque disponível.";
+    }
+
+    setErrors(nextErrors);
+    if (Object.values(nextErrors).some(Boolean)) return;
+
     const obsFinal = [obs?.trim(), extrasResumo].filter(Boolean).join(" || ");
     onSubmit?.({
       kind: "IA",
-      data,
+      data: dataISO,
       touroId,
       touroNome: touroSel?.nome || null,
       inseminadorId: insId,
       obs: obsFinal,
-      extras: { razao, tipoSemen, palhetas, lote },
+      extras: { razao, tipoSemen, palhetas },
     });
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+    <form id="form-IA" onSubmit={handleSalvar} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       
       {/* SEÇÃO 1: DADOS PRINCIPAIS */}
       <div style={{
@@ -276,10 +290,13 @@ export default function Inseminacao({
       }}>
         {/* Data */}
         <div style={{ gridColumn: "span 3" }}>
-          <InputGroup label="Data da IA" icon={Icons.calendar} help="Formato: dd/mm/aaaa">
+          <InputGroup label="Data da IA" icon={Icons.calendar} help="Formato: dd/mm/aaaa" error={errors.data}>
             <input
               value={data}
-              onChange={(e) => setData(e.target.value)}
+              onChange={(e) => {
+                setData(e.target.value);
+                if (errors.data) setErrors((prev) => ({ ...prev, data: "" }));
+              }}
               placeholder="dd/mm/aaaa"
               style={{
                 width: "100%", padding: "10px 12px", fontSize: "14px",
@@ -293,14 +310,17 @@ export default function Inseminacao({
 
         {/* Inseminador */}
         <div style={{ gridColumn: "span 5" }}>
-          <InputGroup label="Inseminador" icon={Icons.user}>
+          <InputGroup label="Inseminador" icon={Icons.user} error={errors.inseminador}>
             <Select
               styles={selectStyles}
               options={inseminadorOptions}
-              value={inseminadorOptions.find(o => o.value === insId) || null}
-              onChange={(opt) => setInsId(opt?.value || "")}
+              value={insId ? (inseminadorOptions.find(o => o.value === insId) || null) : null}
+              onChange={(opt) => {
+                setInsId(opt?.value || "");
+                if (errors.inseminador) setErrors((prev) => ({ ...prev, inseminador: "" }));
+              }}
               placeholder="Selecione..."
-              isClearable={false}
+              isClearable
               menuPortalTarget={document.body}
             />
           </InputGroup>
@@ -336,26 +356,30 @@ export default function Inseminacao({
 
         {/* Touro */}
         <div style={{ gridColumn: "span 6" }}>
-          <InputGroup label="Touro" icon={Icons.cow} error={semEstoque ? "Sem estoque disponível" : null}>
+          <InputGroup label="Touro" icon={Icons.cow} error={errors.touro || (semEstoque ? "Sem estoque disponível" : null)}>
             <Select
               styles={selectStyles}
               options={touroOptions}
-              value={selectedTouro}
-              onChange={(opt) => setTouroId(opt?.value || "")}
+              value={touroId ? selectedTouro : null}
+              onChange={(opt) => {
+                setTouroId(opt?.value || "");
+                if (errors.touro) setErrors((prev) => ({ ...prev, touro: "" }));
+              }}
               placeholder="Selecione o touro..."
               isOptionDisabled={(o) => o.isDisabled}
+              isClearable
               menuPortalTarget={document.body}
             />
           </InputGroup>
-          {touroSel?.restantes !== undefined && (
+          {hasRestanteConfiavel && (
             <div style={{ 
               marginTop: "6px", fontSize: "12px", fontWeight: 600,
-              color: touroSel.restantes < 5 ? theme.colors.danger[600] : theme.colors.success[600],
+              color: restanteTouro < 5 ? theme.colors.danger[600] : theme.colors.success[600],
               display: "flex", alignItems: "center", gap: "4px",
             }}>
               <Icons.packages />
-              {touroSel.restantes} doses em estoque
-              {touroSel.restantes < 5 && <span style={{ color: theme.colors.danger[600] }}> (crítico)</span>}
+              {restanteTouro} doses em estoque
+              {restanteTouro < 5 && <span style={{ color: theme.colors.danger[600] }}> (crítico)</span>}
             </div>
           )}
         </div>
@@ -376,13 +400,17 @@ export default function Inseminacao({
 
         {/* Palhetas */}
         <div style={{ gridColumn: "span 2" }}>
-          <InputGroup label="Palhetas" icon={() => <span>🔢</span>} error={estoqueInsuficiente ? "Insuficiente" : null}>
+          <InputGroup label="Palhetas" icon={() => <span>🔢</span>} error={errors.palhetas || (estoqueInsuficiente ? "Insuficiente" : null)}>
             <input
               type="number"
               min={1}
               max={touroSel?.restantes || 999}
               value={palhetas}
-              onChange={(e) => setPalhetas(Math.max(1, parseInt(e.target.value || "1", 10)))}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value || "0", 10);
+                setPalhetas(Number.isFinite(parsed) ? parsed : 0);
+                if (errors.palhetas) setErrors((prev) => ({ ...prev, palhetas: "" }));
+              }}
               style={{
                 width: "100%", padding: "10px 12px", fontSize: "14px",
                 borderRadius: theme.radius.md, border: `1px solid ${estoqueInsuficiente ? theme.colors.danger[300] : theme.colors.slate[200]}`,
@@ -393,21 +421,6 @@ export default function Inseminacao({
           </InputGroup>
         </div>
 
-        {/* Lote */}
-        <div style={{ gridColumn: "span 1" }}>
-          <InputGroup label="Lote" icon={() => <span>#</span>}>
-            <input
-              value={lote}
-              onChange={(e) => setLote(e.target.value)}
-              placeholder="Nº"
-              style={{
-                width: "100%", padding: "10px 12px", fontSize: "14px",
-                borderRadius: theme.radius.md, border: `1px solid ${theme.colors.slate[200]}`,
-                outline: "none",
-              }}
-            />
-          </InputGroup>
-        </div>
       </div>
 
       {/* SEÇÃO 3: ALERTAS INTELIGENTES */}
@@ -478,28 +491,6 @@ export default function Inseminacao({
           </div>
         )}
       </div>
-
-      {/* BOTÃO AÇÃO */}
-      <div style={{ 
-        display: "flex", justifyContent: "flex-end", paddingTop: "8px",
-        borderTop: `1px solid ${theme.colors.slate[200]}`, marginTop: "8px"
-      }}>
-        <button
-          onClick={handleSalvar}
-          disabled={!podeSalvar}
-          style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            padding: "12px 28px", fontSize: "15px", fontWeight: 700,
-            color: "#fff", background: !podeSalvar ? theme.colors.slate[300] : theme.colors.primary[600],
-            border: "none", borderRadius: theme.radius.lg, cursor: !podeSalvar ? "not-allowed" : "pointer",
-            boxShadow: !podeSalvar ? "none" : `0 4px 12px ${theme.colors.primary[600]}40`,
-            transition: "all 0.2s",
-          }}
-        >
-          <Icons.check />
-          Confirmar Inseminação
-        </button>
-      </div>
-    </div>
+    </form>
   );
 }
