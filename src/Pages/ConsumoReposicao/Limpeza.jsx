@@ -11,7 +11,6 @@ import {
   formatBRL,
   convToMl,
   parseCond,
-  vezesPorDia,
   isNum,
   formatGrupoEquivalenciaLabel,
 } from "./ModalLimpeza";
@@ -27,7 +26,6 @@ export default function Limpeza() {
   const { fazendaAtualId } = useFazenda();
 
   const [precoPorML] = useState({});
-  const [estoqueML] = useState({});
   const [gruposFuncionaisOptions, setGruposFuncionaisOptions] = useState([]);
   const [avisoGruposHigiene, setAvisoGruposHigiene] = useState("");
   const [ciclos, setCiclos] = useState([]);
@@ -91,6 +89,78 @@ export default function Limpeza() {
 
   const condicaoComFallback = (condicao) => parseCond(condicao || "SEMPRE");
 
+  const carregarCiclosComEtapas = useCallback(async () => {
+    if (!fazendaAtualId) {
+      setCiclos([]);
+      return;
+    }
+
+    const ciclosRes = await supabase
+      .from("v_limpeza_custo_ciclo")
+      .select(
+        "ciclo_id,nome,tipo_equipamento,frequencia_dia,dias_semana,ativo,custo_por_execucao,custo_diario_estimado"
+      )
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("ativo", true)
+      .order("nome", { ascending: true });
+
+    if (ciclosRes.error) {
+      throw ciclosRes.error;
+    }
+
+    const cicloIds = (ciclosRes.data || []).map((ciclo) => ciclo.ciclo_id).filter(Boolean);
+    let etapasData = [];
+
+    if (cicloIds.length > 0) {
+      const etapasRes = await supabase
+        .from("limpeza_etapas")
+        .select(
+          "id,fazenda_id,ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar"
+        )
+        .eq("fazenda_id", fazendaAtualId)
+        .in("ciclo_id", cicloIds)
+        .order("ordem", { ascending: true });
+
+      if (etapasRes.error) {
+        throw etapasRes.error;
+      }
+
+      etapasData = etapasRes.data || [];
+    }
+
+    const etapasPorCiclo = (etapasData || []).reduce((acc, etapa) => {
+      const cicloId = etapa.ciclo_id;
+      if (!acc[cicloId]) acc[cicloId] = [];
+
+      const quantidadeMl =
+        etapa.quantidade_ml === null || etapa.quantidade_ml === undefined
+          ? ""
+          : Number(etapa.quantidade_ml);
+
+      acc[cicloId].push({
+        grupo_equivalencia: etapa.grupo_equivalencia || "",
+        quantidade: Number.isFinite(quantidadeMl) ? quantidadeMl : "",
+        unidade: "mL",
+        condicao: condicaoComFallback(etapa.condicao),
+        complementar: !!etapa.complementar,
+      });
+      return acc;
+    }, {});
+
+    const ciclosMontados = (ciclosRes.data || []).map((ciclo) => ({
+      id: ciclo.ciclo_id,
+      ciclo_id: ciclo.ciclo_id,
+      nome: ciclo.nome || "",
+      tipo: ciclo.tipo_equipamento || "",
+      diasSemana: Array.isArray(ciclo.dias_semana) ? ciclo.dias_semana : [],
+      frequencia: Number(ciclo.frequencia_dia) || 1,
+      custo_diario_estimado: Number(ciclo.custo_diario_estimado) || 0,
+      etapas: etapasPorCiclo[ciclo.ciclo_id] || [],
+    }));
+
+    setCiclos(ciclosMontados);
+  }, [fazendaAtualId]);
+
   useEffect(() => {
     const carregarDados = async () => {
       if (!fazendaAtualId) {
@@ -102,12 +172,6 @@ export default function Limpeza() {
       setLoading(true);
       setErro("");
 
-      const ciclosRes = await supabase
-        .from("limpeza_ciclos")
-        .select("id,nome,tipo_equipamento,dias_semana,frequencia_dia,ativo,created_at,updated_at")
-        .eq("fazenda_id", fazendaAtualId)
-        .order("nome", { ascending: true });
-
       let gruposOptions = [];
       try {
         gruposOptions = await carregarGruposFuncionais();
@@ -115,67 +179,19 @@ export default function Limpeza() {
         console.error("Erro ao carregar grupos funcionais:", gruposError);
       }
 
-      if (ciclosRes.error) {
-        console.error("Erro ao carregar limpeza:", ciclosRes.error);
+      try {
+        await carregarCiclosComEtapas();
+      } catch (error) {
+        console.error("Erro ao carregar limpeza:", error);
         setErro("Não foi possível carregar os ciclos de limpeza.");
-        setLoading(false);
-        return;
       }
 
-      const cicloIds = (ciclosRes.data || []).map((ciclo) => ciclo.id).filter(Boolean);
-      let etapasData = [];
-      if (cicloIds.length > 0) {
-        const etapasRes = await supabase
-          .from("limpeza_etapas")
-          .select(
-            "id,fazenda_id,ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar"
-          )
-          .eq("fazenda_id", fazendaAtualId)
-          .in("ciclo_id", cicloIds)
-          .order("ordem", { ascending: true });
-
-        if (etapasRes.error) {
-          console.error("Erro ao carregar etapas de limpeza:", etapasRes.error);
-          setErro("Não foi possível carregar as etapas de limpeza.");
-          setLoading(false);
-          return;
-        }
-        etapasData = etapasRes.data || [];
-      }
-
-      const etapasPorCiclo = (etapasData || []).reduce((acc, etapa) => {
-        const cicloId = etapa.ciclo_id;
-        if (!acc[cicloId]) acc[cicloId] = [];
-        const quantidadeMl =
-          etapa.quantidade_ml === null || etapa.quantidade_ml === undefined
-            ? ""
-            : Number(etapa.quantidade_ml);
-        acc[cicloId].push({
-          grupo_equivalencia: etapa.grupo_equivalencia || "",
-          quantidade: Number.isFinite(quantidadeMl) ? quantidadeMl : "",
-          unidade: "mL",
-          condicao: condicaoComFallback(etapa.condicao),
-          complementar: !!etapa.complementar,
-        });
-        return acc;
-      }, {});
-
-      const ciclosMontados = (ciclosRes.data || []).map((ciclo) => ({
-        id: ciclo.id,
-        nome: ciclo.nome || "",
-        tipo: ciclo.tipo_equipamento || "",
-        diasSemana: Array.isArray(ciclo.dias_semana) ? ciclo.dias_semana : [],
-        frequencia: Number(ciclo.frequencia_dia) || 1,
-        etapas: etapasPorCiclo[ciclo.id] || [],
-      }));
-
-      setCiclos(ciclosMontados);
       setGruposFuncionaisOptions(gruposOptions);
       setLoading(false);
     };
 
     carregarDados();
-  }, [carregarGruposFuncionais, fazendaAtualId]);
+  }, [carregarCiclosComEtapas, carregarGruposFuncionais, fazendaAtualId]);
 
   const tipoOptions = useMemo(() => {
     return Array.from(new Set(ciclos.map((c) => c.tipo).filter(Boolean))).sort();
@@ -213,11 +229,11 @@ export default function Limpeza() {
       },
     });
 
-  const abrirEdicao = (i) =>
+  const abrirEdicao = (ciclo) =>
     setModal({
       open: true,
-      index: i,
-      ciclo: JSON.parse(JSON.stringify(ciclos[i])),
+      index: null,
+      ciclo: JSON.parse(JSON.stringify(ciclo)),
     });
 
   const validarCiclo = (c) => {
@@ -251,7 +267,7 @@ export default function Limpeza() {
 
     setLoading(true);
 
-    const cicloId = String(cicloFinal.id || "").trim() || crypto.randomUUID();
+    const cicloId = String(cicloFinal.id || cicloFinal.ciclo_id || "").trim() || crypto.randomUUID();
 
     const cicloPayload = {
       id: cicloId,
@@ -316,52 +332,14 @@ export default function Limpeza() {
       }
     }
 
-    const { data: ciclosAtualizados } = await supabase
-      .from("limpeza_ciclos")
-      .select("id,nome,tipo_equipamento,dias_semana,frequencia_dia,ativo,created_at,updated_at")
-      .eq("fazenda_id", fazendaAtualId)
-      .order("nome", { ascending: true });
-
-    const cicloIdsAtualizados = (ciclosAtualizados || []).map((ciclo) => ciclo.id).filter(Boolean);
-    let etapasAtualizadas = [];
-    if (cicloIdsAtualizados.length > 0) {
-      const { data } = await supabase
-        .from("limpeza_etapas")
-        .select(
-          "id,fazenda_id,ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar"
-        )
-        .eq("fazenda_id", fazendaAtualId)
-        .in("ciclo_id", cicloIdsAtualizados)
-        .order("ordem", { ascending: true });
-      etapasAtualizadas = data || [];
+    try {
+      await carregarCiclosComEtapas();
+    } catch (error) {
+      console.error("Erro ao recarregar ciclos:", error);
+      setErro("Falha ao recarregar os ciclos de limpeza.");
+      setLoading(false);
+      return;
     }
-
-    const etapasPorCiclo = (etapasAtualizadas || []).reduce((acc, etapa) => {
-      if (!acc[etapa.ciclo_id]) acc[etapa.ciclo_id] = [];
-      const quantidadeMl =
-        etapa.quantidade_ml === null || etapa.quantidade_ml === undefined
-          ? ""
-          : Number(etapa.quantidade_ml);
-      acc[etapa.ciclo_id].push({
-        grupo_equivalencia: etapa.grupo_equivalencia || "",
-        quantidade: Number.isFinite(quantidadeMl) ? quantidadeMl : "",
-        unidade: "mL",
-        condicao: condicaoComFallback(etapa.condicao),
-        complementar: !!etapa.complementar,
-      });
-      return acc;
-    }, {});
-
-    setCiclos(
-      (ciclosAtualizados || []).map((ciclo) => ({
-        id: ciclo.id,
-        nome: ciclo.nome || "",
-        tipo: ciclo.tipo_equipamento || "",
-        diasSemana: Array.isArray(ciclo.dias_semana) ? ciclo.dias_semana : [],
-        frequencia: Number(ciclo.frequencia_dia) || 1,
-        etapas: etapasPorCiclo[ciclo.id] || [],
-      }))
-    );
 
     setModal({ open: false, index: null, ciclo: null });
     setErro("");
@@ -387,33 +365,6 @@ export default function Limpeza() {
     setExcluirCicloId(null);
   };
 
-  // ===== Cálculos =====
-  const custoDiarioValor = useCallback((c) => {
-    const freq = Number(c?.frequencia) || 1;
-    return (c?.etapas || []).reduce((acc, e) => {
-      const cond = parseCond(e.condicao);
-      const vezes = vezesPorDia(cond, freq);
-      const ml = convToMl(e.quantidade, e.unidade);
-      const preco = precoPorML?.[e.grupo_equivalencia] ?? 0;
-      return acc + ml * vezes * preco;
-    }, 0);
-  }, [precoPorML]);
-
-  const duracaoEstimadaValor = (c) => {
-    const freq = Number(c?.frequencia) || 1;
-    let minDias = Infinity;
-
-    (c?.etapas || []).forEach((e) => {
-      const cond = parseCond(e.condicao);
-      const vezes = vezesPorDia(cond, freq);
-      const mlDia = convToMl(e.quantidade, e.unidade) * vezes;
-      const estoque = estoqueML?.[e.grupo_equivalencia] ?? 0;
-      if (mlDia > 0) minDias = Math.min(minDias, estoque / mlDia);
-    });
-
-    return !isFinite(minDias) ? null : Math.floor(minDias);
-  };
-
   // ===== Filtros e Sort =====
   const ciclosExibidos = useMemo(() => {
     let lista = [...ciclos];
@@ -427,24 +378,25 @@ export default function Limpeza() {
       lista.sort((a, b) => {
         if (sortConfig.key === "nome")
           return String(a.nome || "").localeCompare(String(b.nome || "")) * dir;
-        if (sortConfig.key === "custo") return (custoDiarioValor(a) - custoDiarioValor(b)) * dir;
+        if (sortConfig.key === "custo")
+          return (Number(a.custo_diario_estimado) - Number(b.custo_diario_estimado)) * dir;
         return 0;
       });
     }
     return lista;
-  }, [ciclos, filtros, sortConfig, custoDiarioValor]);
+  }, [ciclos, filtros, sortConfig]);
 
   const resumo = useMemo(() => {
     const total = ciclosExibidos.length;
     const totalEtapas = ciclosExibidos.reduce((acc, c) => acc + (c.etapas?.length || 0), 0);
-    const custoTotal = ciclosExibidos.reduce((acc, c) => acc + custoDiarioValor(c), 0);
+    const custoTotal = ciclosExibidos.reduce((acc, c) => acc + (Number(c.custo_diario_estimado) || 0), 0);
     return {
       total,
       totalEtapas,
       custoMedio: total ? custoTotal / total : 0,
       custoTotal,
     };
-  }, [ciclosExibidos, custoDiarioValor]);
+  }, [ciclosExibidos]);
 
   // ===== Estilos =====
   const styles = {
@@ -567,14 +519,6 @@ export default function Limpeza() {
       borderRadius: "6px",
     },
     custoBadge: { fontFamily: "monospace", fontSize: "14px", fontWeight: 700, color: "#059669" },
-    duracaoBadge: {
-      fontSize: "13px",
-      fontWeight: 600,
-      color: "#7c3aed",
-      backgroundColor: "#f3e8ff",
-      padding: "4px 10px",
-      borderRadius: "9999px",
-    },
     etapasText: { fontSize: "13px", color: "#64748b", lineHeight: 1.4, maxWidth: "300px" },
     actionButtons: { display: "flex", gap: "8px", justifyContent: "center" },
     iconButton: {
@@ -658,7 +602,6 @@ export default function Limpeza() {
                 <th style={{ ...styles.th, textAlign: "center" }}>Tipo</th>
                 <th style={{ ...styles.th, textAlign: "center" }}>Frequência</th>
                 <th style={{ ...styles.th, textAlign: "center" }}>Dias da Semana</th>
-                <th style={{ ...styles.th, textAlign: "center" }}>Duração Est.</th>
                 <th style={{ ...styles.th, textAlign: "right" }}>
                   <div style={{ ...styles.thSortable, justifyContent: "flex-end" }} onClick={() => toggleSort("custo")}>
                     <span>Custo Diário</span>
@@ -673,7 +616,7 @@ export default function Limpeza() {
             <tbody>
               {ciclosExibidos.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={styles.emptyState}>
+                  <td colSpan={7} style={styles.emptyState}>
                     <div style={{ fontSize: "48px", marginBottom: "16px" }}>🧼</div>
                     <div style={{ fontSize: "16px", fontWeight: 600, marginBottom: "8px" }}>
                       Nenhum ciclo cadastrado
@@ -685,7 +628,6 @@ export default function Limpeza() {
                 ciclosExibidos.map((c, i) => {
                   const rowId = c.id || i;
                   const isHovered = hoveredRowId === rowId;
-                  const duracao = duracaoEstimadaValor(c);
 
                   return (
                     <tr
@@ -721,12 +663,8 @@ export default function Limpeza() {
                         </div>
                       </td>
 
-                      <td style={{ ...styles.td, ...styles.tdCenter }}>
-                        {duracao ? <span style={styles.duracaoBadge}>{duracao} dias</span> : <span style={{ color: "#94a3b8" }}>—</span>}
-                      </td>
-
                       <td style={{ ...styles.td, textAlign: "right" }}>
-                        <span style={styles.custoBadge}>{formatBRL(custoDiarioValor(c))}</span>
+                        <span style={styles.custoBadge}>{formatBRL(c.custo_diario_estimado || 0)}</span>
                       </td>
 
                       <td style={styles.td}>
@@ -750,7 +688,7 @@ export default function Limpeza() {
 
                       <td style={{ ...styles.td, ...styles.tdCenter }}>
                         <div style={styles.actionButtons}>
-                          <button style={styles.iconButton} onClick={() => abrirEdicao(i)} title="Editar">
+                          <button style={styles.iconButton} onClick={() => abrirEdicao(c)} title="Editar">
                             ✏️
                           </button>
                           <button style={{ ...styles.iconButton, ...styles.iconButtonDanger }} onClick={() => setExcluirCicloId(c.id)} title="Excluir">
@@ -818,7 +756,6 @@ export default function Limpeza() {
           </div>
         </Modal>
       )}
-
 
       {avisoGruposHigiene ? (
         <div
