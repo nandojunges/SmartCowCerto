@@ -812,6 +812,15 @@ export default function Inseminador() {
   const [editando, setEditando] = useState(null);
   const [busca, setBusca] = useState("");
 
+  const logSupabaseError = (contexto, error) => {
+    console.error(`${contexto}:`, {
+      code: error?.code,
+      message: error?.message,
+      details: error?.details,
+      error,
+    });
+  };
+
   // Dados gerais mockados
   const dadosGerais = [
     { mes: "Jan", total: 45, concepcoes: 28, iatf: 30, cio: 10, ressinc: 5, taxa: 62 },
@@ -833,25 +842,23 @@ export default function Inseminador() {
       setLoading(true);
       const { data, error } = await supabase
         .from("inseminadores")
-        .select("id, fazenda_id, user_id, ativo, status, tipo_profissional, nome_profissional, permissoes, created_at, updated_at")
+        .select("id,fazenda_id,user_id,nome,tipo,registro,ativo,observacoes,created_at,updated_at")
         .eq("fazenda_id", fazendaAtualId)
-        .order("nome_profissional", { ascending: true });
+        .order("nome", { ascending: true });
 
       if (error) {
-        console.error("Erro ao buscar inseminadores:", error);
+        logSupabaseError("Erro ao buscar inseminadores", error);
         setLista([]);
       } else {
         setLista(
           (data ?? []).map((item) => {
-            const permissoes = item?.permissoes ?? {};
             return {
               ...item,
-              nome: item.nome_profissional ?? "",
-              tipo: item.tipo_profissional ?? "",
-              registro: permissoes?.registro ?? "",
-              observacoes: permissoes?.observacoes ?? "",
+              nome: item.nome ?? "",
+              tipo: item.tipo ?? "",
+              registro: item.registro ?? "",
+              observacoes: item.observacoes ?? "",
               ativo: item.ativo ?? true,
-              status: item.status ?? (item.ativo ? "ATIVO" : "INATIVO"),
               taxa_concepcao: item.taxa_concepcao ?? 0,
             };
           })
@@ -880,17 +887,14 @@ export default function Inseminador() {
     const authUid = await getAuthUid();
     console.log("Inseminador salvar - fazendaAtualId:", fazendaAtualId, "auth.uid():", authUid);
 
-    const permissoes = {
-      registro: formData.registro ?? "",
-      observacoes: formData.observacoes ?? "",
-    };
-    const status = formData.ativo ? "ATIVO" : "INATIVO";
     const payload = {
-      nome_profissional: formData.nome?.trim(),
-      tipo_profissional: formData.tipo,
-      ativo: formData.ativo,
-      status,
-      permissoes,
+      nome: String(formData?.nome || formData?.nome_profissional || "").trim(),
+      tipo:
+        String(formData?.tipo || formData?.tipo_profissional || "Inseminador").trim() ||
+        "Inseminador",
+      registro: String(formData?.registro || "").trim() || null,
+      ativo: formData?.ativo !== false,
+      observacoes: String(formData?.observacoes || formData?.observacao || "").trim() || null,
       user_id: authUid,
       fazenda_id: fazendaAtualId,
     };
@@ -900,19 +904,20 @@ export default function Inseminador() {
         const { data, error } = await supabase
           .from("inseminadores")
           .update({
-            nome_profissional: payload.nome_profissional,
-            tipo_profissional: payload.tipo_profissional,
+            nome: payload.nome,
+            tipo: payload.tipo,
+            registro: payload.registro,
             ativo: payload.ativo,
-            status: payload.status,
-            permissoes: payload.permissoes,
+            observacoes: payload.observacoes,
             user_id: payload.user_id,
           })
           .eq("id", editando.id)
+          .eq("fazenda_id", fazendaAtualId)
           .select()
           .single();
 
         if (error) {
-          console.error("Erro ao atualizar inseminador:", error);
+          logSupabaseError("Erro ao atualizar inseminador", error);
           return;
         }
 
@@ -921,47 +926,33 @@ export default function Inseminador() {
             item.id === editando.id
               ? {
                   ...data,
-                  nome: data.nome_profissional ?? item.nome,
-                  tipo: data.tipo_profissional ?? item.tipo,
-                  registro: data.permissoes?.registro ?? item.registro,
-                  observacoes: data.permissoes?.observacoes ?? item.observacoes,
+                  nome: data.nome ?? item.nome,
+                  tipo: data.tipo ?? item.tipo,
+                  registro: data.registro ?? item.registro,
+                  observacoes: data.observacoes ?? item.observacoes,
                   ativo: data.ativo ?? item.ativo,
-                  status: data.status ?? item.status,
                   taxa_concepcao: data?.taxa_concepcao ?? item.taxa_concepcao ?? 0,
                 }
               : item
           )
         );
       } else {
-        // ✅ Payload compatível com a tabela public.inseminadores
-        const payloadDb = {
-          fazenda_id: fazendaAtualId,
-          nome: String(formData?.nome || formData?.nome_profissional || "").trim(),
-          tipo:
-            String(formData?.tipo || formData?.tipo_profissional || "Inseminador").trim() ||
-            "Inseminador",
-          registro: String(formData?.registro || "").trim() || null,
-          ativo: formData?.ativo !== false,
-          observacoes:
-            String(formData?.observacoes || formData?.observacao || "").trim() || null,
-        };
-
-        if (!payloadDb.fazenda_id)
+        if (!payload.fazenda_id)
           throw {
             code: "VALIDATION",
             message: "Selecione uma fazenda antes de salvar.",
           };
-        if (!payloadDb.nome)
+        if (!payload.nome)
           throw { code: "VALIDATION", message: "Informe o nome do inseminador." };
 
-        console.log("Payload insert inseminador (DB):", payloadDb);
+        console.log("Payload insert inseminador (DB):", payload);
         const { data, error } = await supabase
           .from("inseminadores")
-          .insert(payloadDb)
+          .insert(payload)
           .select("*");
 
         if (error) {
-          console.error("Erro ao inserir inseminador:", error);
+          logSupabaseError("Erro ao inserir inseminador", error);
           return;
         }
 
@@ -970,16 +961,11 @@ export default function Inseminador() {
         setLista((prev) => [
           {
             ...inserted,
-            nome: inserted?.nome_profissional ?? payload.nome_profissional ?? "",
-            tipo: inserted?.tipo_profissional ?? payload.tipo_profissional ?? "",
-            registro:
-              inserted?.permissoes?.registro ?? payload.permissoes?.registro ?? "",
-            observacoes:
-              inserted?.permissoes?.observacoes ??
-              payload.permissoes?.observacoes ??
-              "",
+            nome: inserted?.nome ?? payload.nome ?? "",
+            tipo: inserted?.tipo ?? payload.tipo ?? "",
+            registro: inserted?.registro ?? payload.registro ?? "",
+            observacoes: inserted?.observacoes ?? payload.observacoes ?? "",
             ativo: inserted?.ativo ?? payload.ativo,
-            status: inserted?.status ?? payload.status,
             taxa_concepcao: inserted?.taxa_concepcao ?? 0,
           },
           ...prev,
@@ -988,7 +974,12 @@ export default function Inseminador() {
       setModalOpen(false);
       setEditando(null);
     } catch (error) {
-      console.error("Erro ao salvar inseminador:", error);
+      console.error("Erro ao salvar inseminador:", {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        error,
+      });
     }
   };
 
