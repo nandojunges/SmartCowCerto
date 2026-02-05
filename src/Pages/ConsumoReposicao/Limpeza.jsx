@@ -27,7 +27,7 @@ export default function Limpeza() {
 
   const [precoPorML] = useState({});
   const [estoqueML] = useState({});
-  const [produtosDisponiveis, setProdutosDisponiveis] = useState([]);
+  const [gruposFuncionaisOptions, setGruposFuncionaisOptions] = useState([]);
   const [ciclos, setCiclos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
@@ -51,7 +51,7 @@ export default function Limpeza() {
     const carregarDados = async () => {
       if (!fazendaAtualId) {
         setCiclos([]);
-        setProdutosDisponiveis([]);
+        setGruposFuncionaisOptions([]);
         return;
       }
 
@@ -101,7 +101,7 @@ export default function Limpeza() {
         const cicloId = etapa.ciclo_id;
         if (!acc[cicloId]) acc[cicloId] = [];
         acc[cicloId].push({
-          produto: etapa.grupo_funcional || "",
+          grupo_funcional: etapa.grupo_funcional || "",
           quantidade: Number(etapa.quantidade_ml) || "",
           unidade: "mL",
           condicao: parseCond(etapa.condicao),
@@ -127,8 +127,10 @@ export default function Limpeza() {
         )
       ).sort((a, b) => a.localeCompare(b));
 
+      const gruposOptions = grupos.map((grupo) => ({ value: grupo, label: grupo }));
+
       setCiclos(ciclosMontados);
-      setProdutosDisponiveis(grupos);
+      setGruposFuncionaisOptions(gruposOptions);
       setLoading(false);
     };
 
@@ -161,7 +163,7 @@ export default function Limpeza() {
         frequencia: 2,
         etapas: [
           {
-            produto: produtosDisponiveis[0] || "",
+            grupo_funcional: gruposFuncionaisOptions[0]?.value || "",
             quantidade: "",
             unidade: "mL",
             condicao: { tipo: "sempre" },
@@ -188,7 +190,7 @@ export default function Limpeza() {
     if (!Array.isArray(c?.etapas) || c.etapas.length === 0) return "Adicione ao menos uma etapa.";
     for (let i = 0; i < c.etapas.length; i++) {
       const e = c.etapas[i];
-      if (!String(e?.produto || "").trim()) return `Selecione o produto da Etapa ${i + 1}.`;
+      if (!String(e?.grupo_funcional || "").trim()) return `Selecione o grupo funcional da Etapa ${i + 1}.`;
       if (!isNum(e?.quantidade) || Number(e.quantidade) <= 0)
         return `Informe a quantidade válida na Etapa ${i + 1}.`;
     }
@@ -250,7 +252,7 @@ export default function Limpeza() {
       fazenda_id: fazendaAtualId,
       ciclo_id: cicloId,
       ordem: idx + 1,
-      grupo_funcional: String(etapa.produto || "").trim(),
+      grupo_funcional: String(etapa.grupo_funcional || "").trim(),
       quantidade_ml: convToMl(etapa.quantidade, etapa.unidade),
       condicao: condicaoParaBanco(etapa.condicao),
       complementar: !!etapa.complementar,
@@ -287,7 +289,7 @@ export default function Limpeza() {
     const etapasPorCiclo = (etapasAtualizadas || []).reduce((acc, etapa) => {
       if (!acc[etapa.ciclo_id]) acc[etapa.ciclo_id] = [];
       acc[etapa.ciclo_id].push({
-        produto: etapa.grupo_funcional || "",
+        grupo_funcional: etapa.grupo_funcional || "",
         quantidade: Number(etapa.quantidade_ml) || "",
         unidade: "mL",
         condicao: parseCond(etapa.condicao),
@@ -338,7 +340,7 @@ export default function Limpeza() {
       const cond = parseCond(e.condicao);
       const vezes = vezesPorDia(cond, freq);
       const ml = convToMl(e.quantidade, e.unidade);
-      const preco = precoPorML?.[e.produto] ?? 0;
+      const preco = precoPorML?.[e.grupo_funcional] ?? 0;
       return acc + ml * vezes * preco;
     }, 0);
   }, [precoPorML]);
@@ -351,7 +353,7 @@ export default function Limpeza() {
       const cond = parseCond(e.condicao);
       const vezes = vezesPorDia(cond, freq);
       const mlDia = convToMl(e.quantidade, e.unidade) * vezes;
-      const estoque = estoqueML?.[e.produto] ?? 0;
+      const estoque = estoqueML?.[e.grupo_funcional] ?? 0;
       if (mlDia > 0) minDias = Math.min(minDias, estoque / mlDia);
     });
 
@@ -676,12 +678,12 @@ export default function Limpeza() {
                       <td style={styles.td}>
                         <div
                           style={styles.etapasText}
-                          title={c.etapas?.map((e) => `${e.produto} (${e.quantidade}${e.unidade})`).join(" → ")}
+                          title={c.etapas?.map((e) => `${e.grupo_funcional} (${e.quantidade}${e.unidade})`).join(" → ")}
                         >
                           {c.etapas?.map((e, idx) => (
                             <span key={idx}>
                               {idx > 0 && <span style={{ color: "#cbd5e1", margin: "0 4px" }}>→</span>}
-                              <span style={{ fontWeight: 500 }}>{e.produto}</span>
+                              <span style={{ fontWeight: 500 }}>{e.grupo_funcional}</span>
                               <span style={{ color: "#94a3b8", fontSize: "12px" }}>
                                 {" "}
                                 ({e.quantidade}
@@ -746,7 +748,7 @@ export default function Limpeza() {
             onCancel={() => setModal({ open: false, index: null, ciclo: null })}
             onSave={salvar}
             tipos={TIPOS}
-            produtos={produtosDisponiveis}
+            gruposFuncionaisOptions={gruposFuncionaisOptions}
             precoPorML={precoPorML}
           />
         </Modal>
