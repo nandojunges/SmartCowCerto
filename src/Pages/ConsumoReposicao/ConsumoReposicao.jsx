@@ -2,7 +2,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // Subpáginas reais do teu sistema
-import Estoque from "./Estoque";
 import Dieta from "./Dieta";
 import Lotes from "./Lotes";
 import Limpeza from "./Limpeza";
@@ -10,6 +9,9 @@ import CalendarioSanitario from "./CalendarioSanitario";
 
 // ✅ Modal de cadastro/edição de produto
 import ModalNovoProduto from "./ModalNovoProduto";
+
+// ✅ Modal de AJUSTES do estoque (o que existia no Estoque.jsx antigo)
+import ModalAjusteEstoque from "./ModalAjusteEstoque";
 
 // ✅ Supabase + escopo de fazenda (padrão do teu sistema)
 import { supabase } from "../../lib/supabaseClient";
@@ -94,7 +96,12 @@ function ModernTabs({ selected, setSelected, contadores }) {
   );
 
   return (
-    <div style={styles.tabsContainer} role="tablist" aria-label="Sub-abas de consumo e reposição" onKeyDown={onKey}>
+    <div
+      style={styles.tabsContainer}
+      role="tablist"
+      aria-label="Sub-abas de consumo e reposição"
+      onKeyDown={onKey}
+    >
       <div style={styles.tabsWrapper}>
         {tabs.map((t) => {
           const active = selected === t.id;
@@ -117,7 +124,12 @@ function ModernTabs({ selected, setSelected, contadores }) {
               <span style={styles.tabLabel}>{t.label}</span>
 
               {count !== null && count !== undefined && (
-                <span style={{ ...styles.badge, ...(active ? styles.badgeActive : styles.badgeInactive) }}>
+                <span
+                  style={{
+                    ...styles.badge,
+                    ...(active ? styles.badgeActive : styles.badgeInactive),
+                  }}
+                >
                   {count}
                 </span>
               )}
@@ -144,6 +156,7 @@ function TabelaEstoque({
   onNovoProduto,
   onEditarProduto,
   onExcluirProduto,
+  onAbrirAjustes, // ✅ novo
 }) {
   const produtosFiltrados = useMemo(() => {
     const b = (busca || "").toLowerCase().trim();
@@ -169,11 +182,17 @@ function TabelaEstoque({
       <div style={styles.tableHeader}>
         <div>
           <h2 style={styles.tableTitle}>Gerenciamento de Estoque</h2>
-          <p style={styles.tableSubtitle}>Visualize e gerencie todos os produtos do seu estoque</p>
+          <p style={styles.tableSubtitle}>
+            Visualize e gerencie todos os produtos do seu estoque
+          </p>
         </div>
 
         <div style={styles.headerActions}>
-          <button type="button" style={styles.secondaryButton}>
+          <button
+            type="button"
+            style={styles.secondaryButton}
+            onClick={onAbrirAjustes}
+          >
             Ajustes
           </button>
 
@@ -192,7 +211,11 @@ function TabelaEstoque({
           style={styles.searchInput}
         />
 
-        <select value={categoria} onChange={(e) => setCategoria(e.target.value)} style={styles.filterSelect}>
+        <select
+          value={categoria}
+          onChange={(e) => setCategoria(e.target.value)}
+          style={styles.filterSelect}
+        >
           <option value="Todos">Todos</option>
           {categoriasDisponiveis.map((c) => (
             <option key={c} value={c}>
@@ -203,12 +226,22 @@ function TabelaEstoque({
       </div>
 
       {erro ? (
-        <div style={{ padding: 16, color: "#b91c1c", background: "#fee2e2", borderRadius: 12, marginBottom: 16 }}>
+        <div
+          style={{
+            padding: 16,
+            color: "#b91c1c",
+            background: "#fee2e2",
+            borderRadius: 12,
+            marginBottom: 16,
+          }}
+        >
           {erro}
         </div>
       ) : null}
 
-      {carregando ? <div style={{ padding: 16, color: "#64748b" }}>Carregando estoque...</div> : null}
+      {carregando ? (
+        <div style={{ padding: 16, color: "#64748b" }}>Carregando estoque...</div>
+      ) : null}
 
       <div style={styles.tableWrapper}>
         <table style={styles.table}>
@@ -238,10 +271,18 @@ function TabelaEstoque({
             ) : (
               produtosFiltrados.map((prod) => (
                 <tr key={prod.id} style={styles.tr}>
-                  <td style={{ ...styles.td, fontWeight: 600, color: "#1e293b" }}>{prod.nome}</td>
+                  <td style={{ ...styles.td, fontWeight: 600, color: "#1e293b" }}>
+                    {prod.nome}
+                  </td>
 
                   <td style={styles.td}>
-                    <span style={{ ...styles.categoryBadge, backgroundColor: "#eef2ff", color: "#1e40af" }}>
+                    <span
+                      style={{
+                        ...styles.categoryBadge,
+                        backgroundColor: "#eef2ff",
+                        color: "#1e40af",
+                      }}
+                    >
                       {prod.categoria || "—"}
                     </span>
                   </td>
@@ -268,9 +309,13 @@ function TabelaEstoque({
 
                   <td style={styles.td}>{prod.validade || "—"}</td>
 
-                  <td style={{ ...styles.td, textAlign: "right", color: "#64748b" }}>{prod.consumo || "—"}</td>
+                  <td style={{ ...styles.td, textAlign: "right", color: "#64748b" }}>
+                    {prod.consumo || "—"}
+                  </td>
 
-                  <td style={{ ...styles.td, color: "#64748b" }}>{prod.prevTermino || "—"}</td>
+                  <td style={{ ...styles.td, color: "#64748b" }}>
+                    {prod.prevTermino || "—"}
+                  </td>
 
                   <td style={{ ...styles.td, textAlign: "center" }}>
                     <span style={{ ...styles.statusBadge, backgroundColor: "#dcfce7", color: "#166534" }}>
@@ -279,7 +324,9 @@ function TabelaEstoque({
                   </td>
 
                   <td style={{ ...styles.td, textAlign: "center" }}>
-                    <span style={{ ...styles.statusBadge, backgroundColor: "#dcfce7", color: "#166534" }}>✓ OK</span>
+                    <span style={{ ...styles.statusBadge, backgroundColor: "#dcfce7", color: "#166534" }}>
+                      ✓ OK
+                    </span>
                   </td>
 
                   <td style={{ ...styles.td, textAlign: "center" }}>
@@ -341,9 +388,12 @@ export default function ConsumoReposicao() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
 
-  // ✅ Modal
+  // ✅ Modal produto
   const [modalNovoProdutoOpen, setModalNovoProdutoOpen] = useState(false);
   const [editando, setEditando] = useState(null); // raw row do banco (estoque_produtos)
+
+  // ✅ Modal ajustes estoque
+  const [modalAjustesOpen, setModalAjustesOpen] = useState(false);
 
   // ✅ evita injetar CSS repetido
   const injectedRef = useRef(false);
@@ -388,7 +438,6 @@ export default function ConsumoReposicao() {
             "unidade_medida",
             "reutilizavel",
             "usos_por_unidade",
-            // ✅ nomes corretos do teu schema novo:
             "carencia_leite",
             "carencia_carne",
             "sem_carencia_leite",
@@ -542,7 +591,7 @@ export default function ConsumoReposicao() {
     [produtos.length]
   );
 
-  // ✅ Abrir/Fechar modal
+  // ✅ Abrir/Fechar modal produto
   const abrirNovoProduto = useCallback(() => {
     setErro("");
     setEditando(null);
@@ -559,6 +608,17 @@ export default function ConsumoReposicao() {
     setErro("");
     setEditando(prod?._raw || null);
     setModalNovoProdutoOpen(true);
+  }, []);
+
+  // ✅ Abrir/Fechar modal ajustes
+  const abrirAjustes = useCallback(() => {
+    setErro("");
+    setModalAjustesOpen(true);
+  }, []);
+
+  const fecharAjustes = useCallback(() => {
+    setErro("");
+    setModalAjustesOpen(false);
   }, []);
 
   // ✅ Excluir produto
@@ -602,7 +662,9 @@ export default function ConsumoReposicao() {
 
         const produtoPayload = produtoIn?.produto ? produtoIn.produto : produtoIn;
         const entradaOpcional =
-          produtoIn?._entrada || (produtoIn?.produto ? produtoIn.entradaOpcional : null) || produtoPayload?._entrada;
+          produtoIn?._entrada ||
+          (produtoIn?.produto ? produtoIn.entradaOpcional : null) ||
+          produtoPayload?._entrada;
 
         const nome = pick(produtoPayload, "nome_comercial", "nomeComercial");
         const categoriaProduto = pick(produtoPayload, "categoria");
@@ -620,7 +682,10 @@ export default function ConsumoReposicao() {
         const ativo = pick(produtoPayload, "ativo") === false ? false : true;
         const grupoEquivalencia = pick(produtoPayload, "grupo_equivalencia", "grupoEquivalencia");
         const grupo_equivalencia =
-          grupoEquivalencia && String(grupoEquivalencia).trim() ? String(grupoEquivalencia).trim() : null;
+          grupoEquivalencia && String(grupoEquivalencia).trim()
+            ? String(grupoEquivalencia).trim()
+            : null;
+
         const unidadeMedidaFinal =
           String(unidade_medida || "").trim() || (reutilizavel ? "uso" : "un");
 
@@ -651,15 +716,10 @@ export default function ConsumoReposicao() {
               ? Number(usos_por_unidade)
               : null,
 
-          // ✅ schema novo: carencia_leite / carencia_carne (não _dias)
           carencia_leite:
-            carencia_leite === null || carencia_leite === undefined
-              ? null
-              : Number(carencia_leite),
+            carencia_leite === null || carencia_leite === undefined ? null : Number(carencia_leite),
           carencia_carne:
-            carencia_carne === null || carencia_carne === undefined
-              ? null
-              : Number(carencia_carne),
+            carencia_carne === null || carencia_carne === undefined ? null : Number(carencia_carne),
 
           sem_carencia_leite,
           sem_carencia_carne,
@@ -695,7 +755,12 @@ export default function ConsumoReposicao() {
           }
           produtoRow = data;
         } else {
-          const { data, error } = await supabase.from("estoque_produtos").insert(row).select("*").single();
+          const { data, error } = await supabase
+            .from("estoque_produtos")
+            .insert(row)
+            .select("*")
+            .single();
+
           if (error) {
             logSb("[estoque_produtos]", error);
             throw error;
@@ -710,14 +775,27 @@ export default function ConsumoReposicao() {
           pick(produtoPayload, "quantidade_total", "quantidadeTotal") ??
           entradaOpcional?.quantidade ??
           null;
-        const loteEditId = pick(produtoPayload, "_loteEditId", "loteEditId", "lote_edit_id") ?? null;
+
+        const loteEditId =
+          pick(produtoPayload, "_loteEditId", "loteEditId", "lote_edit_id") ?? null;
+
         const dataCompraRaw =
-          pick(produtoPayload, "data_compra", "dataCompra") ?? entradaOpcional?.data_compra ?? null;
+          pick(produtoPayload, "data_compra", "dataCompra") ??
+          entradaOpcional?.data_compra ??
+          null;
+
         const validadeRaw =
-          pick(produtoPayload, "validade", "validadeEntrada") ?? entradaOpcional?.validade ?? null;
+          pick(produtoPayload, "validade", "validadeEntrada") ??
+          entradaOpcional?.validade ??
+          null;
+
         const valorTotalRaw =
-          pick(produtoPayload, "valor_total", "valorTotal") ?? entradaOpcional?.valor_total ?? null;
-        const observacoesRaw = pick(produtoPayload, "observacoes") ?? entradaOpcional?.observacoes ?? null;
+          pick(produtoPayload, "valor_total", "valorTotal") ??
+          entradaOpcional?.valor_total ??
+          null;
+
+        const observacoesRaw =
+          pick(produtoPayload, "observacoes") ?? entradaOpcional?.observacoes ?? null;
 
         const hasValoresLote = !!dataCompraRaw || !!validadeRaw || !!valorTotalRaw;
         const shouldCreateLote = !!quantidadeTotal || hasValoresLote;
@@ -745,6 +823,7 @@ export default function ConsumoReposicao() {
           } else if (hasValoresLote) {
             const dataCompraISO = toISODateOnly(dataCompraRaw);
             const validadeISO = toISODateOnly(validadeRaw);
+
             const loteRow = {
               fazenda_id: fazendaAtualId,
               produto_id: produtoRow?.id,
@@ -798,6 +877,7 @@ export default function ConsumoReposicao() {
           const quantidadeMovBase = produtoReutilizavel
             ? pick(produtoPayload, "total_calculado", "totalCalculado") ?? quantidadeTotal
             : quantidadeTotal;
+
           const unidadeMov =
             (produtoRow?.unidade_medida || produtoPayload?.unidade_medida || "").trim() ||
             (produtoReutilizavel ? "uso" : "un");
@@ -858,6 +938,7 @@ export default function ConsumoReposicao() {
                 onNovoProduto={abrirNovoProduto}
                 onEditarProduto={editarProduto}
                 onExcluirProduto={excluirProduto}
+                onAbrirAjustes={abrirAjustes} // ✅ botão Ajustes agora funciona
               />
 
               <ModalNovoProduto
@@ -865,6 +946,12 @@ export default function ConsumoReposicao() {
                 onClose={fecharNovoProduto}
                 onSaved={onSavedProduto}
                 initial={editando}
+              />
+
+              {/* ✅ Ajustes do Estoque (trazido do Estoque.jsx antigo) */}
+              <ModalAjusteEstoque
+                open={modalAjustesOpen}
+                onClose={fecharAjustes}
               />
             </div>
           )}
@@ -975,7 +1062,12 @@ const styles = {
   },
 
   tableContainer: { padding: "24px" },
-  tableHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" },
+  tableHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: "24px",
+  },
   tableTitle: { fontSize: "20px", fontWeight: 600, color: "#0f172a", margin: "0 0 4px 0" },
   tableSubtitle: { fontSize: "14px", color: "#64748b", margin: 0 },
   headerActions: { display: "flex", gap: "12px" },
@@ -1047,7 +1139,13 @@ const styles = {
   tr: { transition: "background-color 0.15s", borderBottom: "1px solid #e2e8f0" },
   td: { padding: "16px", color: "#334155", borderBottom: "1px solid #e2e8f0", verticalAlign: "middle" },
 
-  categoryBadge: { display: "inline-flex", padding: "4px 10px", borderRadius: "9999px", fontSize: "12px", fontWeight: 500 },
+  categoryBadge: {
+    display: "inline-flex",
+    padding: "4px 10px",
+    borderRadius: "9999px",
+    fontSize: "12px",
+    fontWeight: 500,
+  },
   unitBadge: {
     display: "inline-flex",
     padding: "2px 8px",
