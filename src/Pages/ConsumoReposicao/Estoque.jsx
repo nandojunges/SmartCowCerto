@@ -344,7 +344,7 @@ export default function Estoque({ onCountChange }) {
         );
 
         let lista = (Array.isArray(estoqueDb) ? estoqueDb : []).map((d) => ({
-          id: d.id,
+          id: d.produto_id ?? d.id,
           nomeComercial: d.nome_comercial ?? "",
           categoria: d.categoria ?? "",
           unidade: d.unidade_medida ?? d.unidade ?? "",
@@ -1177,8 +1177,8 @@ function mesclarTourosNoEstoque(estoque, touros) {
     quantidade: Number(p.quantidade ?? 0),
     valorTotal: Number(p.valorTotal ?? 0),
     validade: p.validade || null,
-    consumoDia: p.consumoDia ?? null,
-    prevTermino: p.prevTermino ?? null,
+    consumoDia: p.consumoDia ?? p.consumo_dia ?? null,
+    prevTermino: p.prevTermino ?? p.prev_termino ?? null,
     prevTerminoDias: p.prevTerminoDias ?? null,
 
     meta: p.meta || {},
