@@ -127,7 +127,9 @@ export default function Limpeza() {
       if (cicloIds.length > 0) {
         const etapasRes = await supabase
           .from("limpeza_etapas")
-          .select("id,ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar")
+          .select(
+            "id,fazenda_id,ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar"
+          )
           .eq("fazenda_id", fazendaAtualId)
           .in("ciclo_id", cicloIds)
           .order("ordem", { ascending: true });
@@ -144,9 +146,13 @@ export default function Limpeza() {
       const etapasPorCiclo = (etapasData || []).reduce((acc, etapa) => {
         const cicloId = etapa.ciclo_id;
         if (!acc[cicloId]) acc[cicloId] = [];
+        const quantidadeMl =
+          etapa.quantidade_ml === null || etapa.quantidade_ml === undefined
+            ? ""
+            : Number(etapa.quantidade_ml);
         acc[cicloId].push({
           grupo_equivalencia: etapa.grupo_equivalencia || "",
-          quantidade: Number(etapa.quantidade_ml) || "",
+          quantidade: Number.isFinite(quantidadeMl) ? quantidadeMl : "",
           unidade: "mL",
           condicao: condicaoComFallback(etapa.condicao),
           complementar: !!etapa.complementar,
@@ -285,15 +291,20 @@ export default function Limpeza() {
       return;
     }
 
-    const etapasPayload = (cicloFinal.etapas || []).map((etapa, idx) => ({
-      fazenda_id: fazendaAtualId,
-      ciclo_id: cicloIdSalvo,
-      ordem: idx + 1,
-      grupo_equivalencia: String(etapa.grupo_equivalencia || "").trim(),
-      quantidade_ml: Number(convToMl(etapa.quantidade ?? etapa.quantidade_ml, etapa.unidade)),
-      condicao: condicaoParaBanco(etapa.condicao),
-      complementar: !!etapa.complementar,
-    }));
+    const etapasPayload = (cicloFinal.etapas || []).map((etapa, idx) => {
+      const quantidadeConvertida = convToMl(etapa.quantidade ?? etapa.quantidade_ml, etapa.unidade);
+      const quantidadeMl = Number.parseFloat(quantidadeConvertida);
+
+      return {
+        fazenda_id: fazendaAtualId,
+        ciclo_id: cicloIdSalvo,
+        ordem: idx + 1,
+        grupo_equivalencia: String(etapa.grupo_equivalencia || "").trim(),
+        quantidade_ml: Number.isFinite(quantidadeMl) ? quantidadeMl : null,
+        condicao: condicaoParaBanco(etapa.condicao),
+        complementar: !!etapa.complementar,
+      };
+    });
 
     if (etapasPayload.length > 0) {
       const { error: etapasError } = await supabase.from("limpeza_etapas").insert(etapasPayload);
@@ -316,7 +327,9 @@ export default function Limpeza() {
     if (cicloIdsAtualizados.length > 0) {
       const { data } = await supabase
         .from("limpeza_etapas")
-        .select("ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar")
+        .select(
+          "id,fazenda_id,ciclo_id,ordem,grupo_equivalencia,quantidade_ml,condicao,complementar"
+        )
         .eq("fazenda_id", fazendaAtualId)
         .in("ciclo_id", cicloIdsAtualizados)
         .order("ordem", { ascending: true });
@@ -325,9 +338,13 @@ export default function Limpeza() {
 
     const etapasPorCiclo = (etapasAtualizadas || []).reduce((acc, etapa) => {
       if (!acc[etapa.ciclo_id]) acc[etapa.ciclo_id] = [];
+      const quantidadeMl =
+        etapa.quantidade_ml === null || etapa.quantidade_ml === undefined
+          ? ""
+          : Number(etapa.quantidade_ml);
       acc[etapa.ciclo_id].push({
         grupo_equivalencia: etapa.grupo_equivalencia || "",
-        quantidade: Number(etapa.quantidade_ml) || "",
+        quantidade: Number.isFinite(quantidadeMl) ? quantidadeMl : "",
         unidade: "mL",
         condicao: condicaoComFallback(etapa.condicao),
         complementar: !!etapa.complementar,
