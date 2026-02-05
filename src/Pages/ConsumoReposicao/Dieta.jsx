@@ -212,7 +212,7 @@ export default function Dieta({ onCountChange }) {
       return;
     }
 
-    const list = (data || []).map((r) => ({
+    const listBase = (data || []).map((r) => ({
       id: r.id,
       lote_id: r.lote_id,
       lote: r?.lotes?.nome || "—",
@@ -224,6 +224,47 @@ export default function Dieta({ onCountChange }) {
       dia_db: r.dia,
       observacao: r.observacao || "",
     }));
+
+    const dietaIds = listBase.map((d) => d.id).filter(Boolean);
+    let list = listBase;
+
+    if (dietaIds.length > 0) {
+      const { data: resumoData, error: resumoError } = await withFazendaId(
+        supabase
+          .from("v_dieta_resumo")
+          .select("dieta_id, custo_total_calc, custo_vaca_dia_calc")
+          .in("dieta_id", dietaIds),
+        fazendaAtualId
+      );
+
+      if (resumoError) {
+        console.error("Erro loadDietas (resumo):", resumoError);
+      } else {
+        const resumoByDietaId = new Map(
+          (resumoData || []).map((row) => [
+            String(row.dieta_id),
+            {
+              custoTotalCalc: Number(row?.custo_total_calc || 0),
+              custoVacaDiaCalc: Number(row?.custo_vaca_dia_calc || 0),
+            },
+          ])
+        );
+
+        list = listBase.map((row) => {
+          const resumoRow = resumoByDietaId.get(String(row.id));
+          if (!resumoRow) return row;
+
+          const custoTotalCalc = resumoRow.custoTotalCalc;
+          const custoVacaDiaCalc = resumoRow.custoVacaDiaCalc;
+
+          return {
+            ...row,
+            custoTotal: custoTotalCalc > 0 ? custoTotalCalc : row.custoTotal,
+            custoVacaDia: custoVacaDiaCalc > 0 ? custoVacaDiaCalc : row.custoVacaDia,
+          };
+        });
+      }
+    }
 
     await updateCache(list);
     setLoadingLista(false);
@@ -479,19 +520,19 @@ export default function Dieta({ onCountChange }) {
       try {
         const { data, error } = await withFazendaId(
           supabase
-            .from("dietas_itens")
-            .select("quantidade_kg_vaca, produto_id, estoque_produtos(nome_comercial, unidade_medida)")
+            .from("v_dieta_itens_detalhe")
+            .select("produto_id, produto_nome, quantidade_kg_vaca, unidade")
             .eq("dieta_id", dietaId)
-            .order("created_at", { ascending: true }),
+            .order("produto_nome", { ascending: true }),
           fazendaAtualId
         );
 
         if (error) throw error;
 
         const normalizados = (data || []).map((item) => ({
-          produto: item?.estoque_produtos?.nome_comercial || item?.produto_id || "Produto",
+          produto: item?.produto_nome || item?.produto_id || "Produto",
           qtd: Number(item?.quantidade_kg_vaca ?? 0),
-          un: item?.estoque_produtos?.unidade_medida || "kg",
+          un: item?.unidade || "kg",
         }));
 
         setItensByDietaId((prev) => ({ ...prev, [dietaId]: normalizados }));
