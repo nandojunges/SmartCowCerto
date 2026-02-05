@@ -1139,6 +1139,8 @@ function normalizeTouros(arr) {
     unidade: "doses",
     valorTotal: Number(t.valorTotal ?? 0),
     validade: t.validade || null,
+    consumoDia: null,
+    prevTermino: null,
     prevTerminoDias: null,
     meta: { readOnly: true },
   }));
@@ -1155,6 +1157,8 @@ function mesclarTourosNoEstoque(estoque, touros) {
     quantidade: Number(p.quantidade ?? 0),
     valorTotal: Number(p.valorTotal ?? 0),
     validade: p.validade || null,
+    consumoDia: p.consumoDia ?? p.consumo_dia ?? null,
+    prevTermino: p.prevTermino ?? p.prev_termino ?? null,
     prevTerminoDias: p.prevTerminoDias ?? null,
 
     meta: p.meta || {},
