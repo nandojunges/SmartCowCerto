@@ -330,6 +330,19 @@ export default function Estoque({ onCountChange }) {
 
         if (errEstoque) throw errEstoque;
 
+        console.log(
+          "[DEBUG] v_estoque_consumo_previsao rows:",
+          Array.isArray(estoqueDb) ? estoqueDb.length : 0
+        );
+        console.table(
+          (estoqueDb || []).slice(0, 10).map((r) => ({
+            id: r.id,
+            nome: r.nome_comercial,
+            consumo_dia: r.consumo_dia,
+            prev_termino: r.prev_termino,
+          }))
+        );
+
         let lista = (Array.isArray(estoqueDb) ? estoqueDb : []).map((d) => ({
           id: d.id,
           nomeComercial: d.nome_comercial ?? "",
@@ -351,6 +364,13 @@ export default function Estoque({ onCountChange }) {
 
         const touros = normalizeTouros(tourosBase);
         lista = mesclarTourosNoEstoque(lista, touros);
+        console.table(
+          (lista || []).slice(0, 10).map((p) => ({
+            nome: p.nomeComercial,
+            consumoDia: p.consumoDia,
+            prevTermino: p.prevTermino,
+          }))
+        );
 
         if (categoriaOpt?.value && categoriaOpt.value !== "Todos") {
           lista = lista.filter((p) => p.categoria === categoriaOpt.value);
@@ -1157,8 +1177,8 @@ function mesclarTourosNoEstoque(estoque, touros) {
     quantidade: Number(p.quantidade ?? 0),
     valorTotal: Number(p.valorTotal ?? 0),
     validade: p.validade || null,
-    consumoDia: p.consumoDia ?? p.consumo_dia ?? null,
-    prevTermino: p.prevTermino ?? p.prev_termino ?? null,
+    consumoDia: p.consumoDia ?? null,
+    prevTermino: p.prevTermino ?? null,
     prevTerminoDias: p.prevTerminoDias ?? null,
 
     meta: p.meta || {},
