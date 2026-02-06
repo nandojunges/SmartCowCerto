@@ -140,7 +140,7 @@ export default function Protocolos() {
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
-  const [vinculos, setVinculos] = useState({});
+  const [activeByProtocol, setActiveByProtocol] = useState({});
   const inFlightRef = useRef(false);
   const aliveRef = useRef(true);
 
@@ -178,6 +178,35 @@ export default function Protocolos() {
     } catch {
       return [];
     }
+  };
+
+  const startOfDay = (value) => {
+    const date = value instanceof Date ? new Date(value) : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    date.setHours(0, 0, 0, 0);
+    return date;
+  };
+
+  const diffInDays = (start, end) => {
+    const startDay = startOfDay(start);
+    const endDay = startOfDay(end);
+    if (!startDay || !endDay) return 0;
+    const diffMs = endDay.getTime() - startDay.getTime();
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  };
+
+  const resolveEtapaDoDia = (etapas, dia) => {
+    const etapa = (etapas || []).find((e) => {
+      const value = e?.dia ?? e?.D ?? e?.d ?? e?.day;
+      const numeric = typeof value === "string" ? Number(value) : value;
+      return Number.isFinite(numeric) && numeric === dia;
+    });
+
+    if (!etapa) {
+      return "Sem ação prevista para hoje";
+    }
+
+    return etapa?.nome || etapa?.titulo || etapa?.acao || etapa?.descricao || "Etapa do dia";
   };
 
   const carregarProtocolos = useCallback(async () => {
@@ -230,15 +259,76 @@ export default function Protocolos() {
     }
   }, [fazendaAtualId]);
 
+  const carregarAtivos = useCallback(async () => {
+    if (!fazendaAtualId) {
+      setActiveByProtocol({});
+      return;
+    }
+
+    try {
+      const { data: aplicacoes, error: aplicacoesError } = await supabase
+        .from("repro_aplicacoes")
+        .select("id, protocolo_id, animal_id, data_inicio, hora_inicio")
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("status", "ATIVO");
+
+      if (aplicacoesError) throw aplicacoesError;
+
+      const aplicacoesList = Array.isArray(aplicacoes) ? aplicacoes : [];
+      const animalIds = [...new Set(aplicacoesList.map((item) => item?.animal_id).filter(Boolean))];
+
+      let animaisMap = {};
+      if (animalIds.length > 0) {
+        const { data: animais, error: animaisError } = await supabase
+          .from("animais")
+          .select("id, numero, brinco")
+          .eq("fazenda_id", fazendaAtualId)
+          .in("id", animalIds);
+
+        if (animaisError) throw animaisError;
+
+        animaisMap = (Array.isArray(animais) ? animais : []).reduce((acc, animal) => {
+          if (animal?.id) {
+            acc[String(animal.id)] = animal;
+          }
+          return acc;
+        }, {});
+      }
+
+      const grouped = aplicacoesList.reduce((acc, aplicacao) => {
+        const key = String(aplicacao?.protocolo_id || "");
+        if (!key) return acc;
+        if (!acc[key]) acc[key] = [];
+        const animal = animaisMap[String(aplicacao?.animal_id)] || null;
+        acc[key].push({ aplicacao, animal });
+        return acc;
+      }, {});
+
+      if (aliveRef.current) {
+        setActiveByProtocol(grouped);
+      }
+    } catch (e) {
+      console.error("Erro ao carregar vacas ativas por protocolo:", e);
+      if (aliveRef.current) {
+        setActiveByProtocol({});
+      }
+    }
+  }, [fazendaAtualId]);
+
   useEffect(() => {
     if (!fazendaAtualId) {
       setProtocolos([]);
       setErro("");
       setCarregando(false);
+      setActiveByProtocol({});
       return;
     }
-    carregarProtocolos();
-  }, [fazendaAtualId, carregarProtocolos]);
+    const carregarDados = async () => {
+      await carregarProtocolos();
+      await carregarAtivos();
+    };
+    carregarDados();
+  }, [fazendaAtualId, carregarProtocolos, carregarAtivos]);
 
 
   const getAuthUserId = async () => {
@@ -310,7 +400,6 @@ export default function Protocolos() {
   };
 
   const handleExcluir = async (prot) => {
-    if (!window.confirm(`Excluir "${prot.nome}" permanentemente?`)) return;
     try {
       if (!fazendaAtualId) throw new Error("Fazenda não selecionada");
       const { count, error: countError } = await supabase
@@ -362,41 +451,6 @@ export default function Protocolos() {
       toast.error("Erro ao duplicar");
     }
   };
-
-  const fetchVinculos = useCallback(async () => {
-    if (!fazendaAtualId) {
-      setVinculos({});
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from("repro_aplicacoes")
-        .select("id, animal_id, protocolo_id, data_inicio, status, tipo, hora_inicio, animais(numero, brinco)")
-        .eq("fazenda_id", fazendaAtualId)
-        .eq("status", "ATIVO");
-
-      if (error) throw error;
-
-      const grouped = (Array.isArray(data) ? data : []).reduce((acc, row) => {
-        const key = String(row.protocolo_id || "");
-        if (!key) return acc;
-        if (!acc[key]) acc[key] = { loading: false, items: [] };
-        acc[key].items.push(row);
-        return acc;
-      }, {});
-
-      setVinculos(grouped);
-    } catch (e) {
-      console.error("Erro ao carregar vacas ativas por protocolo:", e);
-      setVinculos({});
-    }
-  }, [fazendaAtualId]);
-
-
-  useEffect(() => {
-    fetchVinculos();
-  }, [fetchVinculos]);
 
   const toggleExpand = (prot) => {
     if (expandedId === prot.id) setExpandedId(null);
@@ -559,6 +613,7 @@ export default function Protocolos() {
             {filtered.map((prot) => {
               const maxDia = Math.max(...(prot.etapas || []).map((e) => e.dia || 0), 0);
               const etapasCount = (prot.etapas || []).length;
+              const activeList = activeByProtocol[String(prot.id)] || [];
 
               return (
                 <div
@@ -674,30 +729,35 @@ export default function Protocolos() {
 
                   {expandedId === prot.id && (
                     <div style={{ padding: "0 24px 24px", background: TOKENS.colors.gray50 }}>
-                      {vinculos[String(prot.id)]?.loading ? (
-                        <div style={{ textAlign: "center", padding: "20px", color: TOKENS.colors.gray400 }}>Carregando...</div>
-                      ) : (
-                        <div style={{ background: "#fff", borderRadius: TOKENS.radii.lg, padding: "16px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
-                          {(vinculos[String(prot.id)]?.items || []).length === 0 ? (
-                            <div style={{ textAlign: "center", padding: "20px" }}>
-                              <Icon name="cow" size={32} color={TOKENS.colors.gray300} />
-                              <p style={{ margin: "10px 0 0" }}>Nenhuma vaca ativa neste protocolo</p>
-                            </div>
-                          ) : (
-                            <div style={{ display: "grid", gap: "8px" }}>
-                              {(vinculos[String(prot.id)]?.items || []).map((item) => {
-                                const numero = item?.animais?.numero || "Sem número";
-                                const brinco = item?.animais?.brinco ? ` • Brinco ${item.animais.brinco}` : "";
-                                return (
-                                  <div key={item.id} style={{ border: `1px solid ${TOKENS.colors.gray200}`, borderRadius: TOKENS.radii.md, padding: "10px 12px", fontWeight: 600, color: TOKENS.colors.gray700 }}>
-                                    Vaca {numero}{brinco}
+                      <div style={{ background: "#fff", borderRadius: TOKENS.radii.lg, padding: "16px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
+                        {activeList.length === 0 ? (
+                          <div style={{ textAlign: "center", padding: "20px" }}>
+                            <Icon name="cow" size={32} color={TOKENS.colors.gray300} />
+                            <p style={{ margin: "10px 0 0" }}>Nenhuma vaca ativa neste protocolo</p>
+                          </div>
+                        ) : (
+                          <div style={{ display: "grid", gap: "8px" }}>
+                            {activeList.map(({ aplicacao, animal }) => {
+                              const numero = animal?.numero || "Sem número";
+                              const brinco = animal?.brinco ? ` ${animal.brinco}` : "";
+                              const dia = Math.max(diffInDays(aplicacao?.data_inicio, new Date()), 0);
+                              const acaoDoDia = resolveEtapaDoDia(prot.etapas, dia);
+
+                              return (
+                                <div key={aplicacao?.id} style={{ border: `1px solid ${TOKENS.colors.gray200}`, borderRadius: TOKENS.radii.md, padding: "10px 12px", fontWeight: 600, color: TOKENS.colors.gray700 }}>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                    <span>
+                                      {numero}
+                                      {brinco} — Dia {dia} do protocolo
+                                    </span>
+                                    <span style={{ color: TOKENS.colors.gray500, fontWeight: 500 }}>{acaoDoDia}</span>
                                   </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
