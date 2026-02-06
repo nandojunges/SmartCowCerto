@@ -8,7 +8,7 @@
 // ✅ Mantém tooltip fixed + modal com scroll interno
 // -----------------------------------------------------------------------------
 
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 
@@ -43,6 +43,104 @@ const TOKENS = {
     lg: "0 10px 15px -3px rgba(0, 0, 0, 0.10)",
     xl: "0 20px 25px -5px rgba(0, 0, 0, 0.10)",
   },
+};
+
+const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+const getMonthKey = (dateValue) => {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const getMonthBuckets = (count, referenceDate = new Date()) => {
+  const buckets = [];
+  const base = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const date = new Date(base.getFullYear(), base.getMonth() - offset, 1);
+    const key = getMonthKey(date);
+    buckets.push({
+      key,
+      label: MONTH_LABELS[date.getMonth()],
+      mes: MONTH_LABELS[date.getMonth()],
+    });
+  }
+
+  return buckets;
+};
+
+const classifyIA = (razao) => {
+  const text = String(razao ?? "").toLowerCase();
+  if (text.includes("iatf")) return "iatf";
+  if (text.includes("ressinc") || text.includes("resynch")) return "ressinc";
+  return "cio";
+};
+
+const getDGStatus = (meta) => {
+  const raw = meta?.dg ?? meta?.DG ?? "";
+  const text = String(raw).trim().toLowerCase();
+  if (text === "prenhe") return "Prenhe";
+  if (text === "vazia") return "Vazia";
+  return null;
+};
+
+const buildFinalDGMap = (eventosDG) => {
+  const mapa = new Map();
+  eventosDG.forEach((evento) => {
+    if (!evento?.evento_pai_id) return;
+    const status = getDGStatus(evento?.meta);
+    if (!status) return;
+    const data = new Date(evento?.data_evento);
+    const atual = mapa.get(evento.evento_pai_id);
+    if (!atual || data > atual.data) {
+      mapa.set(evento.evento_pai_id, { status, data });
+    }
+  });
+  return mapa;
+};
+
+const buildMonthlyData = ({ eventosIA, dgFinalMap, buckets }) => {
+  const base = new Map(
+    buckets.map((bucket) => [
+      bucket.key,
+      {
+        mes: bucket.label,
+        total: 0,
+        concepcoes: 0,
+        diagnosticados: 0,
+        iatf: 0,
+        cio: 0,
+        ressinc: 0,
+      },
+    ])
+  );
+
+  eventosIA.forEach((evento) => {
+    const key = getMonthKey(evento?.data_evento);
+    const bucket = base.get(key);
+    if (!bucket) return;
+
+    bucket.total += 1;
+    const classificacao = classifyIA(evento?.razao);
+    bucket[classificacao] += 1;
+
+    const dgFinal = dgFinalMap.get(evento?.id);
+    if (dgFinal) {
+      bucket.diagnosticados += 1;
+      if (dgFinal.status === "Prenhe") {
+        bucket.concepcoes += 1;
+      }
+    }
+  });
+
+  return buckets.map((bucket) => {
+    const data = base.get(bucket.key);
+    const diagnosticados = data?.diagnosticados ?? 0;
+    const concepcoes = data?.concepcoes ?? 0;
+    const taxa = diagnosticados > 0 ? Math.round((concepcoes / diagnosticados) * 100) : 0;
+    return { ...data, taxa };
+  });
 };
 
 const Icon = ({ name, size = 16, color = "currentColor", style = {} }) => {
@@ -684,7 +782,7 @@ const ModalInseminador = ({ isOpen, onClose, onSave, initialData = null }) => {
   );
 };
 
-const ModalDetalhes = ({ isOpen, onClose, inseminador }) => {
+const ModalDetalhes = ({ isOpen, onClose, inseminador, dadosIndividuais, resumo, rankingPosicao }) => {
   if (!isOpen || !inseminador) return null;
 
   useEffect(() => {
@@ -692,16 +790,6 @@ const ModalDetalhes = ({ isOpen, onClose, inseminador }) => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
-  // Dados mockados individuais
-  const dadosIndividuais = [
-    { mes: "Jan", total: 18, concepcoes: 12, iatf: 12, cio: 4, ressinc: 2, taxa: 67 },
-    { mes: "Fev", total: 22, concepcoes: 16, iatf: 16, cio: 4, ressinc: 2, taxa: 73 },
-    { mes: "Mar", total: 19, concepcoes: 13, iatf: 13, cio: 4, ressinc: 2, taxa: 68 },
-    { mes: "Abr", total: 25, concepcoes: 19, iatf: 18, cio: 5, ressinc: 2, taxa: 76 },
-    { mes: "Mai", total: 21, concepcoes: 15, iatf: 15, cio: 4, ressinc: 2, taxa: 71 },
-    { mes: "Jun", total: 28, concepcoes: 22, iatf: 20, cio: 6, ressinc: 2, taxa: 79 },
-  ];
 
   return (
     <div
@@ -775,10 +863,10 @@ const ModalDetalhes = ({ isOpen, onClose, inseminador }) => {
         <div style={{ padding: "24px", background: TOKENS.colors.gray50, overflow: "auto", flex: "1 1 auto" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
             {[
-              { label: "Total IAs (Ano)", value: "133", color: TOKENS.colors.primary, bg: TOKENS.colors.primaryLight },
-              { label: "Taxa Média", value: `${inseminador.taxa_concepcao}%`, color: TOKENS.colors.success, bg: TOKENS.colors.successLight },
-              { label: "IATF Realizadas", value: "94", color: TOKENS.colors.purple, bg: TOKENS.colors.purpleLight },
-              { label: "Ranking Geral", value: "#2", color: TOKENS.colors.warning, bg: TOKENS.colors.warningLight },
+              { label: "Total IAs (Ano)", value: resumo?.totalIAs ?? 0, color: TOKENS.colors.primary, bg: TOKENS.colors.primaryLight },
+              { label: "Taxa Média", value: `${resumo?.taxaMedia ?? 0}%`, color: TOKENS.colors.success, bg: TOKENS.colors.successLight },
+              { label: "IATF Realizadas", value: resumo?.iatfRealizadas ?? 0, color: TOKENS.colors.purple, bg: TOKENS.colors.purpleLight },
+              { label: "Ranking Geral", value: rankingPosicao ? `#${rankingPosicao}` : "—", color: TOKENS.colors.warning, bg: TOKENS.colors.warningLight },
             ].map((stat, i) => (
               <div key={i} style={{ background: stat.bg, padding: "18px", borderRadius: "12px", textAlign: "center", border: `2px solid ${stat.color}20` }}>
                 <div style={{ fontSize: "28px", fontWeight: "900", color: stat.color, marginBottom: "4px" }}>{stat.value}</div>
@@ -811,6 +899,9 @@ export default function Inseminador() {
   const [selecionado, setSelecionado] = useState(null);
   const [editando, setEditando] = useState(null);
   const [busca, setBusca] = useState("");
+  const [eventosIA, setEventosIA] = useState([]);
+  const [eventosDG, setEventosDG] = useState([]);
+  const [loadingEventos, setLoadingEventos] = useState(true);
 
   const logSupabaseError = (contexto, error) => {
     console.error(`${contexto}:`, {
@@ -821,15 +912,55 @@ export default function Inseminador() {
     });
   };
 
-  // Dados gerais mockados
-  const dadosGerais = [
-    { mes: "Jan", total: 45, concepcoes: 28, iatf: 30, cio: 10, ressinc: 5, taxa: 62 },
-    { mes: "Fev", total: 52, concepcoes: 35, iatf: 35, cio: 12, ressinc: 5, taxa: 67 },
-    { mes: "Mar", total: 48, concepcoes: 31, iatf: 32, cio: 11, ressinc: 5, taxa: 65 },
-    { mes: "Abr", total: 61, concepcoes: 42, iatf: 40, cio: 15, ressinc: 6, taxa: 69 },
-    { mes: "Mai", total: 55, concepcoes: 38, iatf: 38, cio: 12, ressinc: 5, taxa: 69 },
-    { mes: "Jun", total: 67, concepcoes: 48, iatf: 45, cio: 16, ressinc: 6, taxa: 72 },
-  ];
+  useEffect(() => {
+    const fetchEventos = async () => {
+      if (!fazendaAtualId) {
+        setEventosIA([]);
+        setEventosDG([]);
+        setLoadingEventos(false);
+        return;
+      }
+
+      setLoadingEventos(true);
+      const dataMin = new Date();
+      dataMin.setDate(dataMin.getDate() - 210);
+      const dataMinISO = dataMin.toISOString().split("T")[0];
+
+      const { data, error } = await supabase
+        .from("repro_eventos")
+        .select("id,tipo,data_evento,fazenda_id,inseminador_id,touro_id,touro_nome,razao,evento_pai_id,meta")
+        .eq("fazenda_id", fazendaAtualId)
+        .in("tipo", ["IA", "DG"])
+        .gte("data_evento", dataMinISO);
+
+      if (error) {
+        logSupabaseError("Erro ao buscar eventos reprodutivos", error);
+        setEventosIA([]);
+        setEventosDG([]);
+        setLoadingEventos(false);
+        return;
+      }
+
+      const ias = [];
+      const dgs = [];
+      (data ?? []).forEach((evento) => {
+        if (evento?.tipo === "IA") {
+          ias.push(evento);
+        } else if (evento?.tipo === "DG") {
+          dgs.push(evento);
+        }
+      });
+
+      setEventosIA(ias);
+      setEventosDG(dgs);
+      setLoadingEventos(false);
+    };
+
+    fetchEventos();
+  }, [fazendaAtualId]);
+
+  const monthBuckets = useMemo(() => getMonthBuckets(6), []);
+  const monthBuckets12 = useMemo(() => getMonthBuckets(12), []);
 
   useEffect(() => {
     const fetchInseminadores = async () => {
@@ -870,6 +1001,117 @@ export default function Inseminador() {
     fetchInseminadores();
   }, [fazendaAtualId]);
 
+  const currentMonthKey = useMemo(() => getMonthKey(new Date()), []);
+  const dgFinalMap = useMemo(() => buildFinalDGMap(eventosDG), [eventosDG]);
+
+  const dadosGerais = useMemo(() => {
+    return buildMonthlyData({ eventosIA, dgFinalMap, buckets: monthBuckets });
+  }, [eventosIA, dgFinalMap, monthBuckets]);
+
+  const metricasPorInseminador = useMemo(() => {
+    const mapa = new Map();
+
+    eventosIA.forEach((evento) => {
+      if (!evento?.inseminador_id) return;
+      const mesKey = getMonthKey(evento?.data_evento);
+      if (mesKey !== currentMonthKey) return;
+
+      if (!mapa.has(evento.inseminador_id)) {
+        mapa.set(evento.inseminador_id, { ias_mes: 0, prenhe_mes: 0, vazia_mes: 0, diag_mes: 0, taxa_concepcao: 0 });
+      }
+
+      const registro = mapa.get(evento.inseminador_id);
+      registro.ias_mes += 1;
+
+      const dgFinal = dgFinalMap.get(evento?.id);
+      if (dgFinal?.status === "Prenhe") {
+        registro.prenhe_mes += 1;
+        registro.diag_mes += 1;
+      } else if (dgFinal?.status === "Vazia") {
+        registro.vazia_mes += 1;
+        registro.diag_mes += 1;
+      }
+    });
+
+    mapa.forEach((registro) => {
+      registro.taxa_concepcao = registro.diag_mes > 0 ? Math.round((registro.prenhe_mes / registro.diag_mes) * 100) : 0;
+    });
+
+    return mapa;
+  }, [eventosIA, dgFinalMap, currentMonthKey]);
+
+  const listaComMetricas = useMemo(() => {
+    return lista.map((item) => {
+      const metricas = metricasPorInseminador.get(item.id) ?? { ias_mes: 0, prenhe_mes: 0, vazia_mes: 0, diag_mes: 0, taxa_concepcao: 0 };
+      return { ...item, ...metricas, taxa_concepcao: metricas.taxa_concepcao ?? 0 };
+    });
+  }, [lista, metricasPorInseminador]);
+
+  const rankingGeral = useMemo(() => {
+    return [...listaComMetricas]
+      .filter((i) => i.ativo)
+      .sort((a, b) => {
+        if (b.taxa_concepcao !== a.taxa_concepcao) return b.taxa_concepcao - a.taxa_concepcao;
+        if (b.diag_mes !== a.diag_mes) return b.diag_mes - a.diag_mes;
+        return b.ias_mes - a.ias_mes;
+      });
+  }, [listaComMetricas]);
+
+  const rankingTop3 = useMemo(() => rankingGeral.slice(0, 3), [rankingGeral]);
+
+  const destaqueDoMes = useMemo(() => rankingGeral.find((item) => item.ias_mes > 0) ?? null, [rankingGeral]);
+
+  const filtered = useMemo(() => {
+    return listaComMetricas.filter((i) => i.nome.toLowerCase().includes(busca.toLowerCase()));
+  }, [listaComMetricas, busca]);
+
+  const dadosIndividuais = useMemo(() => {
+    if (!selecionado?.id) {
+      return buildMonthlyData({ eventosIA: [], dgFinalMap, buckets: monthBuckets });
+    }
+    const iasFiltradas = eventosIA.filter((evento) => evento?.inseminador_id === selecionado.id);
+    return buildMonthlyData({ eventosIA: iasFiltradas, dgFinalMap, buckets: monthBuckets });
+  }, [selecionado, eventosIA, dgFinalMap, monthBuckets]);
+
+  const resumoIndividuo = useMemo(() => {
+    if (!selecionado?.id) {
+      return { totalIAs: 0, taxaMedia: 0, iatfRealizadas: 0 };
+    }
+    const keys12 = new Set(monthBuckets12.map((bucket) => bucket.key));
+    let totalIAs = 0;
+    let iatfRealizadas = 0;
+    let prenheTotal = 0;
+    let diagTotal = 0;
+
+    eventosIA.forEach((evento) => {
+      if (evento?.inseminador_id !== selecionado.id) return;
+      const mesKey = getMonthKey(evento?.data_evento);
+      if (!keys12.has(mesKey)) return;
+
+      totalIAs += 1;
+      if (classifyIA(evento?.razao) === "iatf") {
+        iatfRealizadas += 1;
+      }
+
+      const dgFinal = dgFinalMap.get(evento?.id);
+      if (dgFinal?.status === "Prenhe") {
+        prenheTotal += 1;
+        diagTotal += 1;
+      } else if (dgFinal?.status === "Vazia") {
+        diagTotal += 1;
+      }
+    });
+
+    const taxaMedia = diagTotal > 0 ? Math.round((prenheTotal / diagTotal) * 100) : 0;
+
+    return { totalIAs, taxaMedia, iatfRealizadas };
+  }, [selecionado, eventosIA, dgFinalMap, monthBuckets12]);
+
+  const rankingPosicao = useMemo(() => {
+    if (!selecionado?.id) return null;
+    const index = rankingGeral.findIndex((item) => item.id === selecionado.id);
+    return index >= 0 ? index + 1 : null;
+  }, [selecionado, rankingGeral]);
 
   const getAuthUid = async () => {
     const { data, error } = await supabase.auth.getUser();
@@ -984,14 +1226,6 @@ export default function Inseminador() {
     }
   };
 
-  const ranking = useMemo(() => {
-    return [...lista].filter((i) => i.ativo).sort((a, b) => b.taxa_concepcao - a.taxa_concepcao).slice(0, 3);
-  }, [lista]);
-
-  const filtered = useMemo(() => {
-    return lista.filter((i) => i.nome.toLowerCase().includes(busca.toLowerCase()));
-  }, [lista, busca]);
-
   return (
     <div style={{ minHeight: "100vh", background: TOKENS.colors.gray50, fontFamily: "Inter, system-ui, sans-serif" }}>
       {/* Header */}
@@ -1003,7 +1237,7 @@ export default function Inseminador() {
             </div>
             <div>
               <h1 style={{ margin: "0 0 2px", fontSize: "24px", fontWeight: "900", color: TOKENS.colors.gray900 }}>Equipe de Inseminação</h1>
-              <p style={{ margin: 0, fontSize: "13px", color: TOKENS.colors.gray500 }}>{lista.filter((i) => i.ativo).length} profissionais ativos</p>
+              <p style={{ margin: 0, fontSize: "13px", color: TOKENS.colors.gray500 }}>{listaComMetricas.filter((i) => i.ativo).length} profissionais ativos</p>
             </div>
           </div>
           <Button
@@ -1027,19 +1261,27 @@ export default function Inseminador() {
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={{ background: `linear-gradient(135deg, ${TOKENS.colors.primary}, ${TOKENS.colors.primaryDark})`, color: "#fff", padding: "20px", borderRadius: "16px", boxShadow: TOKENS.shadows.lg }}>
               <div style={{ fontSize: "12px", fontWeight: "800", opacity: 0.9, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1px" }}>Destaque do Mês</div>
-              <div style={{ fontSize: "22px", fontWeight: "900", marginBottom: "4px" }}>João Pereira</div>
-              <div style={{ fontSize: "14px", opacity: 0.9 }}>72% taxa de concepção</div>
-              <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.2)", display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
-                <span>42 IAs realizadas</span>
-                <span>Veterinário</span>
-              </div>
+              {destaqueDoMes ? (
+                <>
+                  <div style={{ fontSize: "22px", fontWeight: "900", marginBottom: "4px" }}>{destaqueDoMes.nome}</div>
+                  <div style={{ fontSize: "14px", opacity: 0.9 }}>{destaqueDoMes.taxa_concepcao}% taxa de concepção</div>
+                  <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.2)", display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
+                    <span>{destaqueDoMes.ias_mes} IAs realizadas</span>
+                    <span>{destaqueDoMes.tipo}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: "16px", fontWeight: "700" }}>Sem dados no mês</div>
+              )}
             </div>
 
             <div style={{ background: "#fff", padding: "20px", borderRadius: "12px", border: `2px solid ${TOKENS.colors.gray200}`, boxShadow: TOKENS.shadows.md }}>
               <div style={{ fontSize: "12px", fontWeight: "900", color: TOKENS.colors.gray700, marginBottom: "16px", textTransform: "uppercase", letterSpacing: "0.5px" }}>🏆 Ranking Top 3</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                {ranking.length > 0 ? (
-                  ranking.map((item, idx) => (
+                {loadingEventos ? (
+                  <div style={{ color: TOKENS.colors.gray400, fontSize: "13px" }}>Carregando ranking...</div>
+                ) : rankingTop3.length > 0 ? (
+                  rankingTop3.map((item, idx) => (
                     <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                       <div
                         style={{
@@ -1065,7 +1307,7 @@ export default function Inseminador() {
                     </div>
                   ))
                 ) : (
-                  <div style={{ color: TOKENS.colors.gray400, fontSize: "13px" }}>Carregando ranking...</div>
+                  <div style={{ color: TOKENS.colors.gray400, fontSize: "13px" }}>Sem dados no período</div>
                 )}
               </div>
             </div>
@@ -1126,7 +1368,14 @@ export default function Inseminador() {
         initialData={editando}
       />
 
-      <ModalDetalhes isOpen={modalDetalhes} onClose={() => setModalDetalhes(false)} inseminador={selecionado} />
+      <ModalDetalhes
+        isOpen={modalDetalhes}
+        onClose={() => setModalDetalhes(false)}
+        inseminador={selecionado}
+        dadosIndividuais={dadosIndividuais}
+        resumo={resumoIndividuo}
+        rankingPosicao={rankingPosicao}
+      />
     </div>
   );
 }
