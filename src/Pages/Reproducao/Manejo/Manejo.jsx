@@ -159,6 +159,9 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
   const isDebug = Boolean(import.meta.env.DEV);
   const [inseminadores, setInseminadores] = useState([]);
   const [touros, setTouros] = useState([]);
+  const [protocolos, setProtocolos] = useState([]);
+  const [loadingProt, setLoadingProt] = useState(false);
+  const [erroProt, setErroProt] = useState("");
   
   const [selectedType, setSelectedType] = useState(initialTab);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -243,6 +246,42 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
     };
 
     fetchTouros();
+  }, [open, fazendaAtualId]);
+
+  useEffect(() => {
+    const fetchProtocolos = async () => {
+      if (!open || !fazendaAtualId) {
+        setProtocolos([]);
+        setErroProt("");
+        setLoadingProt(false);
+        return;
+      }
+
+      setLoadingProt(true);
+      try {
+        const { data, error } = await supabase
+          .from("repro_protocolos")
+          .select("id, nome, tipo, etapas, ativo, fazenda_id, user_id")
+          .eq("fazenda_id", fazendaAtualId)
+          .eq("ativo", true)
+          .order("tipo", { ascending: true })
+          .order("nome", { ascending: true });
+
+        if (error) {
+          console.error("[repro_protocolos] erro select:", error);
+          setErroProt("Não consegui carregar os protocolos (verifique permissões/RLS).");
+          setProtocolos([]);
+          return;
+        }
+
+        setProtocolos(data || []);
+        setErroProt("");
+      } finally {
+        setLoadingProt(false);
+      }
+    };
+
+    fetchProtocolos();
   }, [open, fazendaAtualId]);
 
   const handleClose = () => {
@@ -695,10 +734,39 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
                 animal={animal} 
                 inseminadores={inseminadores}
                 touros={touros}
+                protocolos={protocolos}
                 onSubmit={handleSubmit}
                 onChangeDraft={selectedType === "IA" ? setDraftIA : undefined}
                 key={selectedType} // Força remount ao trocar de aba
               />
+            )}
+            {selectedType === "PROTOCOLO" && loadingProt && (
+              <div style={{
+                marginTop: "16px",
+                padding: "12px 14px",
+                borderRadius: theme.radius.md,
+                border: `1px solid ${theme.colors.slate[200]}`,
+                background: theme.colors.slate[50],
+                color: theme.colors.slate[600],
+                fontSize: "13px",
+                fontWeight: 500,
+              }}>
+                Carregando protocolos…
+              </div>
+            )}
+            {selectedType === "PROTOCOLO" && erroProt && (
+              <div style={{
+                marginTop: "16px",
+                padding: "12px 14px",
+                borderRadius: theme.radius.md,
+                border: `1px solid ${theme.colors.danger}`,
+                background: "#fef2f2",
+                color: theme.colors.danger,
+                fontSize: "13px",
+                fontWeight: 600,
+              }}>
+                {erroProt}
+              </div>
             )}
           </div>
 

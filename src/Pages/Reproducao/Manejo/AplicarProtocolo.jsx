@@ -232,6 +232,7 @@ const selectStyles = {
 
 export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) {
   const { fazendaAtualId } = useFazenda();
+  const norm = (s) => String(s || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase();
   const [tipo, setTipo] = useState("IATF");
   const [protId, setProtId] = useState("");
   const [dataInicio, setDataInicio] = useState(todayBR());
@@ -248,9 +249,9 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
   }, [tipo]);
 
   const opcoes = useMemo(() => {
-    const t = String(tipo || "").toUpperCase();
-    return (protocolos || []).filter((p) => {
-      const tp = String(p?.tipo || "").toUpperCase();
+    const t = norm(tipo);
+    return (Array.isArray(protocolos) ? protocolos : []).filter((p) => {
+      const tp = norm(p?.tipo);
       return t === "IATF" ? tp === "IATF" : tp !== "IATF";
     });
   }, [protocolos, tipo]);
