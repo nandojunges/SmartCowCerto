@@ -15,7 +15,7 @@ import { useFazenda } from "../../context/FazendaContext";
 import { kvGet, kvSet } from "../../offline/localDB";
 
 // Páginas internas
-import SubAbasAnimais from "./SubAbasAnimais";
+import Plantel from "./Plantel";
 import SaidaAnimal from "./SaidaAnimal";
 import Inativas from "./Inativas";
 import CadastroAnimal from "./CadastroAnimal";
@@ -518,12 +518,7 @@ export default function Animais() {
               style={{ display: abaAtiva === "todos" ? "block" : "none" }}
               aria-hidden={abaAtiva !== "todos"}
             >
-              <SubAbasAnimais
-                animais={animaisAtivos}
-                onRefresh={handleAtualizar}
-                isOnline={isOnline}
-                // onVerFicha={handleVerFicha}
-              />
+              <Plantel isOnline={isOnline} />
             </div>
 
             <div
