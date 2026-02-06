@@ -180,19 +180,37 @@ export default function Protocolos() {
     }
   };
 
-  const startOfDay = (value) => {
-    const date = value instanceof Date ? new Date(value) : new Date(value);
-    if (Number.isNaN(date.getTime())) return null;
-    date.setHours(0, 0, 0, 0);
-    return date;
+  const getLocalYmd = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+
+  const toUtcDay = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+    }
+    if (typeof value === "string") {
+      const ymd = value.slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+      const [y, m, d] = ymd.split("-").map(Number);
+      return Date.UTC(y, m - 1, d);
+    }
+    return null;
   };
 
   const diffInDays = (start, end) => {
-    const startDay = startOfDay(start);
-    const endDay = startOfDay(end);
-    if (!startDay || !endDay) return 0;
-    const diffMs = endDay.getTime() - startDay.getTime();
-    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const startUtc = toUtcDay(start);
+    const endUtc = toUtcDay(end);
+    if (!Number.isFinite(startUtc) || !Number.isFinite(endUtc)) return 0;
+    return Math.round((endUtc - startUtc) / 86400000);
+  };
+
+  const isInseminacao = (texto) => {
+    if (!texto) return false;
+    return texto
+      .toString()
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase()
+      .includes("insemin");
   };
 
   const resolveEtapaDoDia = (etapas, dia) => {
@@ -206,7 +224,11 @@ export default function Protocolos() {
       return "Sem ação prevista para hoje";
     }
 
-    return etapa?.nome || etapa?.titulo || etapa?.acao || etapa?.descricao || "Etapa do dia";
+    const descricao = etapa?.nome || etapa?.titulo || etapa?.acao || etapa?.descricao || "Etapa do dia";
+    if (isInseminacao(descricao)) {
+      return "IA prevista hoje";
+    }
+    return descricao;
   };
 
   const carregarProtocolos = useCallback(async () => {
@@ -614,6 +636,7 @@ export default function Protocolos() {
               const maxDia = Math.max(...(prot.etapas || []).map((e) => e.dia || 0), 0);
               const etapasCount = (prot.etapas || []).length;
               const activeList = activeByProtocol[String(prot.id)] || [];
+              const hojeYmd = getLocalYmd();
 
               return (
                 <div
@@ -680,7 +703,7 @@ export default function Protocolos() {
                     <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
                         <Icon name="calendar" size={16} />
-                        <span>{maxDia + 1} dias</span>
+                        <span>{maxDia} dias</span>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
                         <Icon name="check" size={16} />
@@ -740,7 +763,7 @@ export default function Protocolos() {
                             {activeList.map(({ aplicacao, animal }) => {
                               const numero = animal?.numero || "Sem número";
                               const brinco = animal?.brinco ? ` ${animal.brinco}` : "";
-                              const dia = Math.max(diffInDays(aplicacao?.data_inicio, new Date()), 0);
+                              const dia = Math.max(diffInDays(aplicacao?.data_inicio, hojeYmd), 0);
                               const acaoDoDia = resolveEtapaDoDia(prot.etapas, dia);
 
                               return (
