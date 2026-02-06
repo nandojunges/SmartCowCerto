@@ -36,12 +36,6 @@ function parseDateFlexible(s) {
   return null;
 }
 
-function daysBetween(dateA, dateB) {
-  if (!dateA || !dateB) return null;
-  const ms = dateA.getTime() - dateB.getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
-}
-
 function idadeTexto(nascimento) {
   const dt = parseDateFlexible(nascimento);
   if (!dt) return "—";
@@ -62,61 +56,13 @@ function formatProducao(valor) {
   return num.toFixed(1).replace(".", ",");
 }
 
-/* =========================
-   Cálculos via repro_eventos
-========================= */
-function calcDel({ ultimoPartoISO, ultimaSecagemISO }) {
-  const parto = parseDateFlexible(ultimoPartoISO);
-  if (!parto) return null;
-
-  const secagem = parseDateFlexible(ultimaSecagemISO);
-  if (secagem && secagem.getTime() > parto.getTime()) return null;
-
-  return daysBetween(new Date(), parto);
-}
-
-function calcSituacaoProdutiva({ sexo, mesesIdade, ultimoPartoISO, ultimaSecagemISO }) {
-  if (sexo === "macho") return "não lactante";
-
-  const del = calcDel({ ultimoPartoISO, ultimaSecagemISO });
-  if (Number.isFinite(del)) return "lactante";
-
-  const parto = parseDateFlexible(ultimoPartoISO);
-  const secagem = parseDateFlexible(ultimaSecagemISO);
-
-  if (secagem && (!parto || secagem.getTime() >= parto.getTime())) return "seca";
-  if ((mesesIdade ?? 0) < 24) return "novilha";
-  return "não lactante";
-}
-
-function calcSituacaoReprodutiva({ ultimaIAISO, ultimoPartoISO, ultimaSecagemISO }) {
-  const ia = parseDateFlexible(ultimaIAISO);
-  const parto = parseDateFlexible(ultimoPartoISO);
-  const secagem = parseDateFlexible(ultimaSecagemISO);
-
-  if (!ia) return "vazia";
-
-  const temEventoDepoisDaIA = (parto && parto.getTime() > ia.getTime()) || (secagem && secagem.getTime() > ia.getTime());
-
-  if (!temEventoDepoisDaIA) return "inseminada";
-  if (parto && parto.getTime() > ia.getTime()) return "PEV / pós-parto";
-  return "vazia";
-}
-
-/* =========================
-   Helpers cache
-========================= */
-function normalizeReproResumo(obj) {
-  if (!obj || typeof obj !== "object") return {};
-  return obj;
-}
-
-function fallbackFromAnimal(a) {
-  return {
-    ultimaIAISO: a?.ultima_ia || a?.ultimaIAISO || null,
-    ultimoPartoISO: a?.ultimo_parto || a?.ultimoPartoISO || null,
-    ultimaSecagemISO: a?.ultima_secagem || a?.ultimaSecagemISO || null,
-  };
+function obterValor(obj, chaves, fallback = null) {
+  if (!obj) return fallback;
+  for (const chave of chaves) {
+    const valor = obj?.[chave];
+    if (valor !== null && valor !== undefined && valor !== "") return valor;
+  }
+  return fallback;
 }
 
 /* =========================
@@ -128,13 +74,11 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const CACHE_ANIMAIS = "cache:animais:list";
   const CACHE_FALLBACK = "cache:animais:plantel:v1";
   const CACHE_PLANTEL_BUNDLE = `cache:plantel:bundle:${fazendaAtualId || "none"}:v1`;
-  const CACHE_REPRO_RESUMO = `cache:plantel:reproResumo:${fazendaAtualId || "none"}:v1`;
 
   const memoData = MEMO_PLANTEL.data || {};
   const [animais, setAnimais] = useState(() => memoData.animais ?? []);
   const [racaMap, setRacaMap] = useState(() => memoData.racaMap ?? {});
   const [lotes, setLotes] = useState(() => memoData.lotes ?? []);
-  const [reproResumo, setReproResumo] = useState(() => memoData.reproResumo ?? {});
 
   const [carregando, setCarregando] = useState(() => !memoData.animais);
   const [atualizando, setAtualizando] = useState(false);
@@ -173,22 +117,25 @@ export default function Plantel({ isOnline = navigator.onLine }) {
 
   // memo
   useEffect(() => {
-    MEMO_PLANTEL.data = { animais, lotes, racaMap, reproResumo };
+    MEMO_PLANTEL.data = { animais, lotes, racaMap };
     MEMO_PLANTEL.lastAt = Date.now();
-  }, [animais, lotes, racaMap, reproResumo]);
+  }, [animais, lotes, racaMap]);
 
   /* =========================
      Loaders (mantidos)
   ========================= */
   const carregarAnimais = useCallback(async () => {
-    const res = await withFazendaId(supabase.from("animais").select("*"), fazendaAtualId)
-      .eq("ativo", true)
+    const res = await supabase
+      .from("v_repro_tabela")
+      .select("*")
+      .eq("fazenda_id", fazendaAtualId)
       .order("numero", { ascending: true });
 
     if (res.error) throw res.error;
     const lista = Array.isArray(res.data) ? res.data : [];
-    setAnimais(lista);
-    return lista;
+    const filtrada = lista.filter((a) => a?.ativo !== false);
+    setAnimais(filtrada);
+    return filtrada;
   }, [fazendaAtualId]);
 
   const carregarLotes = useCallback(async () => {
@@ -210,54 +157,12 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     return map;
   }, [fazendaAtualId]);
 
-  const carregarResumoRepro = useCallback(async (animalIds) => {
-    if (!fazendaAtualId) return {};
-    if (!Array.isArray(animalIds) || animalIds.length === 0) {
-      setReproResumo({});
-      await kvSet(CACHE_REPRO_RESUMO, {});
-      return {};
-    }
-
-    const { data, error } = await withFazendaId(
-      supabase.from("repro_eventos").select("animal_id,tipo,data_evento"),
-      fazendaAtualId
-    )
-      .in("animal_id", animalIds)
-      .in("tipo", ["IA", "PARTO", "SECAGEM"])
-      .order("data_evento", { ascending: false })
-      .limit(5000);
-
-    if (error) {
-      console.error("Erro ao carregar repro_eventos:", error);
-      setReproResumo({});
-      await kvSet(CACHE_REPRO_RESUMO, {});
-      return {};
-    }
-
-    const rows = Array.isArray(data) ? data : [];
-    const map = {};
-    for (const ev of rows) {
-      const id = ev?.animal_id;
-      if (!id) continue;
-      if (!map[id]) map[id] = { ultimaIAISO: null, ultimoPartoISO: null, ultimaSecagemISO: null };
-      if (ev.tipo === "IA" && !map[id].ultimaIAISO) map[id].ultimaIAISO = ev.data_evento;
-      if (ev.tipo === "PARTO" && !map[id].ultimoPartoISO) map[id].ultimoPartoISO = ev.data_evento;
-      if (ev.tipo === "SECAGEM" && !map[id].ultimaSecagemISO) map[id].ultimaSecagemISO = ev.data_evento;
-    }
-
-    setReproResumo(map);
-    await kvSet(CACHE_REPRO_RESUMO, map);
-    return map;
-  }, [fazendaAtualId, CACHE_REPRO_RESUMO]);
-
   const carregarDoCache = useCallback(async () => {
     const bundle = await kvGet(CACHE_PLANTEL_BUNDLE);
     if (bundle && typeof bundle === "object") {
       if (Array.isArray(bundle.animais)) setAnimais(bundle.animais.filter((a) => a?.ativo !== false));
       if (Array.isArray(bundle.lotes)) setLotes(bundle.lotes);
       if (bundle.racaMap && typeof bundle.racaMap === "object") setRacaMap(bundle.racaMap);
-      if (bundle.reproResumo && typeof bundle.reproResumo === "object")
-        setReproResumo(normalizeReproResumo(bundle.reproResumo));
       return true;
     }
 
@@ -272,12 +177,8 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         setAnimais(cache.animais.filter((a) => a?.ativo !== false));
       }
     }
-
-    const repro = await kvGet(CACHE_REPRO_RESUMO);
-    if (repro && typeof repro === "object") setReproResumo(normalizeReproResumo(repro));
-
-    return Boolean(cache || repro);
-  }, [CACHE_ANIMAIS, CACHE_FALLBACK, CACHE_PLANTEL_BUNDLE, CACHE_REPRO_RESUMO]);
+    return Boolean(cache);
+  }, [CACHE_ANIMAIS, CACHE_FALLBACK, CACHE_PLANTEL_BUNDLE]);
 
   useEffect(() => {
     if (!fazendaAtualId) {
@@ -291,8 +192,9 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     (async () => {
       const memoFresh = MEMO_PLANTEL.data && Date.now() - MEMO_PLANTEL.lastAt < 30000;
       const hasData = Array.isArray(animais) && animais.length > 0;
+      const usarMemo = !isOnline && memoFresh && hasData;
 
-      if (memoFresh && hasData) {
+      if (usarMemo) {
         setCarregando(false);
         setAtualizando(false);
         return;
@@ -320,14 +222,10 @@ export default function Plantel({ isOnline = navigator.onLine }) {
           carregarRacas(),
         ]);
 
-        const ids = (animaisData || []).map((a) => a.id).filter(Boolean);
-        const reproMap = await carregarResumoRepro(ids);
-
         await kvSet(CACHE_PLANTEL_BUNDLE, {
           animais: animaisData,
           lotes: lotesData,
           racaMap: racasData,
-          reproResumo: reproMap,
           savedAt: Date.now(),
           fazenda_id: fazendaAtualId,
         });
@@ -348,7 +246,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     })();
 
     return () => { ativo = false; };
-  }, [fazendaAtualId, isOnline, carregarAnimais, carregarLotes, carregarRacas, carregarResumoRepro, carregarDoCache, CACHE_ANIMAIS, CACHE_PLANTEL_BUNDLE, animais]);
+  }, [fazendaAtualId, isOnline, carregarAnimais, carregarLotes, carregarRacas, carregarDoCache, CACHE_ANIMAIS, CACHE_PLANTEL_BUNDLE]);
 
   /* =========================
      Lotes logic (mantido)
@@ -501,53 +399,30 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   }, [animais, fazendaAtualId, isOnline]);
 
   /* =========================
-     Resolvers DEL/Status
+     Resolvers DEL/Status (base Reproducao)
   ========================= */
-  const resolveMesesIdade = useCallback((animal) => {
-    const nasc = parseDateFlexible(animal?.nascimento);
-    if (!nasc) return 0;
-    const hoje = new Date();
-    let meses = (hoje.getFullYear() - nasc.getFullYear()) * 12 + (hoje.getMonth() - nasc.getMonth());
-    if (hoje.getDate() < nasc.getDate()) meses -= 1;
-    return Math.max(0, meses);
-  }, []);
-
-  const resolveRepro = useCallback(
+  const resolveDelValor = useCallback(
     (animal) => {
-      const id = animal?.id;
-      const fromMap = id ? reproResumo?.[id] : null;
-      if (fromMap && (fromMap.ultimaIAISO || fromMap.ultimoPartoISO || fromMap.ultimaSecagemISO)) {
-        return fromMap;
-      }
-      return fallbackFromAnimal(animal);
+      const valor = obterValor(animal, ["del"]);
+      const num = Number(valor);
+      return Number.isFinite(num) ? num : null;
     },
-    [reproResumo]
+    []
   );
 
-  const resolveDelValor = useCallback((animal) => {
-    const r = resolveRepro(animal);
-    return calcDel(r);
-  }, [resolveRepro]);
-
   const resolveSituacaoProdutiva = useCallback(
-    (animal) => {
-      const r = resolveRepro(animal);
-      return calcSituacaoProdutiva({
-        sexo: animal?.sexo,
-        mesesIdade: resolveMesesIdade(animal),
-        ultimoPartoISO: r.ultimoPartoISO,
-        ultimaSecagemISO: r.ultimaSecagemISO,
-      });
-    },
-    [resolveMesesIdade, resolveRepro]
+    (animal) => obterValor(animal, ["situacao_produtiva", "situacao_prod"], null),
+    []
   );
 
   const resolveStatusReprodutivo = useCallback(
-    (animal) => {
-      const r = resolveRepro(animal);
-      return calcSituacaoReprodutiva(r);
-    },
-    [resolveRepro]
+    (animal) =>
+      obterValor(
+        animal,
+        ["status_reprodutivo", "situacao_reprodutiva", "situacao_repr", "situacao_repro"],
+        null
+      ),
+    []
   );
 
   /* =========================
@@ -1094,8 +969,8 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                   const idade = idadeTexto(a.nascimento);
                   const racaNome = racaMap[a.raca_id] || "—";
                   const sexoLabel = a.sexo === "macho" ? "Macho" : a.sexo === "femea" ? "Fêmea" : a.sexo || "—";
-                  const sitProd = resolveSituacaoProdutiva(a);
-                  const sitReprod = resolveStatusReprodutivo(a);
+                  const sitProd = resolveSituacaoProdutiva(a) || "—";
+                  const sitReprod = resolveStatusReprodutivo(a) || "—";
                   const delValor = resolveDelValor(a);
                   const del = Number.isFinite(delValor) ? String(Math.round(delValor)) : "—";
                   const isLact = /lact|lac/i.test(String(sitProd || ""));
