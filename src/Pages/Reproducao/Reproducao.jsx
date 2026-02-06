@@ -262,6 +262,35 @@ export default function Reproducao() {
     return "—";
   };
 
+  const formatarDataUtc = (data) => {
+    if (!(data instanceof Date)) return "—";
+    const y = data.getUTCFullYear();
+    const m = String(data.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(data.getUTCDate()).padStart(2, "0");
+    return `${d}/${m}/${y}`;
+  };
+
+  const parseYmdAsUtcDate = (valor) => {
+    if (!valor) return null;
+    if (valor instanceof Date) {
+      return new Date(Date.UTC(valor.getFullYear(), valor.getMonth(), valor.getDate()));
+    }
+    if (typeof valor === "string") {
+      const iso = valor.slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+      const [y, m, d] = iso.split("-").map(Number);
+      return new Date(Date.UTC(y, m - 1, d));
+    }
+    return null;
+  };
+
+  const calcularPartoPrevisto = (ultimaIa) => {
+    const base = parseYmdAsUtcDate(ultimaIa);
+    if (!base) return "—";
+    const previsto = new Date(base.getTime() + 280 * 86400000);
+    return formatarDataUtc(previsto);
+  };
+
   const obterValor = (registro, campos, fallback = "—") => {
     for (const campo of campos) {
       const valor = registro?.[campo];
@@ -442,7 +471,7 @@ export default function Reproducao() {
     <div style={styles.card}>
       <div style={styles.tableContainer}>
         <table style={styles.table} className="repro-table">
-          <colgroup><col style={{ width: 170 }} /><col style={{ width: 110 }} /><col style={{ width: 80 }} /><col style={{ width: 90 }} /><col style={{ width: 160 }} /><col style={{ width: 70 }} /><col style={{ width: 110 }} /><col style={{ width: 70 }} /><col style={{ width: 120 }} /><col style={{ width: 130 }} /><col style={{ width: 140 }} /><col style={{ width: 90 }} /></colgroup>
+          <colgroup><col style={{ width: 170 }} /><col style={{ width: 110 }} /><col style={{ width: 80 }} /><col style={{ width: 90 }} /><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 130 }} /><col style={{ width: 70 }} /><col style={{ width: 140 }} /><col style={{ width: 120 }} /><col style={{ width: 70 }} /><col style={{ width: 90 }} /></colgroup>
 
           <thead>
             <tr>
@@ -451,12 +480,12 @@ export default function Reproducao() {
               <th style={{ ...styles.th, textAlign: "center" }}>Idade</th>
               <th style={{ ...styles.th, textAlign: "center" }}>Lactações</th>
               <th style={styles.th}>Situação Repro.</th>
-              <th style={{ ...styles.th, textAlign: "center" }}>DEL</th>
               <th style={styles.th}>Última IA</th>
+              <th style={styles.th}>Parto Previsto</th>
               <th style={{ ...styles.th, textAlign: "center" }}>IAs</th>
-              <th style={styles.th}>Último Parto</th>
-              <th style={styles.th}>Última Secagem</th>
               <th style={styles.th}>Situação Prod.</th>
+              <th style={styles.th}>Último Parto</th>
+              <th style={{ ...styles.th, textAlign: "center" }}>DEL</th>
               <th style={{ ...styles.th, textAlign: "center" }}>Ações</th>
             </tr>
           </thead>
@@ -524,21 +553,14 @@ export default function Reproducao() {
                     </span>
                   </td>
 
-                  <td style={{ ...styles.td, textAlign: "center" }}>
-                    <span style={styles.delBadge(Number(linha.del) || 0)}>
-                      {linha.del || "—"}
-                    </span>
-                  </td>
-
                   <td style={styles.td}>{formatarData(linha.ultimaIA)}</td>
+
+                  <td style={styles.td}>{calcularPartoPrevisto(linha.ultimaIA)}</td>
 
                   {/* ✅ IAs (sem “/lact”) */}
                   <td style={{ ...styles.td, textAlign: "center", ...styles.num }}>
                     {linha.ias}
                   </td>
-
-                  <td style={styles.td}>{formatarData(linha.ultimoParto)}</td>
-                  <td style={styles.td}>{formatarData(linha.ultimaSecagem)}</td>
 
                   {/* ✅ Situação Prod (nome padronizado) */}
                   <td style={styles.td}>
@@ -551,6 +573,14 @@ export default function Reproducao() {
                       }}
                     >
                       {linha.situacaoProd}
+                    </span>
+                  </td>
+
+                  <td style={styles.td}>{formatarData(linha.ultimoParto)}</td>
+
+                  <td style={{ ...styles.td, textAlign: "center" }}>
+                    <span style={styles.delBadge(Number(linha.del) || 0)}>
+                      {linha.del || "—"}
                     </span>
                   </td>
 
