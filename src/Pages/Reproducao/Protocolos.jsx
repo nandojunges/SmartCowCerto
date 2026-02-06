@@ -298,6 +298,8 @@ export default function Protocolos() {
 
       const aplicacoesList = Array.isArray(aplicacoes) ? aplicacoes : [];
       const animalIds = [...new Set(aplicacoesList.map((item) => item?.animal_id).filter(Boolean))];
+      const hojeYmd = getLocalYmd();
+      const aplicacaoIds = [...new Set(aplicacoesList.map((item) => item?.id).filter(Boolean))];
 
       let animaisMap = {};
       if (animalIds.length > 0) {
@@ -317,12 +319,33 @@ export default function Protocolos() {
         }, {});
       }
 
+      let iaRegistradaHoje = new Set();
+      if (aplicacaoIds.length > 0) {
+        const { data: eventosIa, error: eventosIaError } = await supabase
+          .from("repro_eventos")
+          .select("protocolo_aplicacao_id")
+          .eq("fazenda_id", fazendaAtualId)
+          .eq("tipo", "IA")
+          .eq("data_evento", hojeYmd)
+          .in("protocolo_aplicacao_id", aplicacaoIds);
+
+        if (eventosIaError) throw eventosIaError;
+
+        iaRegistradaHoje = new Set(
+          (Array.isArray(eventosIa) ? eventosIa : [])
+            .map((item) => item?.protocolo_aplicacao_id)
+            .filter(Boolean)
+            .map(String),
+        );
+      }
+
       const grouped = aplicacoesList.reduce((acc, aplicacao) => {
         const key = String(aplicacao?.protocolo_id || "");
         if (!key) return acc;
         if (!acc[key]) acc[key] = [];
         const animal = animaisMap[String(aplicacao?.animal_id)] || null;
-        acc[key].push({ aplicacao, animal });
+        const iaHoje = iaRegistradaHoje.has(String(aplicacao?.id));
+        acc[key].push({ aplicacao, animal, iaRegistradaHoje: iaHoje });
         return acc;
       }, {});
 
@@ -760,11 +783,15 @@ export default function Protocolos() {
                           </div>
                         ) : (
                           <div style={{ display: "grid", gap: "8px" }}>
-                            {activeList.map(({ aplicacao, animal }) => {
+                            {activeList.map(({ aplicacao, animal, iaRegistradaHoje }) => {
                               const numero = animal?.numero || "Sem número";
                               const brinco = animal?.brinco ? ` ${animal.brinco}` : "";
                               const dia = Math.max(diffInDays(aplicacao?.data_inicio, hojeYmd), 0);
                               const acaoDoDia = resolveEtapaDoDia(prot.etapas, dia);
+                              const iaConcluidaHoje = acaoDoDia === "IA prevista hoje" && iaRegistradaHoje;
+                              const acaoDoDiaTexto = iaConcluidaHoje
+                                ? "✅ IA registrada hoje (concluído)"
+                                : acaoDoDia;
 
                               return (
                                 <div key={aplicacao?.id} style={{ border: `1px solid ${TOKENS.colors.gray200}`, borderRadius: TOKENS.radii.md, padding: "10px 12px", fontWeight: 600, color: TOKENS.colors.gray700 }}>
@@ -773,7 +800,14 @@ export default function Protocolos() {
                                       {numero}
                                       {brinco} — Dia {dia} do protocolo
                                     </span>
-                                    <span style={{ color: TOKENS.colors.gray500, fontWeight: 500 }}>{acaoDoDia}</span>
+                                    <span
+                                      style={{
+                                        color: iaConcluidaHoje ? TOKENS.colors.gray400 : TOKENS.colors.gray500,
+                                        fontWeight: 500,
+                                      }}
+                                    >
+                                      {acaoDoDiaTexto}
+                                    </span>
                                   </div>
                                 </div>
                               );
