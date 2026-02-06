@@ -131,6 +131,16 @@ function normalizeStatus(v) {
   return s;
 }
 
+function normalizeDgResult(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim().toLowerCase();
+  if (!text) return null;
+  if (["positivo", "pos", "p", "true", "prenhe", "prenha"].includes(text)) return "POSITIVO";
+  if (["negativo", "neg", "n", "false", "vazia"].includes(text)) return "NEGATIVO";
+  if (["não vista", "nao vista", "pendente"].includes(text)) return "PENDENTE";
+  return null;
+}
+
 function getStatusMeta(status) {
   const map = {
     prenha: { 
@@ -344,11 +354,19 @@ const SectionHeader = ({ icon, title, action }) => (
 );
 
 const TimelineEvent = ({ type, date, result, isLast }) => {
+  const normalizedResult = normalizeDgResult(result);
+  const resultLabel = normalizedResult === "POSITIVO"
+    ? "Prenha"
+    : normalizedResult === "NEGATIVO"
+      ? "Vazia"
+      : normalizedResult === "PENDENTE"
+        ? "Não vista"
+        : null;
   const icons = {
     PARTO: "🐄",
     IA: "💉",
     SECAGEM: "🥛",
-    DG: result === "POSITIVO" ? "✓" : "✕",
+    DG: normalizedResult === "POSITIVO" ? "✓" : normalizedResult === "NEGATIVO" ? "✕" : "•",
   };
   
   const labels = {
@@ -362,7 +380,7 @@ const TimelineEvent = ({ type, date, result, isLast }) => {
     PARTO: tokens.colors.primary[600],
     IA: tokens.colors.status.info,
     SECAGEM: tokens.colors.status.danger,
-    DG: result === "POSITIVO" ? tokens.colors.status.success : tokens.colors.status.danger,
+    DG: normalizedResult === "POSITIVO" ? tokens.colors.status.success : normalizedResult === "NEGATIVO" ? tokens.colors.status.danger : tokens.colors.status.warning,
   };
 
   return (
@@ -411,18 +429,24 @@ const TimelineEvent = ({ type, date, result, isLast }) => {
           marginBottom: "2px",
         }}>
           {labels[type]}
-          {result && (
+          {resultLabel && (
             <span style={{
               marginLeft: tokens.space[2],
               fontSize: "12px",
               padding: "2px 8px",
               borderRadius: tokens.radius.full,
-              background: result === "POSITIVO" 
+              background: normalizedResult === "POSITIVO" 
                 ? "rgba(34, 197, 94, 0.15)" 
-                : "rgba(239, 68, 68, 0.15)",
-              color: result === "POSITIVO" ? tokens.colors.status.success : tokens.colors.status.danger,
+                : normalizedResult === "NEGATIVO"
+                  ? "rgba(239, 68, 68, 0.15)"
+                  : "rgba(245, 158, 11, 0.15)",
+              color: normalizedResult === "POSITIVO"
+                ? tokens.colors.status.success
+                : normalizedResult === "NEGATIVO"
+                  ? tokens.colors.status.danger
+                  : tokens.colors.status.warning,
             }}>
-              {result === "POSITIVO" ? "Positivo" : "Negativo"}
+              {resultLabel}
             </span>
           )}
         </div>
@@ -499,8 +523,9 @@ export default function FichaAnimalResumo({ animal }) {
     const dtDG = ultimoDG ? parseDateFlexible(ultimoDG.data_evento) : null;
     
     if (dtSec && dtIA && dtSec > dtIA) return "seca";
-    if (ultimoDG?.resultado_dg === "POSITIVO" && dtDG > dtIA) return "prenha";
-    if (ultimoDG?.resultado_dg === "NEGATIVO" && dtDG > dtIA) return "vazia";
+    const dgResult = normalizeDgResult(ultimoDG?.meta?.dg);
+    if (dgResult === "POSITIVO" && dtDG > dtIA) return "prenha";
+    if (dgResult === "NEGATIVO" && dtDG > dtIA) return "vazia";
     if (dtIA && (!dtParto || dtIA > dtParto)) return "inseminada";
     return "vazia";
   }, [animal, ultimoParto, ultimaIA, ultimaSecagem, ultimoDG]);
@@ -914,7 +939,7 @@ export default function FichaAnimalResumo({ animal }) {
                     key={idx}
                     type={event.tipo}
                     date={event.data_evento}
-                    result={event.resultado_dg}
+                    result={event?.meta?.dg}
                     isLast={idx === reproEvents.length - 1}
                   />
                 ))}

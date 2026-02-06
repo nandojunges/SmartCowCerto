@@ -52,8 +52,8 @@ function normalizarResultadoDg(valor) {
   if (valor === null || valor === undefined) return "";
   const texto = String(valor).trim().toLowerCase();
   if (!texto) return "";
-  const positivos = ["positivo", "pos", "p", "true"];
-  const negativos = ["negativo", "neg", "n", "false"];
+  const positivos = ["positivo", "pos", "p", "true", "prenhe", "prenha"];
+  const negativos = ["negativo", "neg", "n", "false", "vazia"];
   if (positivos.includes(texto)) return "POSITIVO";
   if (negativos.includes(texto)) return "NEGATIVO";
   return "";
@@ -107,7 +107,7 @@ function calcularResumoReproducao(eventos = []) {
   const ultimoParto = ultimoPartoEvento?.data_evento ?? null;
   const ultimaSecagem = ultimaSecagemEvento?.data_evento ?? null;
   const ultimaIa = ultimaIaEvento?.data_evento ?? null;
-  const resultadoDg = normalizarResultadoDg(ultimoDgEvento?.resultado_dg);
+  const resultadoDg = normalizarResultadoDg(ultimoDgEvento?.meta?.dg);
 
   const del = delNumeroFromParto(ultimoParto, ultimaSecagem);
 
@@ -201,7 +201,7 @@ export default function FichaAnimalReproducao({ animal, onResumoChange }) {
 
       const { data, error } = await supabase
         .from("repro_eventos")
-        .select("tipo, data_evento, resultado_dg, observacoes, meta")
+        .select("tipo, data_evento, observacoes, meta")
         .eq("fazenda_id", animal.fazenda_id)
         .eq("animal_id", animal.id)
         .order("data_evento", { ascending: false });
@@ -294,7 +294,7 @@ export default function FichaAnimalReproducao({ animal, onResumoChange }) {
                 </div>
                 <div>{fmtDataBR(evento?.data_evento)}</div>
                 <div style={{ color: "#475569" }}>
-                  {evento?.resultado_dg ? `DG: ${evento.resultado_dg}` : evento?.observacoes || "—"}
+                  {evento?.meta?.dg ? `DG: ${evento.meta.dg}` : evento?.observacoes || "—"}
                 </div>
               </div>
             ))}

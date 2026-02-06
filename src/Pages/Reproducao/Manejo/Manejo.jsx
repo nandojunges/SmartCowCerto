@@ -241,6 +241,7 @@ export default function VisaoGeral({
   const [selectedType, setSelectedType] = useState(initialTab);
   const [isAnimating, setIsAnimating] = useState(false);
   const [draftIA, setDraftIA] = useState(null);
+  const [draftDG, setDraftDG] = useState(null);
   const [erroSalvar, setErroSalvar] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [bulkSearch, setBulkSearch] = useState("");
@@ -563,6 +564,7 @@ export default function VisaoGeral({
   const handleClose = () => {
     setSelectedType(null);
     setDraftIA(null);
+    setDraftDG(null);
     setErroSalvar("");
     setSalvando(false);
     setBulkSearch("");
@@ -694,6 +696,28 @@ export default function VisaoGeral({
     return data || null;
   };
 
+  const mapIAFields = (iaAlvo) => ({
+    evento_pai_id: iaAlvo?.id || null,
+    inseminador_id: iaAlvo?.inseminador_id || null,
+    touro_id: iaAlvo?.touro_id || null,
+    touro_nome: iaAlvo?.touro_nome || null,
+    protocolo_id: iaAlvo?.protocolo_id || null,
+    protocolo_aplicacao_id: iaAlvo?.protocolo_aplicacao_id || null,
+    razao: iaAlvo?.razao || null,
+    tipo_semen: iaAlvo?.tipo_semen || null,
+    palhetas: iaAlvo?.palhetas ?? null,
+    lote: iaAlvo?.lote || null,
+    evidencia: iaAlvo?.evidencia || null,
+  });
+
+  const buildDGMeta = (draft, iaAlvo) => ({
+    dg: draft?.dg || "",
+    tipoExame: draft?.extras?.tipoExame || "",
+    diasDesdeIA: draft?.extras?.diasDesdeIA ?? null,
+    comentario: draft?.extras?.comentario || "",
+    ia_ref: iaAlvo?.id ? { id: iaAlvo.id, data: iaAlvo.data_evento } : null,
+  });
+
   const buildAplicacaoOption = (aplicacao) => {
     const labelBase = aplicacao?.protocolo_id
       ? `Protocolo ${aplicacao.protocolo_id}`
@@ -730,77 +754,7 @@ export default function VisaoGeral({
       const userId = authData?.user?.id || legacyAuthUser?.id;
       if (!userId) throw new Error("Sessão inválida (auth.uid vazio)");
 
-      if (payload.kind === "DG") {
-        const dataEvento = normalizePayloadDate(payload.data);
-        if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
-        const mapa = { Prenhe: "POSITIVO", Vazia: "NEGATIVO", "Não vista": "PENDENTE" };
-        const mapIAFields = (iaAlvo) => ({
-          evento_pai_id: iaAlvo?.id || null,
-          inseminador_id: iaAlvo?.inseminador_id || null,
-          touro_id: iaAlvo?.touro_id || null,
-          touro_nome: iaAlvo?.touro_nome || null,
-          protocolo_id: iaAlvo?.protocolo_id || null,
-          protocolo_aplicacao_id: iaAlvo?.protocolo_aplicacao_id || null,
-          razao: iaAlvo?.razao || null,
-          tipo_semen: iaAlvo?.tipo_semen || null,
-          palhetas: iaAlvo?.palhetas ?? null,
-          lote: iaAlvo?.lote || null,
-          evidencia: iaAlvo?.evidencia || null,
-        });
-        const buildDGMeta = (iaAlvo) => ({
-          dg: payload?.dg || "PENDENTE",
-          tipoExame: payload?.extras?.tipoExame || null,
-          diasDesdeIA: payload?.extras?.diasDesdeIA ?? null,
-          comentario: payload?.extras?.comentario || "",
-          ia_ref: iaAlvo?.id ? { id: iaAlvo.id, data: iaAlvo.data_evento } : null,
-        });
-        if (hasBulkSelection) {
-          const targets = await Promise.all(
-            bulkSelectedAnimals.map(async (item) => {
-              const resolvedAnimalId = resolveAnimalId(item);
-              const iaAlvo = await getIATarget({ animalId: resolvedAnimalId, dataEvento });
-              return { animalId: resolvedAnimalId, iaAlvo };
-            })
-          );
-          const semIA = targets.filter((item) => !item.iaAlvo);
-          if (semIA.length > 0) {
-            setErroSalvar("Sem IA válida para alguns animais selecionados. Registre uma inseminação antes do diagnóstico.");
-            return;
-          }
-          await insertReproEventos(
-            targets.map(({ animalId: resolvedAnimalId, iaAlvo }) => ({
-              fazenda_id: fazendaAtualId,
-              animal_id: resolvedAnimalId,
-              tipo: "DG",
-              data_evento: dataEvento,
-              user_id: userId,
-              resultado_dg: mapa[payload.dg] || "PENDENTE",
-              observacoes: payload?.extras?.obs,
-              meta: buildDGMeta(iaAlvo),
-              ...mapIAFields(iaAlvo),
-            }))
-          );
-          toast.success("DG salvo");
-        } else {
-          const iaAlvo = await getIATarget({ animalId: baseAnimalId, dataEvento });
-          if (!iaAlvo) {
-            setErroSalvar("Sem IA válida para este animal. Registre uma inseminação antes do diagnóstico.");
-            return;
-          }
-          await insertReproEvento({
-            fazenda_id: fazendaAtualId,
-            animal_id: baseAnimalId,
-            tipo: "DG",
-            data_evento: dataEvento,
-            user_id: userId,
-            resultado_dg: mapa[payload.dg] || "PENDENTE",
-            observacoes: payload?.extras?.obs,
-            meta: buildDGMeta(iaAlvo),
-            ...mapIAFields(iaAlvo),
-          });
-          toast.success("DG salvo");
-        }
-      } else if (payload.kind === "IA") {
+      if (payload.kind === "IA") {
         const dataEvento = normalizePayloadDate(payload.data);
         if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
         const razaoEvento = payload?.extras?.razao || null;
@@ -1103,6 +1057,80 @@ export default function VisaoGeral({
           palhetas: draftIA.palhetas,
         },
       });
+      return;
+    }
+
+    if (selectedType === "DG") {
+      if (!draftDG) {
+        setErroSalvar("Preencha os dados do diagnóstico antes de salvar.");
+        return;
+      }
+
+      const dataEvento = brToISO(draftDG.data);
+      if (!dataEvento) {
+        setErroSalvar("Data inválida. Use o formato dd/mm/aaaa.");
+        return;
+      }
+
+      try {
+        setSalvando(true);
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError) throw authError;
+        const legacyAuthUser = typeof supabase.auth.user === "function" ? supabase.auth.user() : null;
+        const userId = authData?.user?.id || legacyAuthUser?.id;
+        if (!userId) throw new Error("Sessão inválida (auth.uid vazio)");
+
+        if (bulkActive) {
+          const targets = await Promise.all(
+            bulkSelectedAnimals.map(async (item) => {
+              const resolvedAnimalId = resolveAnimalId(item);
+              const iaAlvo = await getIATarget({ animalId: resolvedAnimalId, dataEvento });
+              return { animalId: resolvedAnimalId, iaAlvo };
+            })
+          );
+          const semIA = targets.filter((item) => !item.iaAlvo);
+          if (semIA.length > 0) {
+            setErroSalvar("Sem IA válida para alguns animais selecionados. Registre uma inseminação antes do diagnóstico.");
+            return;
+          }
+
+          await insertReproEventos(
+            targets.map(({ animalId: resolvedAnimalId, iaAlvo }) => ({
+              fazenda_id: fazendaAtualId,
+              animal_id: resolvedAnimalId,
+              tipo: "DG",
+              data_evento: dataEvento,
+              user_id: userId,
+              meta: buildDGMeta(draftDG, iaAlvo),
+              ...mapIAFields(iaAlvo),
+            }))
+          );
+          toast.success("DG salvo");
+        } else {
+          const iaAlvo = await getIATarget({ animalId, dataEvento });
+          if (!iaAlvo) {
+            setErroSalvar("Sem IA válida para este animal. Registre uma inseminação antes do diagnóstico.");
+            return;
+          }
+          await insertReproEvento({
+            fazenda_id: fazendaAtualId,
+            animal_id: animalId,
+            tipo: "DG",
+            data_evento: dataEvento,
+            user_id: userId,
+            meta: buildDGMeta(draftDG, iaAlvo),
+            ...mapIAFields(iaAlvo),
+          });
+          toast.success("DG salvo");
+        }
+        await handleSaved();
+      } catch (e) {
+        console.error(e);
+        const msg = [e?.message || "Erro ao salvar", e?.code ? `Código: ${e.code}` : ""].filter(Boolean).join(" | ");
+        setErroSalvar(msg);
+      } finally {
+        setSalvando(false);
+      }
       return;
     }
 
@@ -1554,7 +1582,7 @@ export default function VisaoGeral({
                 touros={touros}
                 protocolos={protocolos}
                 onSubmit={handleSubmit}
-                onChangeDraft={selectedType === "IA" ? setDraftIA : undefined}
+                onChangeDraft={selectedType === "IA" ? setDraftIA : selectedType === "DG" ? setDraftDG : undefined}
                 protocoloVinculadoOptions={selectedType === "IA" ? protocoloVinculadoOptions : []}
                 protocoloVinculadoId={selectedType === "IA" ? protocoloVinculadoId : ""}
                 protocoloVinculadoRequired={selectedType === "IA" && protocoloVinculadoOptions.length > 1}
