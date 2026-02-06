@@ -53,8 +53,21 @@ function normalizePayloadDate(value) {
   return null;
 }
 
+function sanitizeReproEventoPayload(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+
+  const { evidencia_ia: _evidenciaIa, ...cleanPayload } = payload;
+  if (cleanPayload.meta && typeof cleanPayload.meta === "object") {
+    const { evidencia_ia: _metaEvidenciaIa, ...cleanMeta } = cleanPayload.meta;
+    cleanPayload.meta = cleanMeta;
+  }
+
+  return cleanPayload;
+}
+
 async function insertReproEvento(payload) {
-  const { data, error } = await supabase.from("repro_eventos").insert([payload]).select("*").maybeSingle();
+  const sanitizedPayload = sanitizeReproEventoPayload(payload);
+  const { data, error } = await supabase.from("repro_eventos").insert([sanitizedPayload]).select("*").maybeSingle();
   if (error) throw error;
   return data;
 }
