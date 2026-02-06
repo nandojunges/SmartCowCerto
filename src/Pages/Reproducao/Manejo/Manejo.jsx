@@ -88,6 +88,13 @@ function diffDays(a, b) {
   return Math.round((startA - startB) / DAY);
 }
 
+function addDays(baseDate, days) {
+  if (!baseDate || !Number.isFinite(days)) return null;
+  const dt = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+  dt.setDate(dt.getDate() + days);
+  return dt;
+}
+
 function formatBRDate(value) {
   if (!value) return "—";
   const dt = typeof value === "string" ? parseISODate(value) : value;
@@ -229,6 +236,12 @@ export default function VisaoGeral({
   const [protocoloVinculadoId, setProtocoloVinculadoId] = useState("");
   const [bulkProtocolConflicts, setBulkProtocolConflicts] = useState([]);
   const [bulkProtocolSelections, setBulkProtocolSelections] = useState({});
+  const [iaMatchAplicacaoId, setIaMatchAplicacaoId] = useState(null);
+  const [iaMatchProtocoloId, setIaMatchProtocoloId] = useState(null);
+  const [iaBanner, setIaBanner] = useState(null);
+  const [iaBlockMessage, setIaBlockMessage] = useState("");
+  const [bulkIABlockMessage, setBulkIABlockMessage] = useState("");
+  const [bulkIAMatches, setBulkIAMatches] = useState({});
 
   const bulkActive = Boolean(bulkMode);
 
@@ -263,6 +276,14 @@ export default function VisaoGeral({
       setBulkProtocolConflicts([]);
       setBulkProtocolSelections({});
     }
+    if (selectedType !== "IA") {
+      setIaMatchAplicacaoId(null);
+      setIaMatchProtocoloId(null);
+      setIaBanner(null);
+      setIaBlockMessage("");
+      setBulkIABlockMessage("");
+      setBulkIAMatches({});
+    }
   }, [selectedType]);
 
   useEffect(() => {
@@ -295,6 +316,139 @@ export default function VisaoGeral({
       setBulkProtocolSelections({});
     }
   }, [draftIA?.razao]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const clearStatus = () => {
+      if (!isActive) return;
+      setIaMatchAplicacaoId(null);
+      setIaMatchProtocoloId(null);
+      setIaBanner(null);
+      setIaBlockMessage("");
+      setBulkIABlockMessage("");
+      setBulkIAMatches({});
+    };
+
+    const resolveStatus = async () => {
+      if (!open || selectedType !== "IA") {
+        clearStatus();
+        return;
+      }
+      const razaoEvento = draftIA?.razao;
+      if (!razaoEvento || !RAZOES_VINCULO_AUTOMATICO.has(razaoEvento)) {
+        clearStatus();
+        return;
+      }
+      const dataEventoISO = brToISO(draftIA?.data);
+      if (!dataEventoISO) {
+        clearStatus();
+        return;
+      }
+
+      const dataEventoDate = parseISODate(dataEventoISO);
+      if (!dataEventoDate) {
+        clearStatus();
+        return;
+      }
+
+      if (bulkActive && bulkReady && bulkSelectedAnimals.length > 0) {
+        try {
+          const resultados = await Promise.all(
+            bulkSelectedAnimals.map(async (item) => {
+              const targetId = resolveAnimalId(item);
+              if (!targetId) return null;
+              const aplicacoes = await getAplicacoesAtivas({
+                animalId: targetId,
+                dataEvento: dataEventoISO,
+              });
+              return resolveVinculoIA(aplicacoes, dataEventoDate, targetId);
+            })
+          );
+
+          if (!isActive) return;
+
+          const matchesMap = {};
+          let hasInvalid = false;
+
+          resultados.filter(Boolean).forEach((info) => {
+            matchesMap[info.animalId] = info;
+            if (!info.hasMatch) {
+              hasInvalid = true;
+            }
+          });
+
+          setBulkIAMatches(matchesMap);
+          if (hasInvalid) {
+            setBulkIABlockMessage("Alguns animais não têm IA prevista nessa data. Ajuste a data ou a razão.");
+          } else {
+            setBulkIABlockMessage("");
+          }
+          setIaBanner(null);
+          setIaBlockMessage("");
+        } catch (error) {
+          console.error("Erro ao validar IA coletiva:", error);
+        }
+        return;
+      }
+
+      if (!animalId) {
+        clearStatus();
+        return;
+      }
+
+      try {
+        const aplicacoes = await getAplicacoesAtivas({
+          animalId,
+          dataEvento: dataEventoISO,
+        });
+        if (!isActive) return;
+
+        const info = resolveVinculoIA(aplicacoes, dataEventoDate, animalId);
+        if (info.hasMatch && info.match) {
+          const detail = `Data início ${formatBRDate(info.match.dataInicio)} • D${info.match.diaAlvo} • Data do evento ${formatBRDate(dataEventoDate)}`;
+          setIaMatchAplicacaoId(info.match.aplicacao.id);
+          setIaMatchProtocoloId(info.match.aplicacao.protocolo_id || null);
+          setIaBanner({
+            type: "info",
+            title: "IA prevista pelo protocolo: VINCULANDO AUTOMATICAMENTE",
+            message: detail,
+          });
+          setIaBlockMessage("");
+        } else {
+          const dataPrevista = info.next?.dataPrevista || null;
+          const msg = `Esse animal não tem IA prevista no protocolo para ${formatBRDate(dataEventoDate)}. IA prevista em ${formatBRDate(dataPrevista)}. Altere a data ou a razão.`;
+          setIaMatchAplicacaoId(null);
+          setIaMatchProtocoloId(null);
+          setIaBanner({
+            type: "danger",
+            title: "IA fora do protocolo",
+            message: msg,
+          });
+          setIaBlockMessage(msg);
+        }
+        setBulkIABlockMessage("");
+        setBulkIAMatches({});
+      } catch (error) {
+        console.error("Erro ao validar IA:", error);
+      }
+    };
+
+    resolveStatus();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    open,
+    selectedType,
+    draftIA?.razao,
+    draftIA?.data,
+    bulkActive,
+    bulkReady,
+    bulkSelectedAnimals,
+    animalId,
+  ]);
 
   useEffect(() => {
     const fetchInseminadores = async () => {
@@ -418,6 +572,67 @@ export default function VisaoGeral({
     if (error) throw error;
   };
 
+  const getAplicacoesAtivas = async ({ animalId: targetAnimalId, dataEvento }) => {
+    if (!fazendaAtualId || !targetAnimalId || !dataEvento) return [];
+    const { data, error } = await supabase
+      .from("repro_aplicacoes")
+      .select("id, protocolo_id, data_inicio, etapas_snapshot")
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("animal_id", targetAnimalId)
+      .eq("status", "ATIVO")
+      .lte("data_inicio", dataEvento);
+
+    if (error) throw error;
+
+    return Array.isArray(data) ? data : [];
+  };
+
+  const resolveVinculoIA = (aplicacoes, dataEventoDate, targetAnimalId) => {
+    const alvoNormalizado = normalizeTexto("Inseminação");
+    const matches = [];
+    const previsoes = [];
+
+    (Array.isArray(aplicacoes) ? aplicacoes : []).forEach((aplicacao) => {
+      const dataInicio = parseISODate(aplicacao?.data_inicio);
+      if (!dataInicio) return;
+      const diaAlvo = diffDays(dataEventoDate, dataInicio);
+      const etapas = parseEtapasSnapshot(aplicacao?.etapas_snapshot);
+      const matchEtapa = etapas.find(
+        (etapa) =>
+          Number(etapa?.dia) === diaAlvo &&
+          normalizeTexto(etapa?.acao) === alvoNormalizado
+      );
+      if (matchEtapa) {
+        matches.push({ aplicacao, dataInicio, diaAlvo });
+      }
+
+      const etapaInsem = etapas.find(
+        (etapa) =>
+          normalizeTexto(etapa?.acao) === alvoNormalizado &&
+          Number.isFinite(+etapa?.dia)
+      );
+      if (etapaInsem) {
+        const dia = Number(etapaInsem.dia);
+        const dataPrevista = addDays(dataInicio, dia);
+        if (dataPrevista) {
+          previsoes.push({ aplicacao, dataInicio, dia, dataPrevista });
+        }
+      }
+    });
+
+    const match = matches.length === 1 ? matches[0] : null;
+    const next = previsoes.length > 0
+      ? previsoes.sort((a, b) => a.dataPrevista - b.dataPrevista)[0]
+      : null;
+
+    return {
+      animalId: targetAnimalId,
+      hasMatch: matches.length > 0,
+      match,
+      next,
+    };
+  };
+
   const getAplicacoesCompativeis = async ({ animalId: targetAnimalId, dataEvento }) => {
     if (!fazendaAtualId || !targetAnimalId || !dataEvento) return [];
     const { data, error } = await supabase
@@ -536,6 +751,10 @@ export default function VisaoGeral({
         };
 
         if (hasBulkSelection) {
+          if (exigeVinculo && bulkIABlockMessage) {
+            setErroSalvar(bulkIABlockMessage);
+            return;
+          }
           if (!exigeVinculo) {
             await insertReproEventos(
               bulkSelectedAnimals.map((item) => ({
@@ -602,6 +821,11 @@ export default function VisaoGeral({
 
           setBulkProtocolConflicts([]);
 
+          if (semVinculo > 0) {
+            setErroSalvar("Alguns animais não têm IA prevista nessa data. Ajuste a data ou a razão.");
+            return;
+          }
+
           await insertReproEventos(
             itens.map(({ item, animalId: targetId, aplicacao }) => ({
               ...baseEvento,
@@ -613,11 +837,9 @@ export default function VisaoGeral({
 
           const autoVinculadas = vinculos.length;
           const manuais = vinculoManual;
-          const semProtocolo = semVinculo;
           toast.info(
             [
               `${autoVinculadas} vinculadas automaticamente`,
-              `${semProtocolo} sem protocolo compatível (salvas sem vínculo)`,
               `${manuais} exigiram escolha manual`,
             ].join(" • ")
           );
@@ -626,32 +848,44 @@ export default function VisaoGeral({
           let protocoloId = null;
 
           if (exigeVinculo) {
-            const aplicacoes = await getAplicacoesCompativeis({
-              animalId: baseAnimalId,
-              dataEvento,
-            });
-
-            if (aplicacoes.length === 1) {
-              protocoloAplicacaoId = aplicacoes[0].id;
-              protocoloId = aplicacoes[0].protocolo_id;
-              setProtocoloVinculadoOptions([]);
-              setProtocoloVinculadoId("");
-            } else if (aplicacoes.length === 0) {
-              toast.info("Nenhum protocolo com inseminação prevista nessa data para este animal.");
+            if (iaMatchAplicacaoId) {
+              protocoloAplicacaoId = iaMatchAplicacaoId;
+              protocoloId = iaMatchProtocoloId;
               setProtocoloVinculadoOptions([]);
               setProtocoloVinculadoId("");
             } else {
-              const options = aplicacoes.map(buildAplicacaoOption);
-              const selectedId = protocoloVinculadoId;
-              const selectedApp = aplicacoes.find((app) => String(app.id) === String(selectedId));
-              if (!selectedApp) {
-                setProtocoloVinculadoOptions(options);
-                setErroSalvar("Selecione o protocolo vinculado para continuar.");
+              if (iaBlockMessage) {
+                setErroSalvar(iaBlockMessage);
                 return;
               }
-              protocoloAplicacaoId = selectedApp.id;
-              protocoloId = selectedApp.protocolo_id;
-              setProtocoloVinculadoOptions(options);
+              const aplicacoes = await getAplicacoesCompativeis({
+                animalId: baseAnimalId,
+                dataEvento,
+              });
+
+              if (aplicacoes.length === 1) {
+                protocoloAplicacaoId = aplicacoes[0].id;
+                protocoloId = aplicacoes[0].protocolo_id;
+                setProtocoloVinculadoOptions([]);
+                setProtocoloVinculadoId("");
+              } else if (aplicacoes.length === 0) {
+                setErroSalvar("Esse animal não tem IA prevista nessa data. Ajuste a data ou a razão.");
+                setProtocoloVinculadoOptions([]);
+                setProtocoloVinculadoId("");
+                return;
+              } else {
+                const options = aplicacoes.map(buildAplicacaoOption);
+                const selectedId = protocoloVinculadoId;
+                const selectedApp = aplicacoes.find((app) => String(app.id) === String(selectedId));
+                if (!selectedApp) {
+                  setProtocoloVinculadoOptions(options);
+                  setErroSalvar("Selecione o protocolo vinculado para continuar.");
+                  return;
+                }
+                protocoloAplicacaoId = selectedApp.id;
+                protocoloId = selectedApp.protocolo_id;
+                setProtocoloVinculadoOptions(options);
+              }
             }
           }
 
@@ -768,6 +1002,16 @@ export default function VisaoGeral({
 
       if (!(Number.isFinite(+draftIA.palhetas) && +draftIA.palhetas >= 1)) {
         setErroSalvar("Informe ao menos 1 palheta para salvar o registro.");
+        return;
+      }
+
+      if (RAZOES_VINCULO_AUTOMATICO.has(draftIA.razao) && iaBlockMessage) {
+        setErroSalvar(iaBlockMessage);
+        return;
+      }
+
+      if (bulkActive && bulkIABlockMessage) {
+        setErroSalvar(bulkIABlockMessage);
         return;
       }
 
@@ -1325,6 +1569,41 @@ export default function VisaoGeral({
             )}
           </div>
 
+          {selectedType === "IA" && (iaBanner || (bulkActive && bulkIABlockMessage)) && (
+            <div style={{
+              padding: "12px 24px 0",
+              background: "#fff",
+            }}>
+              {iaBanner && (
+                <div style={{
+                  padding: "12px 16px",
+                  borderRadius: theme.radius.md,
+                  border: `1px solid ${iaBanner.type === "danger" ? theme.colors.danger : theme.colors.accent[100]}`,
+                  background: iaBanner.type === "danger" ? "#fef2f2" : theme.colors.accent[50],
+                  color: iaBanner.type === "danger" ? theme.colors.danger : theme.colors.accent[900],
+                  fontSize: "13px",
+                  fontWeight: 600,
+                }}>
+                  <div style={{ fontWeight: 700, marginBottom: "4px" }}>{iaBanner.title}</div>
+                  <div style={{ fontWeight: 500, color: theme.colors.slate[700] }}>{iaBanner.message}</div>
+                </div>
+              )}
+              {!iaBanner && bulkActive && bulkIABlockMessage && (
+                <div style={{
+                  padding: "12px 16px",
+                  borderRadius: theme.radius.md,
+                  border: `1px solid ${theme.colors.danger}`,
+                  background: "#fef2f2",
+                  color: theme.colors.danger,
+                  fontSize: "13px",
+                  fontWeight: 600,
+                }}>
+                  {bulkIABlockMessage}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Footer com Ações */}
           {selectedType && (
             <div style={{
@@ -1357,31 +1636,31 @@ export default function VisaoGeral({
               
               <button
                 onClick={handleSalvarRegistro}
-                disabled={salvando}
+                disabled={salvando || Boolean(iaBlockMessage) || Boolean(bulkIABlockMessage)}
                 style={{
                   padding: "8px 20px",
                   fontSize: "13px",
                   fontWeight: 600,
                   color: "#fff",
-                  background: theme.colors.accent[600],
+                  background: (salvando || iaBlockMessage || bulkIABlockMessage) ? theme.colors.slate[300] : theme.colors.accent[600],
                   border: "none",
                   borderRadius: theme.radius.md,
-                  cursor: salvando ? "not-allowed" : "pointer",
+                  cursor: (salvando || iaBlockMessage || bulkIABlockMessage) ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: "8px",
                   boxShadow: "0 1px 2px 0 rgba(0,0,0,0.1)",
                   transition: "all 0.15s",
-                  opacity: salvando ? 0.7 : 1,
+                  opacity: (salvando || iaBlockMessage || bulkIABlockMessage) ? 0.7 : 1,
                 }}
                 onMouseEnter={(e) => {
-                  if (salvando) return;
+                  if (salvando || iaBlockMessage || bulkIABlockMessage) return;
                   e.currentTarget.style.background = theme.colors.accent[700];
                   e.currentTarget.style.transform = "translateY(-1px)";
                   e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0,0,0,0.1)";
                 }}
                 onMouseLeave={(e) => {
-                  if (salvando) return;
+                  if (salvando || iaBlockMessage || bulkIABlockMessage) return;
                   e.currentTarget.style.background = theme.colors.accent[600];
                   e.currentTarget.style.transform = "translateY(0)";
                   e.currentTarget.style.boxShadow = "0 1px 2px 0 rgba(0,0,0,0.1)";
