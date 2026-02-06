@@ -82,10 +82,24 @@ function parseISODate(value) {
 
 function diffDays(a, b) {
   if (!a || !b) return null;
-  const startA = new Date(a.getFullYear(), a.getMonth(), a.getDate());
-  const startB = new Date(b.getFullYear(), b.getMonth(), b.getDate());
-  const DAY = 86400000;
-  return Math.round((startA - startB) / DAY);
+  const toUtcDay = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+    }
+    if (typeof value === "string") {
+      const ymd = value.slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+      const [y, m, d] = ymd.split("-").map(Number);
+      return Date.UTC(y, m - 1, d);
+    }
+    return null;
+  };
+
+  const startA = toUtcDay(a);
+  const startB = toUtcDay(b);
+  if (!Number.isFinite(startA) || !Number.isFinite(startB)) return null;
+  return Math.round((startA - startB) / 86400000);
 }
 
 function addDays(baseDate, days) {

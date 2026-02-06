@@ -250,10 +250,16 @@ export default function Reproducao() {
   // =========================
   const formatarData = (valor) => {
     if (!valor) return "—";
-    if (typeof valor === "string" && valor.includes("/")) return valor;
-    const dt = valor instanceof Date ? valor : new Date(valor);
-    if (Number.isNaN(dt.getTime())) return "—";
-    return new Intl.DateTimeFormat("pt-BR").format(dt);
+    if (typeof valor === "string") {
+      if (valor.includes("/")) return valor;
+      const iso = valor.slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+        const [y, m, d] = iso.split("-");
+        return `${d}/${m}/${y}`;
+      }
+      return valor;
+    }
+    return "—";
   };
 
   const obterValor = (registro, campos, fallback = "—") => {
