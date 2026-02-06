@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 import ModalNovoProtocolo from "./ModalNovoProtocolo";
@@ -140,6 +140,15 @@ export default function Protocolos() {
   const [editando, setEditando] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [vinculos, setVinculos] = useState({});
+  const inFlightRef = useRef(false);
+  const aliveRef = useRef(true);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   const normalizeTipo = (value) => {
     const t = String(value || "")
@@ -170,44 +179,65 @@ export default function Protocolos() {
     }
   };
 
-  const carregar = useCallback(async () => {
-    if (!fazendaAtualId) return;
+  const carregarProtocolos = useCallback(async () => {
+    if (!fazendaAtualId || inFlightRef.current) {
+      return;
+    }
+
+    inFlightRef.current = true;
     setCarregando(true);
     setErro("");
+    console.debug("[Protocolos] fetch protocolos start", { fazenda_id: fazendaAtualId });
 
     try {
-      let q = supabase
+      const { data, error } = await supabase
         .from("repro_protocolos")
         .select("*")
         .eq("fazenda_id", fazendaAtualId)
         .order("created_at", { ascending: false });
-
-      if (busca.trim()) {
-        const b = busca.trim();
-        q = q.or(`nome.ilike.%${b}%,descricao.ilike.%${b}%`);
-      }
-
-      const { data, error } = await q;
       if (error) throw error;
 
-      setProtocolos(
-        (data || []).map((p) => ({
-          ...p,
-          tipo: tipoLabel(p?.tipo),
-          etapas: parseEtapas(p?.etapas),
-        }))
-      );
+      const nextProtocolos = (data || []).map((p) => ({
+        ...p,
+        tipo: tipoLabel(p?.tipo),
+        etapas: parseEtapas(p?.etapas),
+      }));
+
+      if (aliveRef.current) {
+        setProtocolos((prev) => {
+          const sameSize = prev.length === nextProtocolos.length;
+          const sameItems =
+            sameSize &&
+            prev.every((item, index) => {
+              const next = nextProtocolos[index];
+              return item?.id === next?.id && JSON.stringify(item) === JSON.stringify(next);
+            });
+          return sameItems ? prev : nextProtocolos;
+        });
+      }
+      console.debug("[Protocolos] fetch protocolos end", { fazenda_id: fazendaAtualId, count: nextProtocolos.length });
     } catch (e) {
       console.error(e);
-      setErro("Falha ao carregar protocolos");
+      if (aliveRef.current) {
+        setErro("Falha ao carregar protocolos");
+      }
     } finally {
-      setCarregando(false);
+      if (aliveRef.current) {
+        setCarregando(false);
+      }
+      inFlightRef.current = false;
     }
-  }, [fazendaAtualId, busca, tipoLabel]);
+  }, [fazendaAtualId]);
 
   useEffect(() => {
-    carregar();
-  }, [carregar]);
+    if (!fazendaAtualId) {
+      setProtocolos([]);
+      setErro("");
+      setCarregando(false);
+      return;
+    }
+    carregarProtocolos();
+  }, [fazendaAtualId, carregarProtocolos]);
 
 
   const getAuthUserId = async () => {
@@ -356,8 +386,17 @@ export default function Protocolos() {
   };
 
   const filtered = protocolos.filter((p) => {
+    const termoBusca = busca.trim().toLowerCase();
+    const matchBusca =
+      !termoBusca ||
+      String(p?.nome || "")
+        .toLowerCase()
+        .includes(termoBusca) ||
+      String(p?.descricao || "")
+        .toLowerCase()
+        .includes(termoBusca);
     const matchTipo = filtroTipo === "TODOS" || normalizeTipo(p.tipo) === filtroTipo;
-    return matchTipo;
+    return matchBusca && matchTipo;
   });
 
   const stats = useMemo(() => {
