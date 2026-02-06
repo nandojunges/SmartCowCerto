@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
+import { toast } from "react-toastify";
+import { supabase } from "../../../lib/supabaseClient";
+import { useFazenda } from "../../../context/FazendaContext";
 
 /* =========================================================
    DESIGN SYSTEM (consistente com o modal que criamos)
@@ -59,13 +62,12 @@ function addDaysBR(s, days) {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
-function addDaysISOFromISO(iso, days) {
-  const m = /^\d{4}-\d{2}-\d{2}$/.exec(String(iso || ""));
-  if (!m) return null;
-  const d = new Date(`${iso}T00:00:00`);
-  if (isNaN(d)) return null;
-  d.setDate(d.getDate() + Number(days || 0));
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+function isValidHour(value) {
+  const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
+  if (!match) return false;
+  const hh = Number(match[1]);
+  const mm = Number(match[2]);
+  return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
 }
 
 /* =========================================================
@@ -116,7 +118,7 @@ const TextInput = ({ value, onChange, placeholder, type = "text", hasError }) =>
   />
 );
 
-const CardEtapa = ({ etapa, index, isFirst, isLast }) => (
+const CardEtapa = ({ etapa, isFirst, isLast }) => (
   <div style={{
     display: "flex", gap: "16px", position: "relative",
     opacity: isFirst ? 1 : 0.9,
@@ -227,6 +229,7 @@ const selectStyles = {
 };
 
 export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) {
+  const { fazendaAtualId } = useFazenda();
   const [tipo, setTipo] = useState("IATF");
   const [protId, setProtId] = useState("");
   const [dataInicio, setDataInicio] = useState(todayBR());
@@ -234,6 +237,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
   const [criarAgenda, setCriarAgenda] = useState(true);
   const [erro, setErro] = useState("");
   const [touched, setTouched] = useState({});
+  const [salvando, setSalvando] = useState(false);
 
   // Reset protocolo ao mudar tipo
   useEffect(() => {
@@ -258,7 +262,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
     if (!touched.data) return;
     if (dataInicio && !isValidBRDate(dataInicio)) {
       setErro("Data inválida. Use formato dd/mm/aaaa");
-    } else if (touched.hora && !/^\d{2}:\d{2}$/.test(horaInicio)) {
+    } else if (touched.hora && !isValidHour(horaInicio)) {
       setErro("Hora inválida. Use formato HH:mm");
     } else {
       setErro("");
@@ -284,51 +288,65 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
     tipoOptions.find((o) => o.value === tipo) || tipoOptions[0],
   [tipo]);
 
-  const montarEtapasPayload = (dataBaseISO) => {
-    const ets = Array.isArray(protSel?.etapas) ? protSel.etapas : [];
-    if (!criarAgenda || ets.length === 0) return [];
-    return ets.map((et, i) => {
-      const offset = Number.isFinite(+et?.dia) ? +et.dia : i === 0 ? 0 : i;
-      const dataISO = addDaysISOFromISO(dataBaseISO, offset) || dataBaseISO;
-      return {
-        data: dataISO,
-        dia: offset,
-        descricao: et?.descricao ?? null,
-        acao: et?.acao ?? null,
-        hormonio: et?.hormonio ?? null,
-        dose: et?.dose ?? null,
-        via: et?.via ?? null,
-        obs: et?.obs ?? null,
-        hora: et?.hora || horaInicio,
-      };
-    });
-  };
-
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setTouched({ data: true, hora: true, protocolo: true });
     
+    if (!fazendaAtualId) return setErro("Fazenda não identificada. Tente novamente.");
     if (!getAnimalId(animal)) return setErro("Animal inválido (sem identificador).");
     if (!protId) return setErro("Escolha um protocolo.");
     if (!isValidBRDate(dataInicio)) return setErro("Data de início inválida.");
-    if (!/^\d{2}:\d{2}$/.test(horaInicio)) return setErro("Hora inválida.");
+    if (!isValidHour(horaInicio)) return setErro("Hora inválida.");
 
-    const aId = String(getAnimalId(animal));
-    const dataISO = brToISO(dataInicio) || dataInicio;
-    const etapas = montarEtapasPayload(dataISO);
+    try {
+      setSalvando(true);
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
 
-    onSubmit?.({
-      kind: "PROTOCOLO",
-      animal_id: aId,
-      protocolo_id: protId,
-      tipo,
-      data: dataISO,
-      etapas,
-      detalhes: {},
-      parent_aplicacao_id: null,
-      dataInicio,
-      horaInicio,
-      criarAgenda,
-    });
+      const userId = authData?.user?.id;
+      if (!userId) throw new Error("Sessão inválida. Faça login novamente.");
+
+      const aId = String(getAnimalId(animal));
+      const dataISO = brToISO(dataInicio);
+      const horaInicioTime = `${horaInicio}:00`;
+
+      const { data, error } = await supabase
+        .from("repro_aplicacoes")
+        .insert({
+          user_id: userId,
+          fazenda_id: fazendaAtualId,
+          animal_id: aId,
+          protocolo_id: protId,
+          data_inicio: dataISO,
+          hora_inicio: horaInicioTime,
+          status: "ATIVO",
+          tipo,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        console.error("Erro Supabase ao aplicar protocolo:", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+        throw error;
+      }
+
+      setErro("");
+      onSubmit?.(data);
+      toast.success("Protocolo aplicado");
+    } catch (e) {
+      console.error("Falha ao aplicar protocolo:", {
+        code: e?.code,
+        message: e?.message,
+        details: e?.details,
+      });
+      setErro(`Não foi possível aplicar o protocolo. ${e?.message || "Tente novamente."}`);
+    } finally {
+      setSalvando(false);
+    }
   };
 
   return (
@@ -402,13 +420,13 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
           <InputGroup 
             label="Horário Padrão" 
             icon={Icons.clock}
-            error={touched.hora && horaInicio && !/^\d{2}:\d{2}$/.test(horaInicio) ? "Formato HH:mm" : null}
+            error={touched.hora && horaInicio && !isValidHour(horaInicio) ? "Formato HH:mm" : null}
           >
             <TextInput
               value={horaInicio}
               onChange={(e) => setHoraInicio(e.target.value)}
               placeholder="HH:mm"
-              hasError={touched.hora && !/^\d{2}:\d{2}$/.test(horaInicio)}
+              hasError={touched.hora && !isValidHour(horaInicio)}
             />
           </InputGroup>
         </div>
@@ -464,7 +482,6 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
                 <CardEtapa 
                   key={idx} 
                   etapa={etapa} 
-                  index={idx}
                   isFirst={idx === 0}
                   isLast={idx === etapasResumo.length - 1}
                 />
@@ -490,19 +507,19 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
       <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "8px" }}>
         <button
           onClick={handleSubmit}
-          disabled={!protId}
+          disabled={!protId || salvando}
           style={{
             display: "flex", alignItems: "center", gap: "8px",
             padding: "12px 28px", fontSize: "15px", fontWeight: 700,
-            color: "#fff", background: !protId ? theme.colors.slate[300] : theme.colors.primary[600],
-            border: "none", borderRadius: theme.radius.lg, cursor: !protId ? "not-allowed" : "pointer",
-            boxShadow: !protId ? "none" : `0 4px 12px ${theme.colors.primary[600]}40`,
+            color: "#fff", background: (!protId || salvando) ? theme.colors.slate[300] : theme.colors.primary[600],
+            border: "none", borderRadius: theme.radius.lg, cursor: (!protId || salvando) ? "not-allowed" : "pointer",
+            boxShadow: (!protId || salvando) ? "none" : `0 4px 12px ${theme.colors.primary[600]}40`,
             transition: "all 0.2s",
             ":hover": !protId ? {} : { background: theme.colors.primary[700], transform: "translateY(-1px)" },
           }}
         >
           <Icons.syringe />
-          Aplicar Protocolo
+          {salvando ? "Aplicando..." : "Aplicar Protocolo"}
           <Icons.arrowRight />
         </button>
       </div>
