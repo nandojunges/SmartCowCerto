@@ -811,6 +811,8 @@ export default function Inseminador() {
   const [selecionado, setSelecionado] = useState(null);
   const [editando, setEditando] = useState(null);
   const [busca, setBusca] = useState("");
+  const [protocolosAtivos, setProtocolosAtivos] = useState([]);
+  const [loadingProtocolosAtivos, setLoadingProtocolosAtivos] = useState(true);
 
   const logSupabaseError = (contexto, error) => {
     console.error(`${contexto}:`, {
@@ -868,6 +870,29 @@ export default function Inseminador() {
     };
 
     fetchInseminadores();
+  }, [fazendaAtualId]);
+
+  useEffect(() => {
+    const fetchProtocolosAtivos = async () => {
+      if (!fazendaAtualId) {
+        setProtocolosAtivos([]);
+        setLoadingProtocolosAtivos(false);
+        return;
+      }
+
+      setLoadingProtocolosAtivos(true);
+      const { data, error } = await supabase.from("v_repro_protocolos_ativos").select("*").eq("fazenda_id", fazendaAtualId);
+
+      if (error) {
+        logSupabaseError("Erro ao buscar vacas em protocolo ativo", error);
+        setProtocolosAtivos([]);
+      } else {
+        setProtocolosAtivos(Array.isArray(data) ? data : []);
+      }
+      setLoadingProtocolosAtivos(false);
+    };
+
+    fetchProtocolosAtivos();
   }, [fazendaAtualId]);
 
   const getAuthUid = async () => {
@@ -991,6 +1016,10 @@ export default function Inseminador() {
     return lista.filter((i) => i.nome.toLowerCase().includes(busca.toLowerCase()));
   }, [lista, busca]);
 
+  const formatNumero = (item) => item?.numero ?? item?.brinco ?? item?.identificacao ?? "Sem número";
+  const formatDia = (item) => item?.dia ?? item?.dia_protocolo ?? item?.dia_do_protocolo ?? item?.dia_atual ?? 0;
+  const formatAcao = (item) => item?.acao_do_dia ?? item?.acao ?? item?.etapa ?? item?.descricao_etapa ?? "Sem ação definida";
+
   return (
     <div style={{ minHeight: "100vh", background: TOKENS.colors.gray50, fontFamily: "Inter, system-ui, sans-serif" }}>
       {/* Header */}
@@ -1069,6 +1098,39 @@ export default function Inseminador() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Vacas em protocolo ativo */}
+        <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", boxShadow: TOKENS.shadows.md, border: `1px solid ${TOKENS.colors.gray200}`, marginBottom: "24px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "900", color: TOKENS.colors.gray800 }}>Vacas em protocolo ativo</h3>
+            <span style={{ fontSize: "12px", color: TOKENS.colors.gray500 }}>{protocolosAtivos.length} vacas</span>
+          </div>
+
+          {loadingProtocolosAtivos ? (
+            <div style={{ textAlign: "center", padding: "28px", color: TOKENS.colors.gray400 }}>Carregando vacas em protocolo...</div>
+          ) : protocolosAtivos.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "28px", color: TOKENS.colors.gray400 }}>Nenhuma vaca em protocolo ativo</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px" }}>
+              {protocolosAtivos.map((item, index) => (
+                <div
+                  key={`${item?.animal_id ?? item?.id ?? "vaca"}-${index}`}
+                  style={{
+                    borderRadius: "12px",
+                    border: `1px solid ${TOKENS.colors.gray200}`,
+                    padding: "14px 16px",
+                    background: TOKENS.colors.gray50,
+                  }}
+                >
+                  <div style={{ fontSize: "14px", fontWeight: "800", color: TOKENS.colors.gray800 }}>
+                    {formatNumero(item)} - Dia {formatDia(item)} do protocolo
+                  </div>
+                  <div style={{ marginTop: "6px", fontSize: "12px", color: TOKENS.colors.gray500 }}>{formatAcao(item)}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Lista */}
