@@ -109,6 +109,8 @@ export default function Plantel({ isOnline = navigator.onLine }) {
 
   const LOTE_FIELD = "lote_id";
   const LOTE_TABLE = "lotes";
+  const PLANTEL_VIEW = "v_animais_plantel";
+  const REPRO_VIEW = "v_repro_tabela";
 
   // ficha
   const [animalSelecionado, setAnimalSelecionado] = useState(null);
@@ -121,22 +123,97 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     MEMO_PLANTEL.lastAt = Date.now();
   }, [animais, lotes, racaMap]);
 
+  useEffect(() => {
+    if (!fazendaAtualId || !isOnline || !supabase?.channel) return undefined;
+
+    const channel = supabase
+      .channel(`plantel-repro-${fazendaAtualId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "repro_eventos", filter: `fazenda_id=eq.${fazendaAtualId}` },
+        async (payload) => {
+          const tipo = payload?.new?.tipo;
+          if (!["DG", "IA", "PARTO", "SECAGEM"].includes(tipo)) return;
+
+          MEMO_PLANTEL.data = null;
+          MEMO_PLANTEL.lastAt = 0;
+
+          try {
+            const animaisAtualizados = await carregarAnimais();
+            await kvSet(CACHE_PLANTEL_BUNDLE, {
+              animais: animaisAtualizados,
+              lotes,
+              racaMap,
+              savedAt: Date.now(),
+              fazenda_id: fazendaAtualId,
+            });
+            await kvSet(CACHE_ANIMAIS, animaisAtualizados);
+          } catch (err) {
+            console.error("Erro ao atualizar plantel após evento repro:", err);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [CACHE_ANIMAIS, CACHE_PLANTEL_BUNDLE, carregarAnimais, fazendaAtualId, isOnline, lotes, racaMap]);
+
   /* =========================
      Loaders (mantidos)
   ========================= */
   const carregarAnimais = useCallback(async () => {
     const res = await supabase
-      .from("v_repro_tabela")
+      .from(PLANTEL_VIEW)
       .select("*")
       .eq("fazenda_id", fazendaAtualId)
       .order("numero", { ascending: true });
 
     if (res.error) throw res.error;
+
+    let reproLista = [];
+    try {
+      const { data: reproData, error: reproError } = await supabase
+        .from(REPRO_VIEW)
+        .select("animal_id,situacao_reprodutiva,situacao_produtiva,status_reprodutivo,ultima_ia,ultimo_parto,del,dpp")
+        .eq("fazenda_id", fazendaAtualId);
+      if (reproError) {
+        console.warn("Erro ao carregar status reprodutivo:", reproError);
+      } else {
+        reproLista = Array.isArray(reproData) ? reproData : [];
+      }
+    } catch (err) {
+      console.warn("Erro ao carregar status reprodutivo:", err);
+    }
+
+    const statusMap = new Map();
+    reproLista.forEach((row) => {
+      if (!row?.animal_id) return;
+      statusMap.set(row.animal_id, row);
+    });
+
     const lista = Array.isArray(res.data) ? res.data : [];
-    const filtrada = lista.filter((a) => a?.ativo !== false);
+    const filtrada = lista
+      .filter((a) => a?.ativo !== false)
+      .map((row) => {
+        const animalId = row?.animal_id ?? row?.id;
+        const status = statusMap.get(animalId);
+        if (!status) return row;
+        return {
+          ...row,
+          situacao_reprodutiva: status.situacao_reprodutiva ?? row.situacao_reprodutiva,
+          situacao_produtiva: status.situacao_produtiva ?? row.situacao_produtiva,
+          status_reprodutivo: status.status_reprodutivo ?? row.status_reprodutivo,
+          ultima_ia: status.ultima_ia ?? row.ultima_ia,
+          ultimo_parto: status.ultimo_parto ?? row.ultimo_parto,
+          del: status.del ?? row.del,
+          dpp: status.dpp ?? row.dpp,
+        };
+      });
     setAnimais(filtrada);
     return filtrada;
-  }, [fazendaAtualId]);
+  }, [PLANTEL_VIEW, REPRO_VIEW, fazendaAtualId]);
 
   const carregarLotes = useCallback(async () => {
     const { data, error } = await withFazendaId(supabase.from(LOTE_TABLE).select("*"), fazendaAtualId)
