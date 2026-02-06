@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
 import { toast } from "react-toastify";
 import { supabase } from "../../../lib/supabaseClient";
@@ -36,6 +36,29 @@ const pad2 = (n) => String(n).padStart(2, "0");
 const nowHM = () => {
   const d = new Date();
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
+const isoToBR = (value) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return "";
+  const [yyyy, mm, dd] = String(value).split("-");
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+const onlyDigits = (v) => String(v || "").replace(/\D/g, "");
+
+const maskDateBackfill = (input) => {
+  const digits = onlyDigits(input).slice(-8).padStart(8, "0");
+  const dd = digits.slice(0, 2);
+  const mm = digits.slice(2, 4);
+  const yyyy = digits.slice(4, 8);
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+const maskHourBackfill = (input) => {
+  const digits = onlyDigits(input).slice(-4).padStart(4, "0");
+  const hh = digits.slice(0, 2);
+  const mm = digits.slice(2, 4);
+  return `${hh}:${mm}`;
 };
 
 const getProtoId = (p) => p?.id ?? p?.uuid ?? p?.ID ?? p?.codigo ?? "";
@@ -97,11 +120,12 @@ const InputGroup = ({ label, children, error, icon: Icon }) => (
   </div>
 );
 
-const TextInput = ({ value, onChange, placeholder, type = "text", hasError }) => (
+const TextInput = ({ value, onChange, placeholder, type = "text", hasError, onClick }) => (
   <input
     type={type}
     value={value}
     onChange={onChange}
+    onClick={onClick}
     placeholder={placeholder}
     style={{
       width: "100%", padding: "10px 14px", fontSize: "14px",
@@ -141,7 +165,7 @@ const CardEtapa = ({ etapa, isFirst, isLast }) => (
       fontSize: "12px", fontWeight: 800, flexShrink: 0,
       zIndex: 1, boxShadow: theme.shadows.sm,
     }}>
-      D{etapa.offset}
+      {etapa.idx}
     </div>
     
     {/* Conteúdo */}
@@ -152,26 +176,19 @@ const CardEtapa = ({ etapa, isFirst, isLast }) => (
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px" }}>
         <span style={{ fontWeight: 700, color: theme.colors.slate[800], fontSize: "14px" }}>
-          {etapa.descricao}
-        </span>
-        <span style={{
-          fontSize: "11px", fontWeight: 700, color: theme.colors.primary[600],
-          background: theme.colors.primary[50], padding: "2px 8px",
-          borderRadius: theme.radius.full,
-        }}>
-          {etapa.hora}
+          Etapa {etapa.idx}
         </span>
       </div>
       
       <div style={{ fontSize: "13px", color: theme.colors.slate[500], display: "flex", alignItems: "center", gap: "6px" }}>
         <Icons.calendar />
         {etapa.dataPrevista || "Data inválida"}
-        {etapa.hormonio && (
-          <span style={{ marginLeft: "8px", color: theme.colors.slate[400] }}>
-            • {etapa.hormonio} {etapa.dose && `(${etapa.dose})`}
-          </span>
-        )}
       </div>
+      {etapa.detalhe && (
+        <div style={{ marginTop: "6px", fontSize: "13px", color: theme.colors.slate[600] }}>
+          • {etapa.detalhe}
+        </div>
+      )}
     </div>
   </div>
 );
@@ -241,6 +258,8 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
   const [erro, setErro] = useState("");
   const [touched, setTouched] = useState({});
   const [salvando, setSalvando] = useState(false);
+  const hiddenDateRef = useRef(null);
+  const hiddenTimeRef = useRef(null);
 
   // Reset protocolo ao mudar tipo
   useEffect(() => {
@@ -252,9 +271,11 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
     const t = norm(tipo);
     return (Array.isArray(protocolos) ? protocolos : []).filter((p) => {
       const tp = norm(p?.tipo);
-      return t === "IATF" ? tp === "IATF" : tp !== "IATF";
+      const fazendaOk = !p?.fazenda_id || String(p.fazenda_id) === String(fazendaAtualId);
+      const tipoOk = t === "IATF" ? tp === "IATF" : tp !== "IATF";
+      return fazendaOk && tipoOk;
     });
-  }, [protocolos, tipo]);
+  }, [protocolos, tipo, fazendaAtualId]);
 
   const protSel = useMemo(() => 
     opcoes.find((p) => getProtoId(p) === protId) || null,
@@ -276,11 +297,17 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
     const ets = Array.isArray(protSel?.etapas) ? protSel.etapas : [];
     return ets.map((et, i) => {
       const offset = Number.isFinite(+et?.dia) ? +et.dia : i === 0 ? 0 : i;
-      const hora = et?.hora || horaInicio;
-      const descricao = et?.descricao || et?.acao || `Etapa ${i + 1}`;
+      const descricao = et?.descricao || et?.acao || "";
+      const hormonioTexto = et?.hormonio ? `${et.hormonio}${et?.dose ? ` (${et.dose})` : ""}` : "";
+      const detalhe = hormonioTexto || et?.acao || (descricao && descricao !== `Etapa ${i + 1}` ? descricao : "");
       const dataPrevista = addDaysBR(dataInicio, offset);
-      return { idx: i + 1, offset, hora, descricao, dataPrevista, hormonio: et?.hormonio, dose: et?.dose };
-    });
+      return {
+        idx: i + 1,
+        offset,
+        dataPrevista,
+        detalhe,
+      };
+    }).filter((et) => et.dataPrevista || et.detalhe || Number.isFinite(et.offset));
   }, [protSel, horaInicio, dataInicio]);
 
   const protocoloOptions = useMemo(() => 
@@ -352,6 +379,20 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
         throw error;
       }
 
+      const campoSituacaoRepro =
+        ["situacao_reprodutiva", "situacao_repr", "situacao_repro", "status_reprodutivo"].find((campo) => campo in (animal || {}))
+        || "situacao_reprodutiva";
+
+      const situacaoRepro = tipo === "IATF" ? "EM_IATF" : "EM_PRE";
+
+      const { error: updateAnimalError } = await supabase
+        .from("animais")
+        .update({ [campoSituacaoRepro]: situacaoRepro })
+        .eq("id", animalId)
+        .eq("fazenda_id", fazendaAtualId);
+
+      if (updateAnimalError) throw updateAnimalError;
+
       setErro("");
       onSubmit?.({ kind: "PROTOCOLO_APLICADO", aplicacao: row });
       toast.success("Protocolo aplicado");
@@ -373,7 +414,14 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <form
+      id="form-PROTOCOLO"
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleSubmit();
+      }}
+      style={{ display: "flex", flexDirection: "column", gap: "24px" }}
+    >
       
       {/* SEÇÃO: CONFIGURAÇÃO BÁSICA */}
       <div style={{
@@ -381,7 +429,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
         padding: "24px", background: "#fff", borderRadius: theme.radius.xl,
         border: `1px solid ${theme.colors.slate[200]}`, boxShadow: theme.shadows.sm,
       }}>
-        <div style={{ gridColumn: "span 4" }}>
+        <div style={{ gridColumn: "span 6" }}>
           <InputGroup label="Tipo de Protocolo" icon={() => <span>🏷️</span>}>
             <Select
               styles={selectStyles}
@@ -403,7 +451,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
           </InputGroup>
         </div>
 
-        <div style={{ gridColumn: "span 8" }}>
+        <div style={{ gridColumn: "span 6" }}>
           <InputGroup 
             label="Protocolo" 
             error={touched.protocolo && !protId ? "Selecione um protocolo" : null}
@@ -424,7 +472,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
           </InputGroup>
         </div>
 
-        <div style={{ gridColumn: "span 3" }}>
+        <div style={{ gridColumn: "span 6" }}>
           <InputGroup 
             label="Data de Início" 
             icon={Icons.calendar}
@@ -432,14 +480,23 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
           >
             <TextInput
               value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
+              onChange={(e) => setDataInicio(maskDateBackfill(e.target.value))}
               placeholder="dd/mm/aaaa"
               hasError={touched.data && !isValidBRDate(dataInicio)}
+              onClick={() => hiddenDateRef.current?.showPicker?.()}
+            />
+            <input
+              ref={hiddenDateRef}
+              type="date"
+              value={brToISO(dataInicio) || ""}
+              onChange={(e) => setDataInicio(isoToBR(e.target.value))}
+              style={{ position: "absolute", pointerEvents: "none", opacity: 0, width: 0, height: 0 }}
+              tabIndex={-1}
             />
           </InputGroup>
         </div>
 
-        <div style={{ gridColumn: "span 3" }}>
+        <div style={{ gridColumn: "span 6" }}>
           <InputGroup 
             label="Horário Padrão" 
             icon={Icons.clock}
@@ -447,14 +504,23 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
           >
             <TextInput
               value={horaInicio}
-              onChange={(e) => setHoraInicio(e.target.value)}
+              onChange={(e) => setHoraInicio(maskHourBackfill(e.target.value))}
               placeholder="HH:mm"
               hasError={touched.hora && !isValidHour(horaInicio)}
+              onClick={() => hiddenTimeRef.current?.showPicker?.()}
+            />
+            <input
+              ref={hiddenTimeRef}
+              type="time"
+              value={isValidHour(horaInicio) ? horaInicio : ""}
+              onChange={(e) => setHoraInicio(maskHourBackfill(e.target.value))}
+              style={{ position: "absolute", pointerEvents: "none", opacity: 0, width: 0, height: 0 }}
+              tabIndex={-1}
             />
           </InputGroup>
         </div>
 
-        <div style={{ gridColumn: "span 6", display: "flex", alignItems: "flex-end", paddingBottom: "20px" }}>
+        <div style={{ gridColumn: "span 12", display: "flex", alignItems: "flex-end", paddingBottom: "20px" }}>
           <Toggle 
             checked={criarAgenda} 
             onChange={(e) => setCriarAgenda(e.target.checked)}
@@ -526,26 +592,6 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
         </div>
       )}
 
-      {/* BOTÃO AÇÃO */}
-      <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "8px" }}>
-        <button
-          onClick={handleSubmit}
-          disabled={!protId || salvando}
-          style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            padding: "12px 28px", fontSize: "15px", fontWeight: 700,
-            color: "#fff", background: (!protId || salvando) ? theme.colors.slate[300] : theme.colors.primary[600],
-            border: "none", borderRadius: theme.radius.lg, cursor: (!protId || salvando) ? "not-allowed" : "pointer",
-            boxShadow: (!protId || salvando) ? "none" : `0 4px 12px ${theme.colors.primary[600]}40`,
-            transition: "all 0.2s",
-            ":hover": !protId ? {} : { background: theme.colors.primary[700], transform: "translateY(-1px)" },
-          }}
-        >
-          <Icons.syringe />
-          {salvando ? "Aplicando..." : "Aplicar Protocolo"}
-          <Icons.arrowRight />
-        </button>
-      </div>
-    </div>
+    </form>
   );
 }
