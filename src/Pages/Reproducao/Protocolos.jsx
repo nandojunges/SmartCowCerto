@@ -141,6 +141,24 @@ export default function Protocolos() {
   const [expandedId, setExpandedId] = useState(null);
   const [vinculos, setVinculos] = useState({});
 
+  const normalizeTipo = (value) => {
+    const t = String(value || "")
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toUpperCase()
+      .replace(/[\s_-]/g, "");
+    if (t.includes("IATF")) return "IATF";
+    if (t.includes("PRE") || t.includes("PRESYNC")) return "PRESYNC";
+    return "OUTRO";
+  };
+
+  const tipoLabel = (value) => {
+    const t = normalizeTipo(value);
+    if (t === "IATF") return "IATF";
+    if (t === "PRESYNC") return "PRÉ-SINCRONIZAÇÃO";
+    return String(value || "—");
+  };
+
   const parseEtapas = (maybe) => {
     if (!maybe) return [];
     if (Array.isArray(maybe)) return maybe;
@@ -175,7 +193,7 @@ export default function Protocolos() {
       setProtocolos(
         (data || []).map((p) => ({
           ...p,
-          tipo: String(p?.tipo || "").toUpperCase(),
+          tipo: tipoLabel(p?.tipo),
           etapas: parseEtapas(p?.etapas),
         }))
       );
@@ -185,11 +203,12 @@ export default function Protocolos() {
     } finally {
       setCarregando(false);
     }
-  }, [fazendaAtualId, busca]);
+  }, [fazendaAtualId, busca, tipoLabel]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
+
 
   const getAuthUserId = async () => {
     const { data, error } = await supabase.auth.getUser();
@@ -276,7 +295,7 @@ export default function Protocolos() {
       if (!fazendaAtualId) throw new Error("Fazenda não selecionada");
       const uid = await getAuthUserId();
 
-      const { id, created_at, updated_at, ...rest } = prot;
+      const { id: _ID, created_at: _CREATED_AT, updated_at: _UPDATED_AT, ...rest } = prot;
       const novo = {
         ...rest,
         user_id: uid,
@@ -296,35 +315,56 @@ export default function Protocolos() {
     }
   };
 
-  const fetchVinculos = async (prot) => {
-    setVinculos((m) => ({ ...m, [prot.id]: { loading: true, items: [] } }));
-    try {
-      // TODO: trocar pela tua query real de vínculos/aplicações
-      await new Promise((r) => setTimeout(r, 600));
-      setVinculos((m) => ({ ...m, [prot.id]: { loading: false, items: [] } }));
-    } catch (e) {
-      setVinculos((m) => ({ ...m, [prot.id]: { loading: false, error: true, items: [] } }));
+  const fetchVinculos = useCallback(async () => {
+    if (!fazendaAtualId) {
+      setVinculos({});
+      return;
     }
-  };
+
+    try {
+      const { data, error } = await supabase
+        .from("repro_aplicacoes")
+        .select("id, animal_id, protocolo_id, data_inicio, status, tipo, hora_inicio, animais(numero, brinco)")
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("status", "ATIVO");
+
+      if (error) throw error;
+
+      const grouped = (Array.isArray(data) ? data : []).reduce((acc, row) => {
+        const key = String(row.protocolo_id || "");
+        if (!key) return acc;
+        if (!acc[key]) acc[key] = { loading: false, items: [] };
+        acc[key].items.push(row);
+        return acc;
+      }, {});
+
+      setVinculos(grouped);
+    } catch (e) {
+      console.error("Erro ao carregar vacas ativas por protocolo:", e);
+      setVinculos({});
+    }
+  }, [fazendaAtualId]);
+
+
+  useEffect(() => {
+    fetchVinculos();
+  }, [fetchVinculos]);
 
   const toggleExpand = (prot) => {
     if (expandedId === prot.id) setExpandedId(null);
-    else {
-      setExpandedId(prot.id);
-      if (!vinculos[prot.id]) fetchVinculos(prot);
-    }
+    else setExpandedId(prot.id);
   };
 
   const filtered = protocolos.filter((p) => {
-    const matchTipo = filtroTipo === "TODOS" || p.tipo === filtroTipo;
+    const matchTipo = filtroTipo === "TODOS" || normalizeTipo(p.tipo) === filtroTipo;
     return matchTipo;
   });
 
   const stats = useMemo(() => {
     return {
       total: protocolos.length,
-      iatf: protocolos.filter((p) => p.tipo === "IATF").length,
-      pre: protocolos.filter((p) => p.tipo === "PRÉ-SINCRONIZAÇÃO").length,
+      iatf: protocolos.filter((p) => normalizeTipo(p.tipo) === "IATF").length,
+      pre: protocolos.filter((p) => normalizeTipo(p.tipo) === "PRESYNC").length,
     };
   }, [protocolos]);
 
@@ -379,7 +419,7 @@ export default function Protocolos() {
               {[
                 { id: "TODOS", label: "Todos", count: stats.total },
                 { id: "IATF", label: "IATF", count: stats.iatf },
-                { id: "PRÉ-SINCRONIZAÇÃO", label: "Pré-sincronização", count: stats.pre },
+                { id: "PRESYNC", label: "Pré-sincronização", count: stats.pre },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -577,14 +617,28 @@ export default function Protocolos() {
 
                   {expandedId === prot.id && (
                     <div style={{ padding: "0 24px 24px", background: TOKENS.colors.gray50 }}>
-                      {vinculos[prot.id]?.loading ? (
+                      {vinculos[String(prot.id)]?.loading ? (
                         <div style={{ textAlign: "center", padding: "20px", color: TOKENS.colors.gray400 }}>Carregando...</div>
                       ) : (
                         <div style={{ background: "#fff", borderRadius: TOKENS.radii.lg, padding: "16px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
-                          <div style={{ textAlign: "center", padding: "20px" }}>
-                            <Icon name="cow" size={32} color={TOKENS.colors.gray300} />
-                            <p style={{ margin: "10px 0 0" }}>Nenhuma vaca ativa neste protocolo</p>
-                          </div>
+                          {(vinculos[String(prot.id)]?.items || []).length === 0 ? (
+                            <div style={{ textAlign: "center", padding: "20px" }}>
+                              <Icon name="cow" size={32} color={TOKENS.colors.gray300} />
+                              <p style={{ margin: "10px 0 0" }}>Nenhuma vaca ativa neste protocolo</p>
+                            </div>
+                          ) : (
+                            <div style={{ display: "grid", gap: "8px" }}>
+                              {(vinculos[String(prot.id)]?.items || []).map((item) => {
+                                const numero = item?.animais?.numero || "Sem número";
+                                const brinco = item?.animais?.brinco ? ` • Brinco ${item.animais.brinco}` : "";
+                                return (
+                                  <div key={item.id} style={{ border: `1px solid ${TOKENS.colors.gray200}`, borderRadius: TOKENS.radii.md, padding: "10px 12px", fontWeight: 600, color: TOKENS.colors.gray700 }}>
+                                    Vaca {numero}{brinco}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

@@ -17,6 +17,7 @@ export default function Reproducao() {
   const [abaAtiva, setAbaAtiva] = useState("tabela");
   const [eventosRepro, setEventosRepro] = useState([]);
   const [carregandoEventos, setCarregandoEventos] = useState(false);
+  const [aplicacoesAtivasMap, setAplicacoesAtivasMap] = useState({});
 
   // =========================
   // Estilos (otimizado p/ caber + reduzir margens)
@@ -202,7 +203,6 @@ export default function Reproducao() {
     delBadge: (del) => ({
       display: "inline-flex",
       alignItems: "center",
-      justifyContent: "center",
       padding: "4px 10px",
       borderRadius: "9999px",
       fontSize: "12px",
@@ -273,6 +273,40 @@ export default function Reproducao() {
     carregarTabela();
   }, [carregarTabela]);
 
+
+  const carregarAplicacoesAtivas = useCallback(async () => {
+    if (!fazendaAtualId) {
+      setAplicacoesAtivasMap({});
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("repro_aplicacoes")
+      .select("animal_id, tipo, status")
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("status", "ATIVO");
+
+    if (error) {
+      console.error("Erro ao carregar aplicações ativas:", error);
+      setAplicacoesAtivasMap({});
+      return;
+    }
+
+    const map = (Array.isArray(data) ? data : []).reduce((acc, item) => {
+      const animalId = item?.animal_id;
+      if (!animalId || acc[String(animalId)]) return acc;
+      const tipo = String(item?.tipo || "").toUpperCase();
+      acc[String(animalId)] = tipo.includes("IATF") ? "EM IATF" : "EM PRÉ";
+      return acc;
+    }, {});
+
+    setAplicacoesAtivasMap(map);
+  }, [fazendaAtualId]);
+
+  useEffect(() => {
+    carregarAplicacoesAtivas();
+  }, [carregarAplicacoesAtivas]);
+
   // =========================
   // Timeline eventos do manejo
   // =========================
@@ -342,11 +376,12 @@ export default function Reproducao() {
       categoria: obterValor(r, ["categoria", "categoria_atual"]),
       idadeMeses: obterValor(r, ["idade_meses", "meses_idade"]),
       lactacoes: obterValor(r, ["numero_lactacoes", "lactacoes"], 0),
-      statusRepro: obterValor(r, [
-        "status_reprodutivo",
-        "situacao_reprodutiva",
-        "situacao_repr",
-      ]),
+      statusRepro: aplicacoesAtivasMap[String(getAnimalId(r))]
+        || obterValor(r, [
+          "status_reprodutivo",
+          "situacao_reprodutiva",
+          "situacao_repr",
+        ]),
       del: obterValor(r, ["del"]),
       ultimaIA: obterValor(r, ["ultima_ia"]),
       ias: obterValor(r, ["numero_ias_lactacao", "numero_ias"], 0),
@@ -354,7 +389,7 @@ export default function Reproducao() {
       ultimaSecagem: obterValor(r, ["ultima_secagem"]),
       situacaoProd: obterValor(r, ["situacao_produtiva"]),
     }));
-  }, [registros]);
+  }, [registros, aplicacoesAtivasMap]);
 
   const getStatusBadgeStyle = (status) => {
     const s = String(status).toLowerCase();
@@ -579,6 +614,7 @@ export default function Reproducao() {
         onClose={() => setAnimalSelecionado(null)}
         onSaved={async () => {
           await carregarTabela();
+          await carregarAplicacoesAtivas();
           if (animalSelecionado?.animalId) {
             setCarregandoEventos(true);
             try {
