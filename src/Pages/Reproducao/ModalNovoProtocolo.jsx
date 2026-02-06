@@ -831,7 +831,7 @@ export default function ModalNovoProtocolo({ onFechar, onSalvar, protocoloInicia
 
                   <div>
                     <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: TOKENS.colors.gray700, marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Descrição
+                      Descrição (opcional)
                     </label>
                     <textarea
                       value={descricao}
