@@ -657,7 +657,7 @@ export default function VisaoGeral({
       try {
         const { data, error } = await supabase
           .from("repro_protocolos")
-          .select("id, nome, tipo, etapas, ativo, fazenda_id, user_id")
+          .select("id, nome, tipo, descricao, etapas, ativo, fazenda_id, user_id")
           .eq("fazenda_id", fazendaAtualId)
           .eq("ativo", true)
           .order("tipo", { ascending: true })

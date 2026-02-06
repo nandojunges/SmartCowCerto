@@ -388,12 +388,15 @@ export default function Protocolos() {
     try {
       if (!fazendaAtualId) throw new Error("Fazenda não selecionada");
       const uid = await getAuthUserId();
+      const descricaoLimpa = protocolo.descricao?.trim();
+      const descricao = descricaoLimpa ? descricaoLimpa : null;
 
       const payload = {
         user_id: uid, // ✅ obrigatório pelas policies
         fazenda_id: fazendaAtualId,
         nome: protocolo.nome.trim(),
         tipo: String(protocolo.tipo || "").toUpperCase(),
+        descricao,
         etapas: protocolo.etapas, // jsonb
         ativo: true,
         created_at: editando?.id ? undefined : new Date().toISOString(),
@@ -408,6 +411,7 @@ export default function Protocolos() {
             fazenda_id: payload.fazenda_id,
             nome: payload.nome,
             tipo: payload.tipo,
+            descricao: payload.descricao,
             etapas: payload.etapas,
             ativo: payload.ativo,
             updated_at: payload.updated_at,
@@ -424,6 +428,7 @@ export default function Protocolos() {
           fazenda_id: payload.fazenda_id,
           nome: payload.nome,
           tipo: payload.tipo,
+          descricao: payload.descricao,
           etapas: payload.etapas,
           ativo: payload.ativo,
           created_at: new Date().toISOString(),
