@@ -305,7 +305,7 @@ export default function Inseminacao({
 
         {/* Razão */}
         <div style={{ gridColumn: "span 4" }}>
-          <InputGroup label="Razão / Evidência" icon={() => <span>🎯</span>}>
+          <InputGroup label="Razão" icon={() => <span>🎯</span>}>
             <Select
               styles={selectStyles}
               options={razoesOptions}
