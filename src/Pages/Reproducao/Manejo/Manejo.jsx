@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useFazenda } from "../../../context/FazendaContext";
 
@@ -133,7 +133,8 @@ const NavItem = ({ icon: Icon, label, description, active, onClick, color }) => 
 
 export default function VisaoGeral({ open = false, animal = null, initialTab = null, onClose, onSaved }) {
   const { fazendaAtualId } = useFazenda();
-  const animalId = useMemo(() => animal?.id ?? animal?.animal_id ?? null, [animal]);
+  const animalId = animal?.id || animal?.animal_id;
+  const isDebug = Boolean(import.meta.env.DEV);
   const [inseminadores, setInseminadores] = useState([]);
   const [touros, setTouros] = useState([]);
   
@@ -237,6 +238,7 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
 
   const handleSubmit = async (payload) => {
     if (!fazendaAtualId || !animalId) {
+      console.warn("Manejo salvar: fazendaAtualId", fazendaAtualId, "animal", animal);
       setErroSalvar("Não foi possível salvar: fazenda ou animal não identificado.");
       return;
     }
@@ -294,6 +296,12 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
 
   const handleSalvarRegistro = async () => {
     setErroSalvar("");
+
+    if (!fazendaAtualId || !animalId) {
+      console.warn("Manejo salvar: fazendaAtualId", fazendaAtualId, "animal", animal);
+      setErroSalvar("Não foi possível salvar: fazenda ou animal não identificado.");
+      return;
+    }
 
     if (!selectedType) {
       setErroSalvar("Selecione um tipo de evento para salvar.");
@@ -451,6 +459,22 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
             }}>
               {animal?.numero ? `Animal ${animal.numero}` : 'Novo Registro'}
             </div>
+            <div style={{
+              fontSize: "12px",
+              color: theme.colors.slate[500],
+              marginTop: "2px"
+            }}>
+              Brinco: {animal?.brinco || "—"}
+            </div>
+            {isDebug && (
+              <div style={{
+                fontSize: "11px",
+                color: theme.colors.slate[400],
+                marginTop: "2px"
+              }}>
+                ID: {animalId || "—"}
+              </div>
+            )}
             {animal?.lote && (
               <div style={{ 
                 fontSize: "12px", 
