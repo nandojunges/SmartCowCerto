@@ -65,9 +65,11 @@ const diffDays = (a, b) => {
 
 const RAZOES = [
   "Aceitando monta", "Montando", "Muco", "Marcação de tinta", "Cio silencioso",
-  "Atividade (sensor)", "IATF / programa", "ReSynch", "Outro",
+  "Atividade (sensor)", "IATF", "RESSINC", "IATF / programa", "ReSynch", "Outro",
 ];
 const TIPO_SEMEN = ["Convencional", "Fêmea sexado", "Macho sexado"];
+const EVIDENCIAS = ["MUCO", "ACEITA_MONTA", "MONTANDO", "CIO_FRACO", "SEM_CIO_VISIVEL", "OUTRO"];
+const RAZOES_EVIDENCIA = new Set(["IATF", "RESSINC"]);
 
 /* =========================================================
    SUB-COMPONENTES UI
@@ -169,6 +171,11 @@ export default function Inseminacao({
   animal,
   touros = [],
   inseminadores = [],
+  initialData = null,
+  protocoloVinculadoOptions = [],
+  protocoloVinculadoId = "",
+  protocoloVinculadoRequired = false,
+  onSelectProtocoloVinculado,
   onChangeDraft,
   vwpDias = 50,
   dg30 = [28, 35],
@@ -180,6 +187,7 @@ export default function Inseminacao({
   const [insId, setInsId] = useState("");
   const [obs, setObs] = useState("");
   const [razao, setRazao] = useState("");
+  const [evidencia, setEvidencia] = useState("");
   const [tipoSemen, setTipoSemen] = useState("Convencional");
   const [palhetas, setPalhetas] = useState(1);
 
@@ -198,6 +206,7 @@ export default function Inseminacao({
   const inseminadorOptions = useMemo(() => inseminadores.map((i) => ({ value: i.id, label: i.nome })), [inseminadores]);
   const razoesOptions = useMemo(() => RAZOES.map((r) => ({ value: r, label: r })), []);
   const tipoSemenOptions = useMemo(() => TIPO_SEMEN.map((t) => ({ value: t, label: t })), []);
+  const evidenciaOptions = useMemo(() => EVIDENCIAS.map((e) => ({ value: e, label: e })), []);
   
   const touroOptions = useMemo(() => tourosOrdenados.map((t) => {
     const restoOK = Number.isFinite(+t.restantes);
@@ -227,6 +236,24 @@ export default function Inseminacao({
   const dg60Inicio = addDays(dtAtual, dg60[0]);
   const dg60Fim = addDays(dtAtual, dg60[1]);
 
+  useEffect(() => {
+    if (!initialData) return;
+    setData(initialData?.data || formatBR(today()));
+    setTouroId(initialData?.touroId || "");
+    setInsId(initialData?.inseminadorId || "");
+    setObs(initialData?.obs || "");
+    setRazao(initialData?.razao || "");
+    setEvidencia(initialData?.evidencia || "");
+    setTipoSemen(initialData?.tipoSemen || "Convencional");
+    setPalhetas(initialData?.palhetas ?? 1);
+  }, [initialData]);
+
+  useEffect(() => {
+    if (!RAZOES_EVIDENCIA.has(razao)) {
+      setEvidencia("");
+    }
+  }, [razao]);
+
   // Avisos
   const avisos = [];
   if (diasDesdeIA !== null && diasDesdeIA >= 0 && diasDesdeIA < 18) {
@@ -241,10 +268,11 @@ export default function Inseminacao({
   const extrasResumo = useMemo(() => {
     const parts = [];
     if (razao) parts.push(`Razão: ${razao}`);
+    if (evidencia && RAZOES_EVIDENCIA.has(razao)) parts.push(`Evidência: ${evidencia}`);
     if (tipoSemen) parts.push(`Sêmen: ${tipoSemen}`);
     if (Number.isFinite(+palhetas)) parts.push(`Palhetas: ${palhetas}`);
     return parts.join(" | ");
-  }, [razao, tipoSemen, palhetas]);
+  }, [razao, evidencia, tipoSemen, palhetas]);
 
   useEffect(() => {
     onChangeDraft?.({
@@ -252,11 +280,12 @@ export default function Inseminacao({
       inseminadorId: insId,
       touroId,
       razao,
+      evidencia,
       tipoSemen,
       palhetas,
       obs,
     });
-  }, [data, insId, touroId, razao, tipoSemen, palhetas, obs, onChangeDraft]);
+  }, [data, insId, touroId, razao, evidencia, tipoSemen, palhetas, obs, onChangeDraft]);
 
   return (
     <form id="form-IA" onSubmit={(e) => e.preventDefault()} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -317,6 +346,42 @@ export default function Inseminacao({
             />
           </InputGroup>
         </div>
+
+        {RAZOES_EVIDENCIA.has(razao) && (
+          <div style={{ gridColumn: "span 4" }}>
+            <InputGroup label="Evidência" icon={() => <span>🧾</span>}>
+              <Select
+                styles={selectStyles}
+                options={evidenciaOptions}
+                value={evidenciaOptions.find(o => o.value === evidencia) || null}
+                onChange={(opt) => setEvidencia(opt?.value || "")}
+                placeholder="Selecione..."
+                isClearable
+                menuPortalTarget={document.body}
+              />
+            </InputGroup>
+          </div>
+        )}
+
+        {protocoloVinculadoOptions.length > 1 && (
+          <div style={{ gridColumn: "span 4" }}>
+            <InputGroup
+              label="Protocolo vinculado"
+              icon={() => <span>🧩</span>}
+              error={protocoloVinculadoRequired && !protocoloVinculadoId ? "Selecione o protocolo vinculado." : null}
+            >
+              <Select
+                styles={selectStyles}
+                options={protocoloVinculadoOptions}
+                value={protocoloVinculadoOptions.find((o) => o.value === protocoloVinculadoId) || null}
+                onChange={(opt) => onSelectProtocoloVinculado?.(opt?.value || "")}
+                placeholder="Selecione..."
+                isClearable
+                menuPortalTarget={document.body}
+              />
+            </InputGroup>
+          </div>
+        )}
       </div>
 
       {/* SEÇÃO 2: DADOS DO SÊMEN */}
