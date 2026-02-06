@@ -62,6 +62,52 @@ function normalizePayloadTime(value) {
   return null;
 }
 
+const RAZOES_VINCULO_AUTOMATICO = new Set(["IATF", "RESSINC"]);
+const normalizeTexto = (valor) => {
+  if (!valor) return "";
+  return valor
+    .toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+};
+
+function parseISODate(value) {
+  if (!value || typeof value !== "string") return null;
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const dt = new Date(y, m - 1, d);
+  return Number.isFinite(dt.getTime()) ? dt : null;
+}
+
+function diffDays(a, b) {
+  if (!a || !b) return null;
+  const startA = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const startB = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  const DAY = 86400000;
+  return Math.round((startA - startB) / DAY);
+}
+
+function formatBRDate(value) {
+  if (!value) return "—";
+  const dt = typeof value === "string" ? parseISODate(value) : value;
+  return dt ? dt.toLocaleDateString("pt-BR") : "—";
+}
+
+function parseEtapasSnapshot(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function sanitizeReproEventoPayload(payload) {
   if (!payload || typeof payload !== "object") return payload;
 
@@ -179,6 +225,10 @@ export default function VisaoGeral({
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkSelectedIds, setBulkSelectedIds] = useState([]);
   const [bulkReady, setBulkReady] = useState(false);
+  const [protocoloVinculadoOptions, setProtocoloVinculadoOptions] = useState([]);
+  const [protocoloVinculadoId, setProtocoloVinculadoId] = useState("");
+  const [bulkProtocolConflicts, setBulkProtocolConflicts] = useState([]);
+  const [bulkProtocolSelections, setBulkProtocolSelections] = useState({});
 
   const bulkActive = Boolean(bulkMode);
 
@@ -207,6 +257,12 @@ export default function VisaoGeral({
   useEffect(() => {
     setErroSalvar("");
     if (selectedType !== "IA") setDraftIA(null);
+    if (selectedType !== "IA") {
+      setProtocoloVinculadoOptions([]);
+      setProtocoloVinculadoId("");
+      setBulkProtocolConflicts([]);
+      setBulkProtocolSelections({});
+    }
   }, [selectedType]);
 
   useEffect(() => {
@@ -224,8 +280,21 @@ export default function VisaoGeral({
       setBulkSearch("");
       setBulkSelectedIds([]);
       setBulkReady(false);
+      setProtocoloVinculadoOptions([]);
+      setProtocoloVinculadoId("");
+      setBulkProtocolConflicts([]);
+      setBulkProtocolSelections({});
     }
   }, [open, bulkActive]);
+
+  useEffect(() => {
+    if (!draftIA?.razao || !RAZOES_VINCULO_AUTOMATICO.has(draftIA.razao)) {
+      setProtocoloVinculadoOptions([]);
+      setProtocoloVinculadoId("");
+      setBulkProtocolConflicts([]);
+      setBulkProtocolSelections({});
+    }
+  }, [draftIA?.razao]);
 
   useEffect(() => {
     const fetchInseminadores = async () => {
@@ -331,6 +400,10 @@ export default function VisaoGeral({
     setBulkSearch("");
     setBulkSelectedIds([]);
     setBulkReady(false);
+    setProtocoloVinculadoOptions([]);
+    setProtocoloVinculadoId("");
+    setBulkProtocolConflicts([]);
+    setBulkProtocolSelections({});
     onClose?.();
   };
 
@@ -343,6 +416,48 @@ export default function VisaoGeral({
     const sanitizedPayloads = payloads.map((item) => sanitizeReproEventoPayload(item));
     const { error } = await supabase.from("repro_eventos").insert(sanitizedPayloads);
     if (error) throw error;
+  };
+
+  const getAplicacoesCompativeis = async ({ animalId: targetAnimalId, dataEvento }) => {
+    if (!fazendaAtualId || !targetAnimalId || !dataEvento) return [];
+    const { data, error } = await supabase
+      .from("repro_aplicacoes")
+      .select("id, protocolo_id, data_inicio, etapas_snapshot")
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("animal_id", targetAnimalId)
+      .eq("status", "ATIVO")
+      .lte("data_inicio", dataEvento);
+
+    if (error) throw error;
+
+    const dataEventoDate = parseISODate(dataEvento);
+    if (!dataEventoDate) return [];
+
+    const alvoNormalizado = normalizeTexto("Inseminação");
+
+    return (Array.isArray(data) ? data : []).filter((aplicacao) => {
+      const dataInicio = parseISODate(aplicacao?.data_inicio);
+      if (!dataInicio) return false;
+      const diaAlvo = diffDays(dataEventoDate, dataInicio);
+      if (diaAlvo === null) return false;
+      const etapas = parseEtapasSnapshot(aplicacao?.etapas_snapshot);
+      return etapas.some((etapa) =>
+        Number(etapa?.dia) === diaAlvo &&
+        normalizeTexto(etapa?.acao) === alvoNormalizado
+      );
+    });
+  };
+
+  const buildAplicacaoOption = (aplicacao) => {
+    const labelBase = aplicacao?.protocolo_id
+      ? `Protocolo ${aplicacao.protocolo_id}`
+      : "Aplicação";
+    const dataLabel = formatBRDate(aplicacao?.data_inicio);
+    return {
+      value: aplicacao?.id,
+      label: `${labelBase} • ${dataLabel}`,
+      protocolo_id: aplicacao?.protocolo_id || null,
+    };
   };
 
   const handleSubmit = async (payload) => {
@@ -401,6 +516,9 @@ export default function VisaoGeral({
       } else if (payload.kind === "IA") {
         const dataEvento = normalizePayloadDate(payload.data);
         if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
+        const razaoEvento = payload?.extras?.razao || null;
+        const evidenciaEvento = payload?.extras?.evidencia || null;
+        const exigeVinculo = Boolean(razaoEvento && RAZOES_VINCULO_AUTOMATICO.has(razaoEvento));
         const baseEvento = {
           fazenda_id: fazendaAtualId,
           tipo: "IA",
@@ -409,7 +527,8 @@ export default function VisaoGeral({
           inseminador_id: payload.inseminadorId || null,
           touro_id: payload.touroId || null,
           touro_nome: payload.touroNome || null,
-          razao: payload?.extras?.razao || null,
+          razao: razaoEvento,
+          evidencia: evidenciaEvento,
           tipo_semen: payload?.extras?.tipoSemen || null,
           palhetas: payload?.extras?.palhetas ?? null,
           observacoes: payload.obs || null,
@@ -417,16 +536,130 @@ export default function VisaoGeral({
         };
 
         if (hasBulkSelection) {
+          if (!exigeVinculo) {
+            await insertReproEventos(
+              bulkSelectedAnimals.map((item) => ({
+                ...baseEvento,
+                animal_id: resolveAnimalId(item),
+                protocolo_aplicacao_id: null,
+                protocolo_id: null,
+              }))
+            );
+            return;
+          }
+
+          const vinculos = [];
+          let semVinculo = 0;
+          let vinculoManual = 0;
+
+          const conflitos = [];
+          const itens = await Promise.all(
+            bulkSelectedAnimals.map(async (item) => {
+              const currentAnimalId = resolveAnimalId(item);
+              if (!exigeVinculo) {
+                semVinculo += 1;
+                return { item, animalId: currentAnimalId, aplicacao: null };
+              }
+
+              const aplicacoes = await getAplicacoesCompativeis({
+                animalId: currentAnimalId,
+                dataEvento,
+              });
+
+              if (aplicacoes.length === 1) {
+                vinculos.push(aplicacoes[0]);
+                return { item, animalId: currentAnimalId, aplicacao: aplicacoes[0] };
+              }
+
+              if (aplicacoes.length === 0) {
+                semVinculo += 1;
+                return { item, animalId: currentAnimalId, aplicacao: null };
+              }
+
+              const options = aplicacoes.map(buildAplicacaoOption);
+              const selectedId = bulkProtocolSelections[currentAnimalId];
+              const resolved = aplicacoes.find((app) => String(app.id) === String(selectedId));
+              if (!resolved) {
+                conflitos.push({
+                  animalId: currentAnimalId,
+                  numero: item?.numero,
+                  brinco: item?.brinco,
+                  options,
+                });
+                return { item, animalId: currentAnimalId, aplicacao: null, conflito: true };
+              }
+
+              vinculoManual += 1;
+              return { item, animalId: currentAnimalId, aplicacao: resolved };
+            })
+          );
+
+          if (conflitos.length > 0) {
+            setBulkProtocolConflicts(conflitos);
+            setErroSalvar("Selecione o protocolo vinculado para os animais em conflito.");
+            return;
+          }
+
+          setBulkProtocolConflicts([]);
+
           await insertReproEventos(
-            bulkSelectedAnimals.map((item) => ({
+            itens.map(({ item, animalId: targetId, aplicacao }) => ({
               ...baseEvento,
-              animal_id: resolveAnimalId(item),
+              animal_id: targetId,
+              protocolo_aplicacao_id: aplicacao?.id || null,
+              protocolo_id: aplicacao?.protocolo_id || null,
             }))
           );
+
+          const autoVinculadas = vinculos.length;
+          const manuais = vinculoManual;
+          const semProtocolo = semVinculo;
+          toast.info(
+            [
+              `${autoVinculadas} vinculadas automaticamente`,
+              `${semProtocolo} sem protocolo compatível (salvas sem vínculo)`,
+              `${manuais} exigiram escolha manual`,
+            ].join(" • ")
+          );
         } else {
+          let protocoloAplicacaoId = null;
+          let protocoloId = null;
+
+          if (exigeVinculo) {
+            const aplicacoes = await getAplicacoesCompativeis({
+              animalId: baseAnimalId,
+              dataEvento,
+            });
+
+            if (aplicacoes.length === 1) {
+              protocoloAplicacaoId = aplicacoes[0].id;
+              protocoloId = aplicacoes[0].protocolo_id;
+              setProtocoloVinculadoOptions([]);
+              setProtocoloVinculadoId("");
+            } else if (aplicacoes.length === 0) {
+              toast.info("Nenhum protocolo com inseminação prevista nessa data para este animal.");
+              setProtocoloVinculadoOptions([]);
+              setProtocoloVinculadoId("");
+            } else {
+              const options = aplicacoes.map(buildAplicacaoOption);
+              const selectedId = protocoloVinculadoId;
+              const selectedApp = aplicacoes.find((app) => String(app.id) === String(selectedId));
+              if (!selectedApp) {
+                setProtocoloVinculadoOptions(options);
+                setErroSalvar("Selecione o protocolo vinculado para continuar.");
+                return;
+              }
+              protocoloAplicacaoId = selectedApp.id;
+              protocoloId = selectedApp.protocolo_id;
+              setProtocoloVinculadoOptions(options);
+            }
+          }
+
           await insertReproEvento({
             ...baseEvento,
             animal_id: baseAnimalId,
+            protocolo_aplicacao_id: protocoloAplicacaoId,
+            protocolo_id: protocoloId,
           });
         }
       } else if (payload.kind === "PROTOCOLO_APLICADO") {
@@ -549,6 +782,7 @@ export default function VisaoGeral({
         obs: draftIA.obs || null,
         extras: {
           razao: draftIA.razao || null,
+          evidencia: draftIA.evidencia || null,
           tipoSemen: draftIA.tipoSemen || null,
           palhetas: draftIA.palhetas,
         },
@@ -1005,9 +1239,61 @@ export default function VisaoGeral({
                 protocolos={protocolos}
                 onSubmit={handleSubmit}
                 onChangeDraft={selectedType === "IA" ? setDraftIA : undefined}
+                protocoloVinculadoOptions={selectedType === "IA" ? protocoloVinculadoOptions : []}
+                protocoloVinculadoId={selectedType === "IA" ? protocoloVinculadoId : ""}
+                protocoloVinculadoRequired={selectedType === "IA" && protocoloVinculadoOptions.length > 1}
+                onSelectProtocoloVinculado={selectedType === "IA" ? setProtocoloVinculadoId : undefined}
                 bulkMode={bulkActive}
                 key={selectedType} // Força remount ao trocar de aba
               />
+            )}
+            {selectedType === "IA" && bulkActive && bulkProtocolConflicts.length > 0 && (
+              <div style={{
+                marginTop: "20px",
+                padding: "16px",
+                borderRadius: theme.radius.md,
+                border: `1px solid ${theme.colors.slate[200]}`,
+                background: theme.colors.slate[50],
+              }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: theme.colors.slate[700], marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Protocolo vinculado (necessário para salvar)
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {bulkProtocolConflicts.map((conflict) => {
+                    const label = conflict?.numero ? `Nº ${conflict.numero}` : (conflict?.brinco ? `Brinco ${conflict.brinco}` : `Animal ${conflict.animalId}`);
+                    return (
+                      <div key={conflict.animalId} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <div style={{ fontSize: "13px", fontWeight: 600, color: theme.colors.slate[700] }}>
+                          {label}
+                        </div>
+                        <select
+                          value={bulkProtocolSelections[conflict.animalId] || ""}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setBulkProtocolSelections((prev) => ({
+                              ...prev,
+                              [conflict.animalId]: value,
+                            }));
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: theme.radius.md,
+                            border: `1px solid ${theme.colors.slate[200]}`,
+                            fontSize: "14px",
+                            background: "#fff",
+                          }}
+                        >
+                          <option value="">Selecione o protocolo vinculado...</option>
+                          {conflict.options.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
             {selectedType === "PROTOCOLO" && loadingProt && (
               <div style={{
