@@ -105,17 +105,22 @@ export default function Login() {
         savedAtISO: new Date().toISOString(),
       });
 
-      const { data: perfil } = await supabase
+      const { data: perfil, error: perfilError } = await supabase
         .from("profiles")
-        .select("role, tipo_conta")
+        .select("role")
         .eq("id", data.user.id)
         .single();
 
-      const tipoConta = perfil?.tipo_conta || "PRODUTOR";
-      
-      if (perfil?.role === "admin") navigate("/admin", { replace: true });
-      else if (tipoConta === "ASSISTENTE_TECNICO") navigate("/tecnico", { replace: true });
-      else navigate("/inicio", { replace: true });
+      if (perfilError) {
+        navigate("/inicio", { replace: true });
+        return;
+      }
+
+      if (perfil?.role === "admin") {
+        navigate("/admin", { replace: true });
+      } else {
+        navigate("/inicio", { replace: true });
+      }
 
     } catch (err) {
       setErro("Erro ao conectar. Tente novamente.");
