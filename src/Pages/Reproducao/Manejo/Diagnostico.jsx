@@ -249,7 +249,7 @@ const selectStyles = {
 
 export default function Diagnostico({
   animal,
-  onSubmit,
+  onChangeDraft,
   dg30 = [28, 35],
   dg60 = [55, 75],
   dopplerMin = 20,
@@ -284,6 +284,19 @@ export default function Diagnostico({
     }
   }, [tipoDefault, temIAValida]);
 
+  useEffect(() => {
+    onChangeDraft?.({
+      kind: "DG",
+      dg: resultado,
+      data,
+      extras: {
+        tipoExame,
+        diasDesdeIA,
+        comentario: comentario?.trim() || "",
+      },
+    });
+  }, [resultado, data, tipoExame, comentario, diasDesdeIA, onChangeDraft]);
+
   const tipoOptions = useMemo(() => {
     if (!temIAValida) return [{ value: LABEL_SEMIA, label: LABEL_SEMIA }];
     const inDoppler = diasDesdeIA >= dopplerMin && diasDesdeIA < dg30[0];
@@ -292,8 +305,6 @@ export default function Diagnostico({
       : [LABEL_DG30, LABEL_DG60, LABEL_AVANC, LABEL_DOPPLER, LABEL_OUTRO];
     return ordered.map((v) => ({ value: v, label: v }));
   }, [temIAValida, diasDesdeIA, dopplerMin, dg30]);
-
-  const podeSalvar = temIAValida;
 
   // Avisos
   const avisos = [];
@@ -312,31 +323,10 @@ export default function Diagnostico({
     }
   }
 
-  const handleSalvar = () => {
-    onSubmit?.({
-      kind: "DG",
-      dg: resultado,
-      data,
-      extras: {
-        tipoExame,
-        diasDesdeIA,
-        comentario: comentario?.trim() || "",
-      },
-    });
-  };
-
   if (!temIAValida) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
         <CardErroIA />
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button disabled style={{
-            padding: "12px 24px", background: theme.colors.slate[200], color: theme.colors.slate[400],
-            border: "none", borderRadius: theme.radius.lg, fontWeight: 700, cursor: "not-allowed",
-          }}>
-            Salvar desabilitado
-          </button>
-        </div>
       </div>
     );
   }
@@ -435,23 +425,6 @@ export default function Diagnostico({
         </div>
       )}
 
-      {/* BOTÃO AÇÃO */}
-      <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "8px" }}>
-        <button
-          onClick={handleSalvar}
-          disabled={!podeSalvar}
-          style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            padding: "12px 28px", fontSize: "15px", fontWeight: 700,
-            color: "#fff", background: !podeSalvar ? theme.colors.slate[300] : theme.colors.primary[600],
-            border: "none", borderRadius: theme.radius.lg, cursor: !podeSalvar ? "not-allowed" : "pointer",
-            boxShadow: !podeSalvar ? "none" : `0 4px 12px ${theme.colors.primary[600]}40`,
-          }}
-        >
-          <Icons.check />
-          Confirmar Diagnóstico
-        </button>
-      </div>
     </div>
   );
 }

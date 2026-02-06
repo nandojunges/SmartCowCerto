@@ -81,9 +81,6 @@ export async function syncCadastroReproEventos({
       // (evita mandar null e bater em NOT NULL / policy)
       if (resolvedUserId) row.user_id = resolvedUserId;
 
-      // DG opcional
-      if (tipo === "DG" && e?.resultado_dg) row.resultado_dg = e.resultado_dg;
-
       return row;
     })
     .filter(Boolean);
