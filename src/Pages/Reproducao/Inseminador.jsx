@@ -884,6 +884,15 @@ export default function Inseminador() {
       const { data, error } = await supabase.from("v_repro_protocolos_ativos").select("*").eq("fazenda_id", fazendaAtualId);
 
       if (error) {
+        if (error?.code === "PGRST205" || error?.status === 404) {
+          console.warn(
+            "View v_repro_protocolos_ativos indisponível; carregando lista vazia.",
+            error
+          );
+          setProtocolosAtivos([]);
+          setLoadingProtocolosAtivos(false);
+          return;
+        }
         logSupabaseError("Erro ao buscar vacas em protocolo ativo", error);
         setProtocolosAtivos([]);
       } else {

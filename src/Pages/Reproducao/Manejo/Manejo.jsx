@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useFazenda } from "../../../context/FazendaContext";
 import { toast } from "react-toastify";
@@ -298,18 +298,20 @@ export default function VisaoGeral({
 
   const bulkActive = Boolean(bulkMode);
 
-  const resolveAnimalId = (item) => item?.animal_id ?? item?.id ?? item?.animalId ?? null;
+  const resolveAnimalId = useCallback((item) => item?.animal_id ?? item?.id ?? item?.animalId ?? null, []);
 
-  const bulkList = (Array.isArray(bulkAnimals) ? bulkAnimals : [])
-    .map((item) => ({
-      ...item,
-      _bulkId: resolveAnimalId(item),
-    }))
-    .filter((item) => item._bulkId);
+  const bulkList = useMemo(() => {
+    return (Array.isArray(bulkAnimals) ? bulkAnimals : [])
+      .map((item) => ({
+        ...item,
+        _bulkId: resolveAnimalId(item),
+      }))
+      .filter((item) => item._bulkId);
+  }, [bulkAnimals, resolveAnimalId]);
 
-  const bulkSelectedAnimals = bulkList.filter((item) =>
-    bulkSelectedIds.includes(String(item._bulkId))
-  );
+  const bulkSelectedAnimals = useMemo(() => {
+    return bulkList.filter((item) => bulkSelectedIds.includes(String(item._bulkId)));
+  }, [bulkList, bulkSelectedIds]);
 
   const bulkPreviewAnimal = bulkSelectedAnimals[0] || null;
 
@@ -370,128 +372,193 @@ export default function VisaoGeral({
     }
   }, [draftIA?.razao]);
 
-  useEffect(() => {
-    let isActive = true;
+  const getAplicacoesAtivas = useCallback(async ({ animalId: targetAnimalId, dataEvento }) => {
+    if (!fazendaAtualId || !targetAnimalId || !dataEvento) return [];
+    const { data, error } = await supabase
+      .from("repro_aplicacoes")
+      .select("id, protocolo_id, data_inicio, etapas_snapshot")
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("animal_id", targetAnimalId)
+      .eq("status", "ATIVO")
+      .lte("data_inicio", dataEvento);
 
-    const clearStatus = () => {
-      if (!isActive) return;
-      setIaMatchAplicacaoId(null);
-      setIaMatchProtocoloId(null);
-      setIaBanner(null);
-      setIaBlockMessage("");
-      setBulkIABlockMessage("");
-      setBulkIAMatches({});
-    };
+    if (error) throw error;
 
-    const resolveStatus = async () => {
-      if (!open || selectedType !== "IA") {
-        clearStatus();
-        return;
+    return Array.isArray(data) ? data : [];
+  }, [fazendaAtualId]);
+
+  const resolveVinculoIA = useCallback((aplicacoes, dataEventoDate, targetAnimalId) => {
+    const alvoNormalizado = normalizeTexto("Inseminação");
+    const matches = [];
+    const previsoes = [];
+
+    (Array.isArray(aplicacoes) ? aplicacoes : []).forEach((aplicacao) => {
+      const dataInicio = parseISODate(aplicacao?.data_inicio);
+      if (!dataInicio) return;
+      const diaAlvo = diffDays(dataEventoDate, dataInicio);
+      const etapas = parseEtapasSnapshot(aplicacao?.etapas_snapshot);
+      const matchEtapa = etapas.find(
+        (etapa) =>
+          Number(etapa?.dia) === diaAlvo &&
+          normalizeTexto(etapa?.acao) === alvoNormalizado
+      );
+      if (matchEtapa) {
+        matches.push({ aplicacao, dataInicio, diaAlvo });
       }
-      const razaoEvento = draftIA?.razao;
-      if (!razaoEvento || !RAZOES_VINCULO_AUTOMATICO.has(razaoEvento)) {
-        clearStatus();
-        return;
-      }
-      const dataEventoISO = brToISO(draftIA?.data);
-      if (!dataEventoISO) {
-        clearStatus();
-        return;
-      }
 
-      const dataEventoDate = parseISODate(dataEventoISO);
-      if (!dataEventoDate) {
-        clearStatus();
-        return;
-      }
-
-      if (bulkActive && bulkReady && bulkSelectedAnimals.length > 0) {
-        try {
-          const resultados = await Promise.all(
-            bulkSelectedAnimals.map(async (item) => {
-              const targetId = resolveAnimalId(item);
-              if (!targetId) return null;
-              const aplicacoes = await getAplicacoesAtivas({
-                animalId: targetId,
-                dataEvento: dataEventoISO,
-              });
-              return resolveVinculoIA(aplicacoes, dataEventoDate, targetId);
-            })
-          );
-
-          if (!isActive) return;
-
-          const matchesMap = {};
-          let hasInvalid = false;
-
-          resultados.filter(Boolean).forEach((info) => {
-            matchesMap[info.animalId] = info;
-            if (!info.hasMatch) {
-              hasInvalid = true;
-            }
-          });
-
-          setBulkIAMatches(matchesMap);
-          if (hasInvalid) {
-            setBulkIABlockMessage("Alguns animais não têm IA prevista nessa data. Ajuste a data ou a razão.");
-          } else {
-            setBulkIABlockMessage("");
-          }
-          setIaBanner(null);
-          setIaBlockMessage("");
-        } catch (error) {
-          console.error("Erro ao validar IA coletiva:", error);
+      const etapaInsem = etapas.find(
+        (etapa) =>
+          normalizeTexto(etapa?.acao) === alvoNormalizado &&
+          Number.isFinite(+etapa?.dia)
+      );
+      if (etapaInsem) {
+        const dia = Number(etapaInsem.dia);
+        const dataPrevista = addDays(dataInicio, dia);
+        if (dataPrevista) {
+          previsoes.push({ aplicacao, dataInicio, dia, dataPrevista });
         }
-        return;
       }
+    });
 
-      if (!animalId) {
-        clearStatus();
-        return;
-      }
+    const match = matches.length === 1 ? matches[0] : null;
+    const next = previsoes.length > 0
+      ? previsoes.sort((a, b) => a.dataPrevista - b.dataPrevista)[0]
+      : null;
 
+    return {
+      animalId: targetAnimalId,
+      hasMatch: matches.length > 0,
+      match,
+      next,
+    };
+  }, []);
+
+  const isIABannerEqual = useCallback((a, b) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return a.type === b.type && a.title === b.title && a.message === b.message;
+  }, []);
+
+  const areMatchesEqual = useCallback((prev, next) => {
+    if (prev === next) return true;
+    const prevKeys = Object.keys(prev || {});
+    const nextKeys = Object.keys(next || {});
+    if (prevKeys.length !== nextKeys.length) return false;
+    return nextKeys.every((key) => prev?.[key] === next?.[key]);
+  }, []);
+
+  const clearStatus = useCallback(() => {
+    setIaMatchAplicacaoId((prev) => (prev === null ? prev : null));
+    setIaMatchProtocoloId((prev) => (prev === null ? prev : null));
+    setIaBanner((prev) => (prev === null ? prev : null));
+    setIaBlockMessage((prev) => (prev === "" ? prev : ""));
+    setBulkIABlockMessage((prev) => (prev === "" ? prev : ""));
+    setBulkIAMatches((prev) => (Object.keys(prev || {}).length === 0 ? prev : {}));
+  }, []);
+
+  const resolveStatus = useCallback(async (activeRef) => {
+    if (!open || selectedType !== "IA") {
+      clearStatus();
+      return;
+    }
+    const razaoEvento = draftIA?.razao;
+    if (!razaoEvento || !RAZOES_VINCULO_AUTOMATICO.has(razaoEvento)) {
+      clearStatus();
+      return;
+    }
+    const dataEventoISO = brToISO(draftIA?.data);
+    if (!dataEventoISO) {
+      clearStatus();
+      return;
+    }
+
+    const dataEventoDate = parseISODate(dataEventoISO);
+    if (!dataEventoDate) {
+      clearStatus();
+      return;
+    }
+
+    if (bulkActive && bulkReady && bulkSelectedAnimals.length > 0) {
       try {
-        const aplicacoes = await getAplicacoesAtivas({
-          animalId,
-          dataEvento: dataEventoISO,
+        const resultados = await Promise.all(
+          bulkSelectedAnimals.map(async (item) => {
+            const targetId = resolveAnimalId(item);
+            if (!targetId) return null;
+            const aplicacoes = await getAplicacoesAtivas({
+              animalId: targetId,
+              dataEvento: dataEventoISO,
+            });
+            return resolveVinculoIA(aplicacoes, dataEventoDate, targetId);
+          })
+        );
+
+        if (!activeRef?.current) return;
+
+        const matchesMap = {};
+        let hasInvalid = false;
+
+        resultados.filter(Boolean).forEach((info) => {
+          matchesMap[info.animalId] = info;
+          if (!info.hasMatch) {
+            hasInvalid = true;
+          }
         });
-        if (!isActive) return;
 
-        const info = resolveVinculoIA(aplicacoes, dataEventoDate, animalId);
-        if (info.hasMatch && info.match) {
-          const detail = `Data início ${formatBRDate(info.match.dataInicio)} • D${info.match.diaAlvo} • Data do evento ${formatBRDate(dataEventoDate)}`;
-          setIaMatchAplicacaoId(info.match.aplicacao.id);
-          setIaMatchProtocoloId(info.match.aplicacao.protocolo_id || null);
-          setIaBanner({
-            type: "info",
-            title: "IA prevista pelo protocolo: VINCULANDO AUTOMATICAMENTE",
-            message: detail,
-          });
-          setIaBlockMessage("");
-        } else {
-          const dataPrevista = info.next?.dataPrevista || null;
-          const msg = `Esse animal não tem IA prevista no protocolo para ${formatBRDate(dataEventoDate)}. IA prevista em ${formatBRDate(dataPrevista)}. Altere a data ou a razão.`;
-          setIaMatchAplicacaoId(null);
-          setIaMatchProtocoloId(null);
-          setIaBanner({
-            type: "danger",
-            title: "IA fora do protocolo",
-            message: msg,
-          });
-          setIaBlockMessage(msg);
-        }
-        setBulkIABlockMessage("");
-        setBulkIAMatches({});
+        setBulkIAMatches((prev) => (areMatchesEqual(prev, matchesMap) ? prev : matchesMap));
+        const nextBulkMessage = hasInvalid
+          ? "Alguns animais não têm IA prevista nessa data. Ajuste a data ou a razão."
+          : "";
+        setBulkIABlockMessage((prev) => (prev === nextBulkMessage ? prev : nextBulkMessage));
+        setIaBanner((prev) => (prev === null ? prev : null));
+        setIaBlockMessage((prev) => (prev === "" ? prev : ""));
       } catch (error) {
-        console.error("Erro ao validar IA:", error);
+        console.error("Erro ao validar IA coletiva:", error);
       }
-    };
+      return;
+    }
 
-    resolveStatus();
+    if (!animalId) {
+      clearStatus();
+      return;
+    }
 
-    return () => {
-      isActive = false;
-    };
+    try {
+      const aplicacoes = await getAplicacoesAtivas({
+        animalId,
+        dataEvento: dataEventoISO,
+      });
+      if (!activeRef?.current) return;
+
+      const info = resolveVinculoIA(aplicacoes, dataEventoDate, animalId);
+      if (info.hasMatch && info.match) {
+        const detail = `Data início ${formatBRDate(info.match.dataInicio)} • D${info.match.diaAlvo} • Data do evento ${formatBRDate(dataEventoDate)}`;
+        const nextBanner = {
+          type: "info",
+          title: "IA prevista pelo protocolo: VINCULANDO AUTOMATICAMENTE",
+          message: detail,
+        };
+        setIaMatchAplicacaoId((prev) => (prev === info.match.aplicacao.id ? prev : info.match.aplicacao.id));
+        setIaMatchProtocoloId((prev) => (prev === (info.match.aplicacao.protocolo_id || null) ? prev : info.match.aplicacao.protocolo_id || null));
+        setIaBanner((prev) => (isIABannerEqual(prev, nextBanner) ? prev : nextBanner));
+        setIaBlockMessage((prev) => (prev === "" ? prev : ""));
+      } else {
+        const dataPrevista = info.next?.dataPrevista || null;
+        const msg = `Esse animal não tem IA prevista no protocolo para ${formatBRDate(dataEventoDate)}. IA prevista em ${formatBRDate(dataPrevista)}. Altere a data ou a razão.`;
+        const nextBanner = {
+          type: "danger",
+          title: "IA fora do protocolo",
+          message: msg,
+        };
+        setIaMatchAplicacaoId((prev) => (prev === null ? prev : null));
+        setIaMatchProtocoloId((prev) => (prev === null ? prev : null));
+        setIaBanner((prev) => (isIABannerEqual(prev, nextBanner) ? prev : nextBanner));
+        setIaBlockMessage((prev) => (prev === msg ? prev : msg));
+      }
+      setBulkIABlockMessage((prev) => (prev === "" ? prev : ""));
+      setBulkIAMatches((prev) => (Object.keys(prev || {}).length === 0 ? prev : {}));
+    } catch (error) {
+      console.error("Erro ao validar IA:", error);
+    }
   }, [
     open,
     selectedType,
@@ -501,7 +568,21 @@ export default function VisaoGeral({
     bulkReady,
     bulkSelectedAnimals,
     animalId,
+    clearStatus,
+    getAplicacoesAtivas,
+    resolveAnimalId,
+    resolveVinculoIA,
+    areMatchesEqual,
+    isIABannerEqual,
   ]);
+
+  useEffect(() => {
+    const activeRef = { current: true };
+    resolveStatus(activeRef);
+    return () => {
+      activeRef.current = false;
+    };
+  }, [resolveStatus]);
 
   useEffect(() => {
     const fetchInseminadores = async () => {
@@ -624,67 +705,6 @@ export default function VisaoGeral({
     const sanitizedPayloads = payloads.map((item) => sanitizeReproEventoPayload(item));
     const { error } = await supabase.from("repro_eventos").insert(sanitizedPayloads);
     if (error) throw error;
-  };
-
-  const getAplicacoesAtivas = async ({ animalId: targetAnimalId, dataEvento }) => {
-    if (!fazendaAtualId || !targetAnimalId || !dataEvento) return [];
-    const { data, error } = await supabase
-      .from("repro_aplicacoes")
-      .select("id, protocolo_id, data_inicio, etapas_snapshot")
-      .eq("fazenda_id", fazendaAtualId)
-      .eq("animal_id", targetAnimalId)
-      .eq("status", "ATIVO")
-      .lte("data_inicio", dataEvento);
-
-    if (error) throw error;
-
-    return Array.isArray(data) ? data : [];
-  };
-
-  const resolveVinculoIA = (aplicacoes, dataEventoDate, targetAnimalId) => {
-    const alvoNormalizado = normalizeTexto("Inseminação");
-    const matches = [];
-    const previsoes = [];
-
-    (Array.isArray(aplicacoes) ? aplicacoes : []).forEach((aplicacao) => {
-      const dataInicio = parseISODate(aplicacao?.data_inicio);
-      if (!dataInicio) return;
-      const diaAlvo = diffDays(dataEventoDate, dataInicio);
-      const etapas = parseEtapasSnapshot(aplicacao?.etapas_snapshot);
-      const matchEtapa = etapas.find(
-        (etapa) =>
-          Number(etapa?.dia) === diaAlvo &&
-          normalizeTexto(etapa?.acao) === alvoNormalizado
-      );
-      if (matchEtapa) {
-        matches.push({ aplicacao, dataInicio, diaAlvo });
-      }
-
-      const etapaInsem = etapas.find(
-        (etapa) =>
-          normalizeTexto(etapa?.acao) === alvoNormalizado &&
-          Number.isFinite(+etapa?.dia)
-      );
-      if (etapaInsem) {
-        const dia = Number(etapaInsem.dia);
-        const dataPrevista = addDays(dataInicio, dia);
-        if (dataPrevista) {
-          previsoes.push({ aplicacao, dataInicio, dia, dataPrevista });
-        }
-      }
-    });
-
-    const match = matches.length === 1 ? matches[0] : null;
-    const next = previsoes.length > 0
-      ? previsoes.sort((a, b) => a.dataPrevista - b.dataPrevista)[0]
-      : null;
-
-    return {
-      animalId: targetAnimalId,
-      hasMatch: matches.length > 0,
-      match,
-      next,
-    };
   };
 
   const getAplicacoesCompativeis = async ({ animalId: targetAnimalId, dataEvento }) => {
