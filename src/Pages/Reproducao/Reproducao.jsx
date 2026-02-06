@@ -489,14 +489,17 @@ export default function Reproducao() {
                       type="button"
                       className="repro-action"
                       style={styles.actionBtn}
-                      onClick={() =>
-                        setAnimalSelecionado({
-                          registro: linha.raw,
+                      onClick={() => {
+                        const animalDaLinha = {
+                          ...(linha.raw || {}),
+                          id: linha.raw?.id ?? linha.animalId ?? null,
+                          animal_id: linha.raw?.animal_id ?? linha.animalId ?? null,
                           animalId: linha.animalId,
                           numero: linha.numero,
                           brinco: linha.brinco,
-                        })
-                      }
+                        };
+                        setAnimalSelecionado(animalDaLinha);
+                      }}
                     >
                       Manejo
                     </button>
