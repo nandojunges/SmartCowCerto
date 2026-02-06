@@ -677,6 +677,23 @@ export default function VisaoGeral({
     });
   };
 
+  const getIATarget = async ({ animalId: targetAnimalId, dataEvento }) => {
+    if (!fazendaAtualId || !targetAnimalId || !dataEvento) return null;
+    const { data, error } = await supabase
+      .from("repro_eventos")
+      .select("id, inseminador_id, touro_id, touro_nome, protocolo_id, protocolo_aplicacao_id, razao, tipo_semen, palhetas, lote, data_evento")
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("animal_id", targetAnimalId)
+      .eq("tipo", "IA")
+      .lte("data_evento", dataEvento)
+      .order("data_evento", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data || null;
+  };
+
   const buildAplicacaoOption = (aplicacao) => {
     const labelBase = aplicacao?.protocolo_id
       ? `Protocolo ${aplicacao.protocolo_id}`
@@ -717,20 +734,56 @@ export default function VisaoGeral({
         const dataEvento = normalizePayloadDate(payload.data);
         if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
         const mapa = { Prenhe: "POSITIVO", Vazia: "NEGATIVO", "Não vista": "PENDENTE" };
+        const meta = {
+          dg: payload?.dg || "PENDENTE",
+          tipoExame: payload?.extras?.tipoExame || null,
+          diasDesdeIA: payload?.extras?.diasDesdeIA ?? null,
+          comentario: payload?.extras?.comentario || "",
+        };
+        const mapIAFields = (iaAlvo) => ({
+          evento_pai_id: iaAlvo?.id || null,
+          inseminador_id: iaAlvo?.inseminador_id || null,
+          touro_id: iaAlvo?.touro_id || null,
+          touro_nome: iaAlvo?.touro_nome || null,
+          protocolo_id: iaAlvo?.protocolo_id || null,
+          protocolo_aplicacao_id: iaAlvo?.protocolo_aplicacao_id || null,
+          razao: iaAlvo?.razao || null,
+          tipo_semen: iaAlvo?.tipo_semen || null,
+          palhetas: iaAlvo?.palhetas ?? null,
+          lote: iaAlvo?.lote || null,
+        });
         if (hasBulkSelection) {
+          const targets = await Promise.all(
+            bulkSelectedAnimals.map(async (item) => {
+              const resolvedAnimalId = resolveAnimalId(item);
+              const iaAlvo = await getIATarget({ animalId: resolvedAnimalId, dataEvento });
+              return { animalId: resolvedAnimalId, iaAlvo };
+            })
+          );
+          const semIA = targets.filter((item) => !item.iaAlvo);
+          if (semIA.length > 0) {
+            setErroSalvar("Sem IA válida para alguns animais selecionados. Registre uma inseminação antes do diagnóstico.");
+            return;
+          }
           await insertReproEventos(
-            bulkSelectedAnimals.map((item) => ({
+            targets.map(({ animalId: resolvedAnimalId, iaAlvo }) => ({
               fazenda_id: fazendaAtualId,
-              animal_id: resolveAnimalId(item),
+              animal_id: resolvedAnimalId,
               tipo: "DG",
               data_evento: dataEvento,
               user_id: userId,
               resultado_dg: mapa[payload.dg] || "PENDENTE",
               observacoes: payload?.extras?.obs,
-              meta: payload?.extras,
+              meta,
+              ...mapIAFields(iaAlvo),
             }))
           );
         } else {
+          const iaAlvo = await getIATarget({ animalId: baseAnimalId, dataEvento });
+          if (!iaAlvo) {
+            setErroSalvar("Sem IA válida para este animal. Registre uma inseminação antes do diagnóstico.");
+            return;
+          }
           await insertReproEvento({
             fazenda_id: fazendaAtualId,
             animal_id: baseAnimalId,
@@ -739,7 +792,8 @@ export default function VisaoGeral({
             user_id: userId,
             resultado_dg: mapa[payload.dg] || "PENDENTE",
             observacoes: payload?.extras?.obs,
-            meta: payload?.extras,
+            meta,
+            ...mapIAFields(iaAlvo),
           });
         }
       } else if (payload.kind === "IA") {
