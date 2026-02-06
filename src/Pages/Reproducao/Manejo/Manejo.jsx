@@ -306,6 +306,11 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
           observacoes: payload.obs || null,
           meta: payload?.extras || null,
         });
+      } else if (payload.kind === "PROTOCOLO_APLICADO") {
+        if (!payload?.aplicacao) {
+          throw new Error("Aplicação de protocolo não retornada.");
+        }
+        toast.success("Protocolo aplicado com sucesso");
       } else if (payload.kind === "PROTOCOLO") {
         const animalPayloadId = payload?.animal_id || animalId;
         const protocoloId = payload?.protocolo_id;

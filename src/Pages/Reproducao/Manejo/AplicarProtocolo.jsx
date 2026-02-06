@@ -212,6 +212,8 @@ const tipoOptions = [
   { value: "PRESYNC", label: "Pré-sincronização", color: theme.colors.warning[600] },
 ];
 
+const DUPLICIDADE_ATIVO_MSG = "Já existe um protocolo ATIVO para este animal. Encerre antes de aplicar outro.";
+
 const selectStyles = {
   control: (base, state) => ({
     ...base, minHeight: 42, borderRadius: theme.radius.md,
@@ -302,24 +304,39 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
 
-      const userId = authData?.user?.id;
+      const user = authData?.user;
+      const userId = user?.id;
       if (!userId) throw new Error("Sessão inválida. Faça login novamente.");
 
-      const aId = String(getAnimalId(animal));
+      const animalId = String(getAnimalId(animal));
       const dataISO = brToISO(dataInicio);
       const horaInicioTime = `${horaInicio}:00`;
 
-      const { data, error } = await supabase
+      const { data: aplicacaoAtiva, error: aplicacaoAtivaError } = await supabase
+        .from("repro_aplicacoes")
+        .select("id, protocolo_id, data_inicio, status")
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("animal_id", animalId)
+        .eq("status", "ATIVO")
+        .maybeSingle();
+
+      if (aplicacaoAtivaError) throw aplicacaoAtivaError;
+      if (aplicacaoAtiva) {
+        setErro(DUPLICIDADE_ATIVO_MSG);
+        return;
+      }
+
+      const { data: row, error } = await supabase
         .from("repro_aplicacoes")
         .insert({
-          user_id: userId,
+          user_id: user.id,
           fazenda_id: fazendaAtualId,
-          animal_id: aId,
+          animal_id: animalId,
           protocolo_id: protId,
           data_inicio: dataISO,
-          hora_inicio: horaInicioTime,
           status: "ATIVO",
           tipo,
+          hora_inicio: horaInicioTime,
         })
         .select("*")
         .single();
@@ -335,14 +352,19 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
       }
 
       setErro("");
-      onSubmit?.(data);
+      onSubmit?.({ kind: "PROTOCOLO_APLICADO", aplicacao: row });
       toast.success("Protocolo aplicado");
     } catch (e) {
       console.error("Falha ao aplicar protocolo:", {
         code: e?.code,
         message: e?.message,
         details: e?.details,
+        hint: e?.hint,
       });
+      if (e?.code === "23505") {
+        setErro(DUPLICIDADE_ATIVO_MSG);
+        return;
+      }
       setErro(`Não foi possível aplicar o protocolo. ${e?.message || "Tente novamente."}`);
     } finally {
       setSalvando(false);
