@@ -6,6 +6,7 @@ import { withFazendaId } from "../../lib/fazendaScope";
 import { useFazenda } from "../../context/FazendaContext";
 import { kvGet, kvSet } from "../../offline/localDB";
 import FichaAnimal from "./FichaAnimal/FichaAnimal";
+import "../../styles/tabelaModerna.css";
 
 let MEMO_PLANTEL = { data: null, lastAt: 0 };
 
@@ -32,6 +33,14 @@ function parseDateFlexible(s) {
   }
 
   return null;
+}
+
+function formatDateBR(dateObj) {
+  if (!dateObj) return "—";
+  const dd = String(dateObj.getDate()).padStart(2, "0");
+  const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const yyyy = dateObj.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 function daysBetween(dateA, dateB) {
@@ -149,6 +158,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const popoverRef = useRef(null);
   const triggerRefs = useRef({});
   const [popoverStyle, setPopoverStyle] = useState({ left: "50%", transform: "translateX(-50%)" });
+  const [manejoAberto, setManejoAberto] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [filtros, setFiltros] = useState({
@@ -830,6 +840,56 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   }, [linhasOrdenadas, ultProducao, resolveSituacaoProdutiva, resolveDelValor]);
 
   const hasAnimais = linhasOrdenadas.length > 0;
+  const hoje = useMemo(() => {
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    return base;
+  }, []);
+
+  const resolvePrevParto = useCallback((animal) => {
+    return (
+      parseDateFlexible(animal?.data_prev_parto) ||
+      parseDateFlexible(animal?.dataPrevParto) ||
+      parseDateFlexible(animal?.previsao_parto) ||
+      parseDateFlexible(animal?.previsaoParto) ||
+      parseDateFlexible(animal?.data_prevista_parto) ||
+      parseDateFlexible(animal?.dataPrevistaParto) ||
+      null
+    );
+  }, []);
+
+  const manejosPendentes = useMemo(() => {
+    const base = { secagem: [], preParto: [], parto: [] };
+    animais.forEach((animal) => {
+      const prevParto = resolvePrevParto(animal);
+      if (!prevParto) return;
+      const diasPara = daysBetween(prevParto, hoje);
+      if (!Number.isFinite(diasPara)) return;
+      const item = { animal, prevParto, diasPara };
+      if (diasPara <= 7) {
+        base.parto.push(item);
+      } else if (diasPara <= 21) {
+        base.preParto.push(item);
+      } else if (diasPara <= 60) {
+        base.secagem.push(item);
+      }
+    });
+    base.secagem.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
+    base.preParto.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
+    base.parto.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
+    return base;
+  }, [animais, hoje, resolvePrevParto]);
+
+  const manejoAtual = manejoAberto ? manejosPendentes[manejoAberto] || [] : [];
+  const totalPendentes =
+    (manejosPendentes.secagem?.length || 0) +
+    (manejosPendentes.preParto?.length || 0) +
+    (manejosPendentes.parto?.length || 0);
+  const manejoConfig = {
+    secagem: { label: "Secagem", action: "Registrar Secagem" },
+    preParto: { label: "Pré-Parto", action: "Iniciar Pré-Parto" },
+    parto: { label: "Parto", action: "Registrar Parto" },
+  };
 
   // Estilos modernos
   const styles = {
@@ -873,6 +933,21 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     alertWarn: { backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" },
     loading: { padding: "24px", textAlign: "center", color: "#64748b", fontSize: "14px" },
     loteBtn: { width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "32px", padding: "0 12px", cursor: "pointer", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", border: "1px solid transparent" },
+    manejoCard: { backgroundColor: "#ffffff", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.06)", padding: "20px" },
+    manejoTitle: { fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: 0 },
+    manejoGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginTop: "16px" },
+    manejoCardItem: { border: "1px solid #e2e8f0", borderRadius: "14px", padding: "16px", backgroundColor: "#f8fafc", cursor: "pointer", transition: "all 0.2s ease", display: "flex", flexDirection: "column", gap: "8px" },
+    manejoCardActive: { borderColor: "#38bdf8", backgroundColor: "#eff6ff", boxShadow: "0 10px 15px -3px rgba(37, 99, 235, 0.12)" },
+    manejoCount: { fontSize: "28px", fontWeight: 800, color: "#0f172a", margin: 0 },
+    manejoSub: { fontSize: "12px", color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" },
+    manejoHint: { fontSize: "12px", color: "#64748b", marginTop: "8px" },
+    manejoDetailCard: { marginTop: "16px", backgroundColor: "#ffffff", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.08)" },
+    manejoDetailHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #f1f5f9" },
+    manejoDetailTitle: { fontSize: "16px", fontWeight: 700, color: "#0f172a", margin: 0 },
+    manejoCloseBtn: { border: "1px solid #e2e8f0", backgroundColor: "#ffffff", padding: "6px 12px", borderRadius: "8px", fontSize: "13px", cursor: "pointer", color: "#0f172a" },
+    manejoEmpty: { padding: "16px 20px", fontSize: "13px", color: "#64748b" },
+    manejoActionBtn: { padding: "6px 10px", backgroundColor: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "12px", fontWeight: 600, color: "#0f172a", cursor: "pointer" },
+    manejoDetailHint: { padding: "0 20px 12px", fontSize: "12px", color: "#64748b" },
   };
 
   const getPillStyle = (type, value) => {
@@ -896,6 +971,117 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         {erro && <div style={{...styles.alert, ...styles.alertDanger}}>{erro}</div>}
         {loteAviso && <div style={{...styles.alert, ...styles.alertWarn}}>{loteAviso}</div>}
         {offlineAviso && <div style={{...styles.alert, backgroundColor: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe"}}>{offlineAviso}</div>}
+
+        <div style={{ marginBottom: "24px" }}>
+          <div style={styles.manejoCard}>
+            <h3 style={styles.manejoTitle}>Manejos Pendentes</h3>
+            <div style={styles.manejoGrid}>
+              {[
+                { key: "secagem", label: "Secagem" },
+                { key: "preParto", label: "Pré-Parto" },
+                { key: "parto", label: "Parto" },
+              ].map((card) => {
+                const count = manejosPendentes[card.key]?.length || 0;
+                const ativo = manejoAberto === card.key;
+                return (
+                  <button
+                    key={card.key}
+                    type="button"
+                    onClick={() => setManejoAberto((prev) => (prev === card.key ? null : card.key))}
+                    style={{ ...styles.manejoCardItem, ...(ativo ? styles.manejoCardActive : {}) }}
+                  >
+                    <span style={styles.manejoSub}>{card.label}</span>
+                    <span style={styles.manejoCount}>{count}</span>
+                    <span style={{ fontSize: "13px", color: "#64748b" }}>
+                      {count === 0 ? "Nenhum pendente" : "animais elegíveis"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {totalPendentes > 0 && <div style={styles.manejoHint}>Baseado na previsão de parto</div>}
+          </div>
+
+          {manejoAberto && (
+            <div style={styles.manejoDetailCard}>
+              <div style={styles.manejoDetailHeader}>
+                <h4 style={styles.manejoDetailTitle}>
+                  {manejoConfig[manejoAberto]?.label} — animais elegíveis
+                </h4>
+                <button type="button" style={styles.manejoCloseBtn} onClick={() => setManejoAberto(null)}>
+                  Fechar
+                </button>
+              </div>
+              {manejoAtual.length > 0 && (
+                <div style={styles.manejoDetailHint}>Baseado na previsão de parto</div>
+              )}
+              {manejoAtual.length === 0 ? (
+                <div style={styles.manejoEmpty}>Nenhum animal elegível no momento.</div>
+              ) : (
+                <div style={{ padding: "0 16px 16px" }}>
+                  <div className="st-table-wrap">
+                    <div className="st-scroll">
+                      <table className="st-table">
+                        <colgroup>
+                          <col style={{ width: "40%" }} />
+                          <col style={{ width: "20%" }} />
+                          <col style={{ width: "20%" }} />
+                          <col style={{ width: "20%" }} />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th className="st-th">Animal</th>
+                            <th className="st-th">Prev. Parto</th>
+                            <th className="st-th">Dias p/ Evento</th>
+                            <th className="st-th st-td-center">Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {manejoAtual.map((item) => {
+                            const animal = item.animal || {};
+                            const id = animal?.animal_id ?? animal?.id;
+                            return (
+                              <tr key={`${manejoAberto}-${id}`} className="st-row">
+                                <td className="st-td st-col-animal">
+                                  <div style={styles.animalCell}>
+                                    <div style={styles.animalNum}>{animal?.numero ?? "—"}</div>
+                                    <div style={styles.animalInfo}>
+                                      <span style={styles.animalTitle}>{animal?.nome || "Sem nome"}</span>
+                                      <span style={styles.animalSub}>
+                                        <span>Brinco:</span>
+                                        <span style={styles.num}>{animal?.brinco || "—"}</span>
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="st-td">{formatDateBR(item.prevParto)}</td>
+                                <td className="st-td">{Number.isFinite(item.diasPara) ? item.diasPara : "—"}</td>
+                                <td className="st-td st-td-center">
+                                  <button
+                                    type="button"
+                                    style={styles.manejoActionBtn}
+                                    onClick={() =>
+                                      console.log("manejo_pendente", {
+                                        tipo: manejoAberto,
+                                        animal_id: id,
+                                      })
+                                    }
+                                  >
+                                    {manejoConfig[manejoAberto]?.action}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <div style={styles.card}>
           <div style={styles.header}>
