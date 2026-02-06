@@ -1,130 +1,47 @@
-import React, { useMemo, useState, useCallback } from "react";
-import "../../styles/tabelaModerna.css";
+import { useMemo, useState } from "react";
 
-function parseDateFlexible(s) {
-  if (!s) return null;
-  const str = String(s).trim();
-  if (!str) return null;
-
-  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) {
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-    const dt = new Date(y, mo - 1, d);
-    return Number.isFinite(dt.getTime()) ? dt : null;
-  }
-
-  m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) {
-    const d = Number(m[1]);
-    const mo = Number(m[2]);
-    const y = Number(m[3]);
-    const dt = new Date(y, mo - 1, d);
-    return Number.isFinite(dt.getTime()) ? dt : null;
-  }
-
-  return null;
-}
-
-function formatDateBR(dateObj) {
-  if (!dateObj) return "—";
-  const dd = String(dateObj.getDate()).padStart(2, "0");
-  const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
-  const yyyy = dateObj.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-}
-
-function daysBetween(dateA, dateB) {
-  if (!dateA || !dateB) return null;
-  const ms = dateA.getTime() - dateB.getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
-}
-
-const BUTTONS = [
-  { key: "secagem", label: "Secagem", action: "Registrar Secagem" },
-  { key: "preparto", label: "Pré-parto", action: "Iniciar Pré-parto" },
-  { key: "parto", label: "Parto", action: "Registrar Parto" },
+const PENDENTES = [
+  { key: "secagem", label: "Secagem" },
+  { key: "preparto", label: "Pré-parto" },
+  { key: "parto", label: "Parto" },
 ];
 
-export default function ManejosPendentes({ animais = [], onAction }) {
+export default function ManejosPendentes({ listas }) {
   const [active, setActive] = useState(null);
 
-  const hoje = useMemo(() => {
-    const base = new Date();
-    base.setHours(0, 0, 0, 0);
-    return base;
-  }, []);
-
-  const resolvePrevParto = useCallback((animal) => {
-    return (
-      parseDateFlexible(animal?.data_prev_parto) ||
-      parseDateFlexible(animal?.dataPrevParto) ||
-      parseDateFlexible(animal?.previsao_parto) ||
-      parseDateFlexible(animal?.previsaoParto) ||
-      parseDateFlexible(animal?.data_prevista_parto) ||
-      parseDateFlexible(animal?.dataPrevistaParto) ||
-      null
-    );
-  }, []);
-
-  const { listas, temPrevParto } = useMemo(() => {
-    const base = { secagem: [], preparto: [], parto: [] };
-    let hasPrev = false;
-    (Array.isArray(animais) ? animais : []).forEach((animal) => {
-      const prevParto = resolvePrevParto(animal);
-      if (!prevParto) return;
-      hasPrev = true;
-      const diasPara = daysBetween(prevParto, hoje);
-      if (!Number.isFinite(diasPara)) return;
-      const item = { animal, prevParto, diasPara };
-      if (diasPara <= 7) {
-        base.parto.push(item);
-      } else if (diasPara <= 21) {
-        base.preparto.push(item);
-      } else if (diasPara <= 60) {
-        base.secagem.push(item);
-      }
-    });
-    base.secagem.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
-    base.preparto.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
-    base.parto.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
-    return { listas: base, temPrevParto: hasPrev };
-  }, [animais, hoje, resolvePrevParto]);
-
-  const activeList = active ? listas[active] || [] : [];
+  const dados = useMemo(
+    () => ({
+      secagem: Array.isArray(listas?.secagem) ? listas.secagem : [],
+      preparto: Array.isArray(listas?.preparto) ? listas.preparto : [],
+      parto: Array.isArray(listas?.parto) ? listas.parto : [],
+    }),
+    [listas]
+  );
 
   const handleToggle = (key) => {
     setActive((prev) => (prev === key ? null : key));
   };
 
-  const handleAction = (tipo, animal) => {
-    const id = animal?.animal_id ?? animal?.id;
-    if (onAction) {
-      onAction({ tipo, animalId: id, animal });
-      return;
-    }
-    console.log("manejo_pendente", { tipo, animal_id: id });
-  };
+  const activeList = active ? dados[active] : [];
 
   return (
     <div style={styles.wrapper}>
-      <div style={styles.band}>
-        {BUTTONS.map((btn) => {
-          const count = listas[btn.key]?.length || 0;
-          const isActive = active === btn.key;
+      <div style={styles.chipRow}>
+        {PENDENTES.map((chip) => {
+          const count = dados[chip.key]?.length ?? 0;
+          const isActive = active === chip.key;
           return (
             <button
-              key={btn.key}
+              key={chip.key}
               type="button"
-              onClick={() => handleToggle(btn.key)}
+              onClick={() => handleToggle(chip.key)}
               style={{
-                ...styles.pillButton,
-                ...(isActive ? styles.pillButtonActive : {}),
+                ...styles.chip,
+                ...(isActive ? styles.chipActive : null),
               }}
             >
-              <span style={styles.pillLabel}>{btn.label}</span>
-              <span style={{ ...styles.pillCount, ...(isActive ? styles.pillCountActive : {}) }}>
+              <span>{chip.label}</span>
+              <span style={{ ...styles.chipCount, ...(isActive ? styles.chipCountActive : null) }}>
                 {count}
               </span>
             </button>
@@ -132,69 +49,48 @@ export default function ManejosPendentes({ animais = [], onAction }) {
         })}
       </div>
 
-      {!temPrevParto && (
-        <div style={styles.disclaimer}>
-          Pendências dependem da previsão de parto (ainda não disponível nos dados atuais).
-        </div>
-      )}
-
       {active && (
-        <div style={styles.listWrap}>
-          {activeList.length === 0 ? (
-            <div style={styles.empty}>Nenhum animal elegível.</div>
-          ) : (
-            <div className="st-table-wrap">
-              <div className="st-scroll">
-                <table className="st-table">
-                  <colgroup>
-                    <col style={{ width: "40%" }} />
-                    <col style={{ width: "20%" }} />
-                    <col style={{ width: "20%" }} />
-                    <col style={{ width: "20%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className="st-th">Animal</th>
-                      <th className="st-th">Prev. Parto</th>
-                      <th className="st-th">Dias</th>
-                      <th className="st-th st-td-center">Ação</th>
+        <div style={styles.card}>
+          <div style={styles.tableContainer}>
+            <table style={styles.table}>
+              <colgroup>
+                <col style={{ width: "44%" }} />
+                <col style={{ width: "20%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "20%" }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Animal</th>
+                  <th style={styles.th}>Prev. Parto</th>
+                  <th style={styles.th}>Dias</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeList.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={styles.emptyState}>
+                      Nenhum animal elegível.
+                    </td>
+                  </tr>
+                ) : (
+                  activeList.map((item, index) => (
+                    <tr key={`${active}-${index}`} style={styles.tr}>
+                      <td style={styles.td}>{item?.animal || "—"}</td>
+                      <td style={styles.td}>{item?.prevParto || "—"}</td>
+                      <td style={styles.td}>{item?.dias || "—"}</td>
+                      <td style={{ ...styles.td, textAlign: "center" }}>
+                        <button type="button" style={styles.actionBtn}>
+                          Ação
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {activeList.map((item) => {
-                      const animal = item.animal || {};
-                      const id = animal?.animal_id ?? animal?.id;
-                      const numero = animal?.numero ?? "—";
-                      const brinco = animal?.brinco ?? "—";
-                      return (
-                        <tr key={`${active}-${id}`} className="st-row">
-                          <td className="st-td st-col-animal">
-                            <div style={styles.animalCell}>
-                              <span style={styles.animalNumero}>Nº {numero}</span>
-                              <span style={styles.animalBrinco}>Brinco {brinco}</span>
-                            </div>
-                          </td>
-                          <td className="st-td">{formatDateBR(item.prevParto)}</td>
-                          <td className="st-td">
-                            {Number.isFinite(item.diasPara) ? `Faltam ${item.diasPara}` : "—"}
-                          </td>
-                          <td className="st-td st-td-center">
-                            <button
-                              type="button"
-                              style={styles.actionBtn}
-                              onClick={() => handleAction(active, animal)}
-                            >
-                              {BUTTONS.find((btn) => btn.key === active)?.action}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -206,15 +102,15 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "8px",
-    marginBottom: "16px",
+    marginBottom: "12px",
   },
-  band: {
+  chipRow: {
     display: "flex",
     gap: "8px",
     flexWrap: "wrap",
     alignItems: "center",
   },
-  pillButton: {
+  chip: {
     border: "1px solid #e2e8f0",
     backgroundColor: "#ffffff",
     borderRadius: "999px",
@@ -222,21 +118,18 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     gap: "8px",
-    fontSize: "13px",
-    fontWeight: 600,
+    fontSize: "12.5px",
+    fontWeight: 700,
     color: "#0f172a",
     cursor: "pointer",
     transition: "all 0.2s ease",
   },
-  pillButtonActive: {
+  chipActive: {
     backgroundColor: "#e0f2fe",
     borderColor: "#38bdf8",
     color: "#0c4a6e",
   },
-  pillLabel: {
-    fontSize: "13px",
-  },
-  pillCount: {
+  chipCount: {
     minWidth: "20px",
     height: "20px",
     borderRadius: "999px",
@@ -249,47 +142,71 @@ const styles = {
     fontWeight: 700,
     padding: "0 6px",
   },
-  pillCountActive: {
+  chipCountActive: {
     backgroundColor: "#bae6fd",
     color: "#075985",
   },
-  listWrap: {
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
+  card: {
     backgroundColor: "#ffffff",
-    padding: "8px 12px 12px",
+    borderRadius: "16px",
+    border: "1px solid #e2e8f0",
+    boxShadow:
+      "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+    overflow: "hidden",
   },
-  empty: {
-    fontSize: "13px",
-    color: "#64748b",
-    padding: "8px",
+  tableContainer: {
+    overflowX: "auto",
   },
-  disclaimer: {
-    fontSize: "12px",
-    color: "#64748b",
+  table: {
+    width: "100%",
+    borderCollapse: "separate",
+    borderSpacing: 0,
+    fontSize: "14px",
+    tableLayout: "fixed",
+    minWidth: 640,
   },
-  animalCell: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-  },
-  animalNumero: {
+  th: {
+    padding: "12px 12px",
+    textAlign: "left",
+    fontSize: "11px",
     fontWeight: 700,
-    color: "#0f172a",
-    fontSize: "13px",
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    borderBottom: "2px solid #e2e8f0",
+    backgroundColor: "#f8fafc",
+    whiteSpace: "nowrap",
   },
-  animalBrinco: {
-    fontSize: "12px",
+  td: {
+    padding: "12px 12px",
+    borderBottom: "1px solid #f1f5f9",
+    color: "#334155",
+    fontSize: "14px",
+    verticalAlign: "middle",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  tr: {
+    transition: "background-color 0.15s ease",
+  },
+  emptyState: {
+    padding: "20px",
+    textAlign: "center",
     color: "#64748b",
+    fontSize: "13px",
+    fontWeight: 600,
   },
   actionBtn: {
     padding: "6px 10px",
-    backgroundColor: "#ffffff",
-    border: "1px solid #cbd5e1",
+    backgroundColor: "#ec4899",
+    color: "#fff",
+    border: "none",
     borderRadius: "8px",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#0f172a",
+    fontSize: "12.5px",
+    fontWeight: 700,
     cursor: "pointer",
+    transition: "all 0.2s",
+    whiteSpace: "nowrap",
   },
 };
