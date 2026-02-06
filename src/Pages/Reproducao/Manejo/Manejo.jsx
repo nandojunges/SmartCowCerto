@@ -102,6 +102,44 @@ function diffDays(a, b) {
   return Math.round((startA - startB) / 86400000);
 }
 
+const DG_LABEL_DOPPLER = "Doppler (>=20d)";
+const DG_LABEL_DG30 = "DG 30d";
+const DG_LABEL_DG60 = "DG 60d";
+const DG_LABEL_AVANC = "Avançado (>90d)";
+const DG_LABEL_OUTRO = "Outro";
+const DG_PERMITE_NAO_VISTA_CEDO = true;
+const DG_PARAM_DEFAULTS = {
+  dg30: [28, 35],
+  dg60: [55, 75],
+  dopplerMin: 20,
+  avancadoMin: 90,
+};
+
+function validarDGJanela({ diasDesdeIA, tipoExame, resultado, dg30, dg60, dopplerMin, avancadoMin, permiteNaoVistaCedo }) {
+  if (diasDesdeIA == null) {
+    return { isValido: false, motivoBloqueio: "Sem IA registrada para calcular a janela do diagnóstico." };
+  }
+
+  const bloquearConclusivo = !permiteNaoVistaCedo || resultado !== "Não vista";
+  if (diasDesdeIA < dopplerMin && bloquearConclusivo) {
+    return { isValido: false, motivoBloqueio: `Diagnóstico conclusivo exige mínimo de ${dopplerMin} dias pós-IA.` };
+  }
+
+  const minPorTipo = {
+    [DG_LABEL_DOPPLER]: dopplerMin,
+    [DG_LABEL_DG30]: dg30[0],
+    [DG_LABEL_DG60]: dg60[0],
+    [DG_LABEL_AVANC]: avancadoMin,
+    [DG_LABEL_OUTRO]: dopplerMin,
+  };
+  const minimo = minPorTipo[tipoExame];
+  if (minimo && diasDesdeIA < minimo && bloquearConclusivo) {
+    return { isValido: false, motivoBloqueio: `${tipoExame} exige mínimo de ${minimo} dias pós-IA.` };
+  }
+
+  return { isValido: true, motivoBloqueio: "" };
+}
+
 function addDays(baseDate, days) {
   if (!baseDate || !Number.isFinite(days)) return null;
   const dt = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
@@ -1093,6 +1131,29 @@ export default function VisaoGeral({
             setErroSalvar("Sem IA válida para alguns animais selecionados. Registre uma inseminação antes do diagnóstico.");
             return;
           }
+          const invalidTarget = targets.find(({ iaAlvo }) => {
+            const diasDesdeIA = diffDays(dataEvento, iaAlvo?.data_evento);
+            const { isValido } = validarDGJanela({
+              diasDesdeIA,
+              tipoExame: draftDG?.extras?.tipoExame || DG_LABEL_OUTRO,
+              resultado: draftDG?.dg || "",
+              ...DG_PARAM_DEFAULTS,
+              permiteNaoVistaCedo: DG_PERMITE_NAO_VISTA_CEDO,
+            });
+            return !isValido;
+          });
+          if (invalidTarget) {
+            const diasDesdeIA = diffDays(dataEvento, invalidTarget.iaAlvo?.data_evento);
+            const { motivoBloqueio } = validarDGJanela({
+              diasDesdeIA,
+              tipoExame: draftDG?.extras?.tipoExame || DG_LABEL_OUTRO,
+              resultado: draftDG?.dg || "",
+              ...DG_PARAM_DEFAULTS,
+              permiteNaoVistaCedo: DG_PERMITE_NAO_VISTA_CEDO,
+            });
+            setErroSalvar(motivoBloqueio || "Diagnóstico fora da janela mínima para alguns animais.");
+            return;
+          }
 
           await insertReproEventos(
             targets.map(({ animalId: resolvedAnimalId, iaAlvo }) => ({
@@ -1110,6 +1171,18 @@ export default function VisaoGeral({
           const iaAlvo = await getIATarget({ animalId, dataEvento });
           if (!iaAlvo) {
             setErroSalvar("Sem IA válida para este animal. Registre uma inseminação antes do diagnóstico.");
+            return;
+          }
+          const diasDesdeIA = diffDays(dataEvento, iaAlvo?.data_evento);
+          const { isValido, motivoBloqueio } = validarDGJanela({
+            diasDesdeIA,
+            tipoExame: draftDG?.extras?.tipoExame || DG_LABEL_OUTRO,
+            resultado: draftDG?.dg || "",
+            ...DG_PARAM_DEFAULTS,
+            permiteNaoVistaCedo: DG_PERMITE_NAO_VISTA_CEDO,
+          });
+          if (!isValido) {
+            setErroSalvar(motivoBloqueio || "Diagnóstico fora da janela mínima.");
             return;
           }
           await insertReproEvento({
