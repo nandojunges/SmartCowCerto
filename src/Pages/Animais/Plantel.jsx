@@ -859,6 +859,14 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       boxShadow: "none",
       backgroundColor: "transparent",
     },
+    card: {
+      backgroundColor: "#ffffff",
+      borderRadius: "16px",
+      border: "1px solid #e2e8f0",
+      boxShadow:
+        "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+      overflow: "hidden",
+    },
     tableContainer: { overflowX: "auto" },
     table: {
       width: "100%",
@@ -979,8 +987,9 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         )}
 
         <section className="plantel-tabela-wrapper" style={styles.tableSection}>
-          <div style={styles.tableContainer}>
-            <table style={styles.table} onMouseLeave={() => { setHoveredRowId(null); setHoveredColKey(null); }}>
+          <div style={styles.card}>
+            <div style={styles.tableContainer}>
+              <table style={styles.table} onMouseLeave={() => { setHoveredRowId(null); setHoveredColKey(null); }}>
               <colgroup>
                 <col style={{ width: "22%" }} />
                 <col style={{ width: "14%" }} />
@@ -1203,7 +1212,8 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                   </tr>
                 </tfoot>
               )}
-            </table>
+              </table>
+            </div>
           </div>
 
           {carregando && !hasAnimais && <div style={styles.loading}>Carregando plantel...</div>}
