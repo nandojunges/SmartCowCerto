@@ -138,7 +138,7 @@ const buildMonthlyData = ({ eventosIA, dgFinalMap, buckets }) => {
     const data = base.get(bucket.key);
     const diagnosticados = data?.diagnosticados ?? 0;
     const concepcoes = data?.concepcoes ?? 0;
-    const taxa = diagnosticados > 0 ? Math.round((concepcoes / diagnosticados) * 100) : 0;
+    const taxa = diagnosticados > 0 ? Math.round((concepcoes / diagnosticados) * 100) : null;
     return { ...data, taxa };
   });
 };
@@ -235,6 +235,8 @@ function TooltipFixed({ open, anchorRect, data, taxa, onClose }) {
         borderTopColor: TOKENS.colors.gray900,
       };
 
+  const taxaLabel = taxa === null || taxa === undefined ? "ND" : `${taxa}%`;
+
   return (
     <div
       style={{
@@ -288,9 +290,16 @@ function TooltipFixed({ open, anchorRect, data, taxa, onClose }) {
             <span>Total:</span>
             <span>{data.total ?? 0}</span>
           </div>
-          <div style={{ color: "#6EE7B7", display: "flex", justifyContent: "space-between", fontWeight: "700" }}>
+          <div
+            style={{
+              color: taxa === null || taxa === undefined ? TOKENS.colors.gray400 : "#6EE7B7",
+              display: "flex",
+              justifyContent: "space-between",
+              fontWeight: "700",
+            }}
+          >
             <span>Taxa:</span>
-            <span>{taxa}%</span>
+            <span>{taxaLabel}</span>
           </div>
         </div>
 
@@ -319,19 +328,48 @@ const GraficoPerformance = ({ dados, titulo, subtitulo, destaque = false }) => {
   const getY = (taxa) => chartPadding.top + ((100 - taxa) / 100) * innerH;
 
   const getTaxa = (item) => {
-    const total = item.total || 0;
-    const conc = item.concepcoes || 0;
-    const t = item.taxa ?? (total > 0 ? Math.round((conc / total) * 100) : 0);
+    if (item?.taxa === null) return null;
+    if (item?.taxa !== undefined) return Math.max(0, Math.min(100, item.taxa));
+    const diagnosticados = item?.diagnosticados ?? 0;
+    const conc = item?.concepcoes ?? 0;
+    if (diagnosticados <= 0) return null;
+    const t = Math.round((conc / diagnosticados) * 100);
     return Math.max(0, Math.min(100, t));
   };
 
-  const linePoints = dados.map((item, idx) => `${getX(idx)},${getY(getTaxa(item))}`).join(" ");
+  const points = dados.map((item, idx) => {
+    const taxa = getTaxa(item);
+    return {
+      x: getX(idx),
+      y: taxa === null ? null : getY(taxa),
+      taxa,
+      item,
+    };
+  });
+
+  const lineSegments = [];
+  let currentSegment = [];
+  points.forEach((point) => {
+    if (point.taxa === null) {
+      if (currentSegment.length) {
+        lineSegments.push(currentSegment);
+        currentSegment = [];
+      }
+      return;
+    }
+    currentSegment.push(point);
+  });
+  if (currentSegment.length) lineSegments.push(currentSegment);
+
+  const hasAnyTaxa = points.some((point) => point.taxa !== null);
+  const hasGaps = points.some((point) => point.taxa === null);
 
   const polygonPoints = (() => {
-    if (!dados?.length) return "";
+    if (!hasAnyTaxa || hasGaps) return "";
     const baseY = chartHeight - chartPadding.bottom;
     const x0 = getX(0);
     const xN = getX(dados.length - 1);
+    const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
     return `${x0},${baseY} ${linePoints} ${xN},${baseY}`;
   })();
 
@@ -413,10 +451,6 @@ const GraficoPerformance = ({ dados, titulo, subtitulo, destaque = false }) => {
             const taxa = getTaxa(item);
             const alturaBarra = (total / maxTotal) * innerH;
 
-            // ✅ mesmo Y do SVG (conecta exato no ponto)
-            const yPx = getY(taxa);
-            const dotTop = yPx - chartPadding.top;
-
             const isHovered = tooltip?.item?.mes === item.mes;
 
             return (
@@ -434,34 +468,36 @@ const GraficoPerformance = ({ dados, titulo, subtitulo, destaque = false }) => {
                 }}
               >
                 {/* Ponto (hit area) */}
-                <div
-                  onMouseEnter={(e) => openTooltip(e, item, taxa)}
-                  onMouseLeave={closeTooltip}
-                  style={{
-                    position: "absolute",
-                    left: "50%",
-                    top: `${dotTop}px`,
-                    width: "18px",
-                    height: "18px",
-                    transform: "translateX(-50%)",
-                    cursor: "default",
-                    zIndex: 5,
-                  }}
-                >
+                {taxa !== null && (
                   <div
+                    onMouseEnter={(e) => openTooltip(e, item, taxa)}
+                    onMouseLeave={closeTooltip}
                     style={{
-                      width: "10px",
-                      height: "10px",
-                      borderRadius: "50%",
-                      background: TOKENS.colors.success,
-                      border: "2px solid #fff",
-                      boxShadow: TOKENS.shadows.md,
-                      transform: isHovered ? "scale(1.25)" : "scale(1)",
-                      transition: "transform .15s",
-                      margin: "4px auto 0",
+                      position: "absolute",
+                      left: "50%",
+                      top: `${getY(taxa) - chartPadding.top}px`,
+                      width: "18px",
+                      height: "18px",
+                      transform: "translateX(-50%)",
+                      cursor: "default",
+                      zIndex: 5,
                     }}
-                  />
-                </div>
+                  >
+                    <div
+                      style={{
+                        width: "10px",
+                        height: "10px",
+                        borderRadius: "50%",
+                        background: TOKENS.colors.success,
+                        border: "2px solid #fff",
+                        boxShadow: TOKENS.shadows.md,
+                        transform: isHovered ? "scale(1.25)" : "scale(1)",
+                        transition: "transform .15s",
+                        margin: "4px auto 0",
+                      }}
+                    />
+                  </div>
+                )}
 
                 {/* Barra */}
                 <div
@@ -519,16 +555,17 @@ const GraficoPerformance = ({ dados, titulo, subtitulo, destaque = false }) => {
           preserveAspectRatio="none"
         >
           {polygonPoints && <polygon points={polygonPoints} fill="rgba(16, 185, 129, 0.14)" />}
-          {linePoints && (
+          {lineSegments.map((segment, index) => (
             <polyline
-              points={linePoints}
+              key={`segment-${index}`}
+              points={segment.map((point) => `${point.x},${point.y}`).join(" ")}
               fill="none"
               stroke={TOKENS.colors.success}
               strokeWidth="3.2"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-          )}
+          ))}
         </svg>
       </div>
 
@@ -560,7 +597,7 @@ const GraficoPerformance = ({ dados, titulo, subtitulo, destaque = false }) => {
         </div>
       </div>
 
-      <TooltipFixed open={!!tooltip} anchorRect={tooltip?.rect} data={tooltip?.item} taxa={tooltip?.taxa ?? 0} onClose={closeTooltip} />
+      <TooltipFixed open={!!tooltip} anchorRect={tooltip?.rect} data={tooltip?.item} taxa={tooltip?.taxa} onClose={closeTooltip} />
     </div>
   );
 };
@@ -574,6 +611,17 @@ const InseminadorItem = ({ data, onClick, onEdit }) => {
     Técnico: TOKENS.colors.cyan,
     Estagiário: TOKENS.colors.orange,
   };
+
+  const taxaValue = data.taxa_concepcao;
+  const taxaDisponivel = taxaValue !== null && taxaValue !== undefined;
+  const taxaLabel = taxaDisponivel ? `${taxaValue}%` : "ND";
+  const taxaColor = taxaDisponivel
+    ? taxaValue > 70
+      ? TOKENS.colors.success
+      : taxaValue > 50
+      ? TOKENS.colors.warning
+      : TOKENS.colors.danger
+    : TOKENS.colors.gray500;
 
   return (
     <div
@@ -638,15 +686,10 @@ const InseminadorItem = ({ data, onClick, onEdit }) => {
             style={{
               fontSize: "20px",
               fontWeight: "900",
-              color:
-                data.taxa_concepcao > 70
-                  ? TOKENS.colors.success
-                  : data.taxa_concepcao > 50
-                  ? TOKENS.colors.warning
-                  : TOKENS.colors.danger,
+              color: taxaColor,
             }}
           >
-            {data.taxa_concepcao}%
+            {taxaLabel}
           </div>
           <div style={{ fontSize: "10px", color: TOKENS.colors.gray400, fontWeight: "800", textTransform: "uppercase" }}>
             Concepção
@@ -864,7 +907,12 @@ const ModalDetalhes = ({ isOpen, onClose, inseminador, dadosIndividuais, resumo,
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
             {[
               { label: "Total IAs (Ano)", value: resumo?.totalIAs ?? 0, color: TOKENS.colors.primary, bg: TOKENS.colors.primaryLight },
-              { label: "Taxa Média", value: `${resumo?.taxaMedia ?? 0}%`, color: TOKENS.colors.success, bg: TOKENS.colors.successLight },
+              {
+                label: "Taxa Média",
+                value: resumo?.taxaMedia === null || resumo?.taxaMedia === undefined ? "ND" : `${resumo?.taxaMedia}%`,
+                color: resumo?.taxaMedia === null || resumo?.taxaMedia === undefined ? TOKENS.colors.gray500 : TOKENS.colors.success,
+                bg: resumo?.taxaMedia === null || resumo?.taxaMedia === undefined ? TOKENS.colors.gray100 : TOKENS.colors.successLight,
+              },
               { label: "IATF Realizadas", value: resumo?.iatfRealizadas ?? 0, color: TOKENS.colors.purple, bg: TOKENS.colors.purpleLight },
               { label: "Ranking Geral", value: rankingPosicao ? `#${rankingPosicao}` : "—", color: TOKENS.colors.warning, bg: TOKENS.colors.warningLight },
             ].map((stat, i) => (
@@ -990,7 +1038,7 @@ export default function Inseminador() {
               registro: item.registro ?? "",
               observacoes: item.observacoes ?? "",
               ativo: item.ativo ?? true,
-              taxa_concepcao: item.taxa_concepcao ?? 0,
+              taxa_concepcao: item.taxa_concepcao ?? null,
             };
           })
         );
@@ -1017,7 +1065,7 @@ export default function Inseminador() {
       if (mesKey !== currentMonthKey) return;
 
       if (!mapa.has(evento.inseminador_id)) {
-        mapa.set(evento.inseminador_id, { ias_mes: 0, prenhe_mes: 0, vazia_mes: 0, diag_mes: 0, taxa_concepcao: 0 });
+        mapa.set(evento.inseminador_id, { ias_mes: 0, prenhe_mes: 0, vazia_mes: 0, diag_mes: 0, taxa_concepcao: null });
       }
 
       const registro = mapa.get(evento.inseminador_id);
@@ -1034,7 +1082,7 @@ export default function Inseminador() {
     });
 
     mapa.forEach((registro) => {
-      registro.taxa_concepcao = registro.diag_mes > 0 ? Math.round((registro.prenhe_mes / registro.diag_mes) * 100) : 0;
+      registro.taxa_concepcao = registro.diag_mes > 0 ? Math.round((registro.prenhe_mes / registro.diag_mes) * 100) : null;
     });
 
     return mapa;
@@ -1042,16 +1090,22 @@ export default function Inseminador() {
 
   const listaComMetricas = useMemo(() => {
     return lista.map((item) => {
-      const metricas = metricasPorInseminador.get(item.id) ?? { ias_mes: 0, prenhe_mes: 0, vazia_mes: 0, diag_mes: 0, taxa_concepcao: 0 };
-      return { ...item, ...metricas, taxa_concepcao: metricas.taxa_concepcao ?? 0 };
+      const metricas = metricasPorInseminador.get(item.id) ?? { ias_mes: 0, prenhe_mes: 0, vazia_mes: 0, diag_mes: 0, taxa_concepcao: null };
+      return { ...item, ...metricas, taxa_concepcao: metricas.taxa_concepcao ?? null };
     });
   }, [lista, metricasPorInseminador]);
 
   const rankingGeral = useMemo(() => {
+    const existeDG = listaComMetricas.some((item) => item.diag_mes > 0);
     return [...listaComMetricas]
       .filter((i) => i.ativo)
       .sort((a, b) => {
-        if (b.taxa_concepcao !== a.taxa_concepcao) return b.taxa_concepcao - a.taxa_concepcao;
+        if (!existeDG) {
+          return b.ias_mes - a.ias_mes;
+        }
+        const taxaA = a.taxa_concepcao ?? -1;
+        const taxaB = b.taxa_concepcao ?? -1;
+        if (taxaB !== taxaA) return taxaB - taxaA;
         if (b.diag_mes !== a.diag_mes) return b.diag_mes - a.diag_mes;
         return b.ias_mes - a.ias_mes;
       });
@@ -1075,7 +1129,7 @@ export default function Inseminador() {
 
   const resumoIndividuo = useMemo(() => {
     if (!selecionado?.id) {
-      return { totalIAs: 0, taxaMedia: 0, iatfRealizadas: 0 };
+      return { totalIAs: 0, taxaMedia: null, iatfRealizadas: 0 };
     }
     const keys12 = new Set(monthBuckets12.map((bucket) => bucket.key));
     let totalIAs = 0;
@@ -1102,7 +1156,7 @@ export default function Inseminador() {
       }
     });
 
-    const taxaMedia = diagTotal > 0 ? Math.round((prenheTotal / diagTotal) * 100) : 0;
+    const taxaMedia = diagTotal > 0 ? Math.round((prenheTotal / diagTotal) * 100) : null;
 
     return { totalIAs, taxaMedia, iatfRealizadas };
   }, [selecionado, eventosIA, dgFinalMap, monthBuckets12]);
@@ -1174,7 +1228,7 @@ export default function Inseminador() {
                   registro: data.registro ?? item.registro,
                   observacoes: data.observacoes ?? item.observacoes,
                   ativo: data.ativo ?? item.ativo,
-                  taxa_concepcao: data?.taxa_concepcao ?? item.taxa_concepcao ?? 0,
+                  taxa_concepcao: data?.taxa_concepcao ?? item.taxa_concepcao ?? null,
                 }
               : item
           )
@@ -1209,7 +1263,7 @@ export default function Inseminador() {
             registro: inserted?.registro ?? payload.registro ?? "",
             observacoes: inserted?.observacoes ?? payload.observacoes ?? "",
             ativo: inserted?.ativo ?? payload.ativo,
-            taxa_concepcao: inserted?.taxa_concepcao ?? 0,
+            taxa_concepcao: inserted?.taxa_concepcao ?? null,
           },
           ...prev,
         ]);
@@ -1264,7 +1318,11 @@ export default function Inseminador() {
               {destaqueDoMes ? (
                 <>
                   <div style={{ fontSize: "22px", fontWeight: "900", marginBottom: "4px" }}>{destaqueDoMes.nome}</div>
-                  <div style={{ fontSize: "14px", opacity: 0.9 }}>{destaqueDoMes.taxa_concepcao}% taxa de concepção</div>
+                  <div style={{ fontSize: "14px", opacity: 0.9 }}>
+                    {destaqueDoMes.taxa_concepcao === null || destaqueDoMes.taxa_concepcao === undefined
+                      ? "Taxa ND"
+                      : `${destaqueDoMes.taxa_concepcao}% taxa de concepção`}
+                  </div>
                   <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.2)", display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
                     <span>{destaqueDoMes.ias_mes} IAs realizadas</span>
                     <span>{destaqueDoMes.tipo}</span>
@@ -1303,7 +1361,16 @@ export default function Inseminador() {
                         <div style={{ fontSize: "14px", fontWeight: "800", color: TOKENS.colors.gray800 }}>{item.nome}</div>
                         <div style={{ fontSize: "11px", color: TOKENS.colors.gray500 }}>{item.tipo}</div>
                       </div>
-                      <div style={{ fontSize: "16px", fontWeight: "900", color: TOKENS.colors.success }}>{item.taxa_concepcao}%</div>
+                      <div
+                        style={{
+                          fontSize: "16px",
+                          fontWeight: "900",
+                          color:
+                            item.taxa_concepcao === null || item.taxa_concepcao === undefined ? TOKENS.colors.gray500 : TOKENS.colors.success,
+                        }}
+                      >
+                        {item.taxa_concepcao === null || item.taxa_concepcao === undefined ? "ND" : `${item.taxa_concepcao}%`}
+                      </div>
                     </div>
                   ))
                 ) : (
