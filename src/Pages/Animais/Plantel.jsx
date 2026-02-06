@@ -117,49 +117,6 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const abrirFichaAnimal = (animal) => setAnimalSelecionado(animal);
   const fecharFichaAnimal = () => setAnimalSelecionado(null);
 
-  // memo
-  useEffect(() => {
-    MEMO_PLANTEL.data = { animais, lotes, racaMap };
-    MEMO_PLANTEL.lastAt = Date.now();
-  }, [animais, lotes, racaMap]);
-
-  useEffect(() => {
-    if (!fazendaAtualId || !isOnline || !supabase?.channel) return undefined;
-
-    const channel = supabase
-      .channel(`plantel-repro-${fazendaAtualId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "repro_eventos", filter: `fazenda_id=eq.${fazendaAtualId}` },
-        async (payload) => {
-          const tipo = payload?.new?.tipo;
-          if (!["DG", "IA", "PARTO", "SECAGEM"].includes(tipo)) return;
-
-          MEMO_PLANTEL.data = null;
-          MEMO_PLANTEL.lastAt = 0;
-
-          try {
-            const animaisAtualizados = await carregarAnimais();
-            await kvSet(CACHE_PLANTEL_BUNDLE, {
-              animais: animaisAtualizados,
-              lotes,
-              racaMap,
-              savedAt: Date.now(),
-              fazenda_id: fazendaAtualId,
-            });
-            await kvSet(CACHE_ANIMAIS, animaisAtualizados);
-          } catch (err) {
-            console.error("Erro ao atualizar plantel após evento repro:", err);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [CACHE_ANIMAIS, CACHE_PLANTEL_BUNDLE, carregarAnimais, fazendaAtualId, isOnline, lotes, racaMap]);
-
   /* =========================
      Loaders (mantidos)
   ========================= */
@@ -256,6 +213,49 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     }
     return Boolean(cache);
   }, [CACHE_ANIMAIS, CACHE_FALLBACK, CACHE_PLANTEL_BUNDLE]);
+
+  // memo
+  useEffect(() => {
+    MEMO_PLANTEL.data = { animais, lotes, racaMap };
+    MEMO_PLANTEL.lastAt = Date.now();
+  }, [animais, lotes, racaMap]);
+
+  useEffect(() => {
+    if (!fazendaAtualId || !isOnline || !supabase?.channel) return undefined;
+
+    const channel = supabase
+      .channel(`plantel-repro-${fazendaAtualId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "repro_eventos", filter: `fazenda_id=eq.${fazendaAtualId}` },
+        async (payload) => {
+          const tipo = payload?.new?.tipo;
+          if (!["DG", "IA", "PARTO", "SECAGEM"].includes(tipo)) return;
+
+          MEMO_PLANTEL.data = null;
+          MEMO_PLANTEL.lastAt = 0;
+
+          try {
+            const animaisAtualizados = await carregarAnimais();
+            await kvSet(CACHE_PLANTEL_BUNDLE, {
+              animais: animaisAtualizados,
+              lotes,
+              racaMap,
+              savedAt: Date.now(),
+              fazenda_id: fazendaAtualId,
+            });
+            await kvSet(CACHE_ANIMAIS, animaisAtualizados);
+          } catch (err) {
+            console.error("Erro ao atualizar plantel após evento repro:", err);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [CACHE_ANIMAIS, CACHE_PLANTEL_BUNDLE, carregarAnimais, fazendaAtualId, isOnline, lotes, racaMap]);
 
   useEffect(() => {
     if (!fazendaAtualId) {

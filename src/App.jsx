@@ -104,7 +104,7 @@ export default function App() {
             >
                 <Route path="/inicio" element={<Inicio />} />
                 <Route path="/animais" element={<Animais />} />
-                <Route path="/bezerras" element={<Bezerras />} />
+                <Route path="/bezerras/*" element={<Bezerras />} />
                 <Route path="/reproducao" element={<Reproducao />} />
                 <Route path="/leite" element={<Leite />} />
                 <Route path="/saude" element={<Saude />} />
