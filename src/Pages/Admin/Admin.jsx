@@ -38,23 +38,16 @@ export default function Admin() {
         }
 
         const user = session.user;
-        let role = null;
+        const { data: perfil, error: perfilError } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single();
 
-        // 2) Regra extra: teu e-mail sempre é admin
-        if (user.email === "ferjunges@outlook.com") {
-          role = "admin";
-        } else {
-          const { data: perfil, error: perfilError } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", user.id)
-            .single();
-
-          if (perfilError) {
-            console.warn("Erro ao buscar perfil:", perfilError.message);
-          }
-          role = perfil?.role || null;
+        if (perfilError) {
+          console.warn("Erro ao buscar perfil:", perfilError.message);
         }
+        const role = perfil?.role || null;
 
         // se não for admin → manda embora
         if (role !== "admin") {
