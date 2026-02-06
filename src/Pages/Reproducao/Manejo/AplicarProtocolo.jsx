@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
 import { toast } from "react-toastify";
 import { supabase } from "../../../lib/supabaseClient";
@@ -120,26 +120,36 @@ const InputGroup = ({ label, children, error, icon: Icon }) => (
   </div>
 );
 
-const TextInput = ({ value, onChange, placeholder, type = "text", hasError, onClick }) => (
-  <input
-    type={type}
-    value={value}
-    onChange={onChange}
-    onClick={onClick}
-    placeholder={placeholder}
-    style={{
-      width: "100%", padding: "10px 14px", fontSize: "14px",
-      borderRadius: theme.radius.md,
-      border: `1px solid ${hasError ? theme.colors.danger[300] : theme.colors.slate[200]}`,
-      backgroundColor: "#fff", color: theme.colors.slate[800],
-      outline: "none", transition: "all 0.2s",
-      boxShadow: hasError ? `0 0 0 3px ${theme.colors.danger[50]}` : "none",
-      ":focus": {
-        borderColor: theme.colors.primary[500],
-        boxShadow: `0 0 0 3px ${theme.colors.primary[100]}`,
-      },
-    }}
-  />
+const TextInput = ({ value, onChange, placeholder, type = "text", hasError, actionIcon: ActionIcon, onActionClick }) => (
+  <div style={{ position: "relative" }}>
+    <input
+      type={type}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      style={{
+        width: "100%", padding: "10px 40px 10px 14px", fontSize: "14px",
+        borderRadius: theme.radius.md,
+        border: `1px solid ${hasError ? theme.colors.danger[300] : theme.colors.slate[200]}`,
+        backgroundColor: "#fff", color: theme.colors.slate[800],
+        outline: "none", transition: "all 0.2s",
+        boxShadow: hasError ? `0 0 0 3px ${theme.colors.danger[50]}` : "none",
+      }}
+    />
+    {ActionIcon && (
+      <button
+        type="button"
+        onClick={onActionClick}
+        style={{
+          position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)",
+          border: "none", background: "transparent", color: theme.colors.slate[500],
+          display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: "4px",
+        }}
+      >
+        <ActionIcon />
+      </button>
+    )}
+  </div>
 );
 
 const CardEtapa = ({ etapa, isFirst, isLast }) => (
@@ -249,7 +259,6 @@ const selectStyles = {
 
 export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) {
   const { fazendaAtualId } = useFazenda();
-  const norm = (s) => String(s || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase();
   const [tipo, setTipo] = useState("IATF");
   const [protId, setProtId] = useState("");
   const [dataInicio, setDataInicio] = useState(todayBR());
@@ -257,7 +266,6 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
   const [criarAgenda, setCriarAgenda] = useState(true);
   const [erro, setErro] = useState("");
   const [touched, setTouched] = useState({});
-  const [salvando, setSalvando] = useState(false);
   const hiddenDateRef = useRef(null);
   const hiddenTimeRef = useRef(null);
 
@@ -267,15 +275,22 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
     setErro("");
   }, [tipo]);
 
+  const normalizeTipo = useCallback((value) => {
+    const t = String(value || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase().replace(/[\s_-]/g, "");
+    if (t.includes("IATF")) return "IATF";
+    if (t.includes("PRE") || t.includes("PRESYNC")) return "PRESYNC";
+    return "";
+  }, []);
+
   const opcoes = useMemo(() => {
-    const t = norm(tipo);
+    const t = normalizeTipo(tipo);
     return (Array.isArray(protocolos) ? protocolos : []).filter((p) => {
-      const tp = norm(p?.tipo);
+      const tp = normalizeTipo(p?.tipo);
       const fazendaOk = !p?.fazenda_id || String(p.fazenda_id) === String(fazendaAtualId);
-      const tipoOk = t === "IATF" ? tp === "IATF" : tp !== "IATF";
-      return fazendaOk && tipoOk;
+      const ativoOk = p?.ativo !== false;
+      return fazendaOk && ativoOk && tp === t;
     });
-  }, [protocolos, tipo, fazendaAtualId]);
+  }, [protocolos, tipo, fazendaAtualId, normalizeTipo]);
 
   const protSel = useMemo(() => 
     opcoes.find((p) => getProtoId(p) === protId) || null,
@@ -308,7 +323,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
         detalhe,
       };
     }).filter((et) => et.dataPrevista || et.detalhe || Number.isFinite(et.offset));
-  }, [protSel, horaInicio, dataInicio]);
+  }, [protSel, dataInicio]);
 
   const protocoloOptions = useMemo(() => 
     opcoes.map((p) => ({ value: getProtoId(p), label: p.nome, data: p })),
@@ -328,7 +343,6 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
     if (!isValidHour(horaInicio)) return setErro("Hora inválida.");
 
     try {
-      setSalvando(true);
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
 
@@ -357,7 +371,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
       const { data: row, error } = await supabase
         .from("repro_aplicacoes")
         .insert({
-          user_id: user.id,
+          user_id: userId,
           fazenda_id: fazendaAtualId,
           animal_id: animalId,
           protocolo_id: protId,
@@ -379,20 +393,6 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
         throw error;
       }
 
-      const campoSituacaoRepro =
-        ["situacao_reprodutiva", "situacao_repr", "situacao_repro", "status_reprodutivo"].find((campo) => campo in (animal || {}))
-        || "situacao_reprodutiva";
-
-      const situacaoRepro = tipo === "IATF" ? "EM_IATF" : "EM_PRE";
-
-      const { error: updateAnimalError } = await supabase
-        .from("animais")
-        .update({ [campoSituacaoRepro]: situacaoRepro })
-        .eq("id", animalId)
-        .eq("fazenda_id", fazendaAtualId);
-
-      if (updateAnimalError) throw updateAnimalError;
-
       setErro("");
       onSubmit?.({ kind: "PROTOCOLO_APLICADO", aplicacao: row });
       toast.success("Protocolo aplicado");
@@ -408,8 +408,6 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
         return;
       }
       setErro(`Não foi possível aplicar o protocolo. ${e?.message || "Tente novamente."}`);
-    } finally {
-      setSalvando(false);
     }
   };
 
@@ -472,7 +470,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
           </InputGroup>
         </div>
 
-        <div style={{ gridColumn: "span 6" }}>
+        <div style={{ gridColumn: "span 7" }}>
           <InputGroup 
             label="Data de Início" 
             icon={Icons.calendar}
@@ -483,7 +481,8 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
               onChange={(e) => setDataInicio(maskDateBackfill(e.target.value))}
               placeholder="dd/mm/aaaa"
               hasError={touched.data && !isValidBRDate(dataInicio)}
-              onClick={() => hiddenDateRef.current?.showPicker?.()}
+              actionIcon={Icons.calendar}
+              onActionClick={() => hiddenDateRef.current?.showPicker?.()}
             />
             <input
               ref={hiddenDateRef}
@@ -496,7 +495,7 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
           </InputGroup>
         </div>
 
-        <div style={{ gridColumn: "span 6" }}>
+        <div style={{ gridColumn: "span 5" }}>
           <InputGroup 
             label="Horário Padrão" 
             icon={Icons.clock}
@@ -507,7 +506,8 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
               onChange={(e) => setHoraInicio(maskHourBackfill(e.target.value))}
               placeholder="HH:mm"
               hasError={touched.hora && !isValidHour(horaInicio)}
-              onClick={() => hiddenTimeRef.current?.showPicker?.()}
+              actionIcon={Icons.clock}
+              onActionClick={() => hiddenTimeRef.current?.showPicker?.()}
             />
             <input
               ref={hiddenTimeRef}
