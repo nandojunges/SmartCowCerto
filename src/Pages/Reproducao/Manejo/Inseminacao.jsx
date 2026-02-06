@@ -190,6 +190,7 @@ export default function Inseminacao({
   const [evidencia, setEvidencia] = useState("");
   const [tipoSemen, setTipoSemen] = useState("Convencional");
   const [palhetas, setPalhetas] = useState(1);
+  const isVinculadoProtocolo = Boolean(initialData?.protocolo_aplicacao_id);
 
   // Sort touros
   const tourosOrdenados = useMemo(() => {
@@ -289,6 +290,22 @@ export default function Inseminacao({
 
   return (
     <form id="form-IA" onSubmit={(e) => e.preventDefault()} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {isVinculadoProtocolo && (
+        <div style={{
+          alignSelf: "flex-start",
+          padding: "6px 10px",
+          borderRadius: "999px",
+          background: theme.colors.primary[50],
+          color: theme.colors.primary[700],
+          fontSize: "11px",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          border: `1px solid ${theme.colors.primary[200]}`,
+        }}>
+          Vinculado ao protocolo
+        </div>
+      )}
       
       {/* SEÇÃO 1: DADOS PRINCIPAIS */}
       <div style={{
