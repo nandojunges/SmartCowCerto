@@ -74,6 +74,33 @@ const LABEL_DG60 = "DG 60d";
 const LABEL_AVANC = "Avançado (>90d)";
 const LABEL_OUTRO = "Outro";
 const LABEL_SEMIA = "— sem IA —";
+const PERMITE_NAO_VISTA_CEDO = true;
+
+const validarDGJanela = ({ diasDesdeIA, tipoExame, resultado, dg30, dg60, dopplerMin, avancadoMin, permiteNaoVistaCedo }) => {
+  if (diasDesdeIA == null) {
+    return { isValido: false, motivoBloqueio: "Sem IA registrada para calcular a janela do diagnóstico." };
+  }
+
+  const bloquearConclusivo = !permiteNaoVistaCedo || resultado !== "Não vista";
+  if (diasDesdeIA < dopplerMin && bloquearConclusivo) {
+    return { isValido: false, motivoBloqueio: `Diagnóstico conclusivo exige mínimo de ${dopplerMin} dias pós-IA.` };
+  }
+
+  const minPorTipo = {
+    [LABEL_DOPPLER]: dopplerMin,
+    [LABEL_DG30]: dg30[0],
+    [LABEL_DG60]: dg60[0],
+    [LABEL_AVANC]: avancadoMin,
+    [LABEL_OUTRO]: dopplerMin,
+  };
+
+  const minimo = minPorTipo[tipoExame];
+  if (minimo && diasDesdeIA < minimo && bloquearConclusivo) {
+    return { isValido: false, motivoBloqueio: `${tipoExame} exige mínimo de ${minimo} dias pós-IA.` };
+  }
+
+  return { isValido: true, motivoBloqueio: "" };
+};
 
 /* =========================================================
    SUB-COMPONENTES
@@ -262,7 +289,6 @@ export default function Diagnostico({
   const dtIA = useMemo(() => parseAnyDate(animal?.ultima_ia), [animal]);
   const dtExame = useMemo(() => parseBR(data) || today(), [data]);
   const diasDesdeIA = useMemo(() => (dtIA ? diffDays(dtExame, dtIA) : null), [dtIA, dtExame]);
-
   // Sugestão automática tipo exame
   const tipoDefault = useMemo(() => {
     if (diasDesdeIA == null) return LABEL_SEMIA;
@@ -276,6 +302,16 @@ export default function Diagnostico({
   const temIAValida = !!dtIA;
 
   const [tipoExame, setTipoExame] = useState(tipoDefault);
+  const { isValido: isDGValido, motivoBloqueio } = useMemo(() => validarDGJanela({
+    diasDesdeIA,
+    tipoExame,
+    resultado,
+    dg30,
+    dg60,
+    dopplerMin,
+    avancadoMin,
+    permiteNaoVistaCedo: PERMITE_NAO_VISTA_CEDO,
+  }), [diasDesdeIA, tipoExame, resultado, dg30, dg60, dopplerMin, avancadoMin]);
 
   useEffect(() => {
     if (!temIAValida) { setTipoExame(LABEL_SEMIA); return; }
@@ -288,6 +324,8 @@ export default function Diagnostico({
     onChangeDraft?.({
       kind: "DG",
       dg: resultado,
+      isValido: isDGValido,
+      motivoBloqueio,
       data,
       extras: {
         tipoExame,
@@ -295,7 +333,7 @@ export default function Diagnostico({
         comentario: comentario?.trim() || "",
       },
     });
-  }, [resultado, data, tipoExame, comentario, diasDesdeIA, onChangeDraft]);
+  }, [resultado, data, tipoExame, comentario, diasDesdeIA, isDGValido, motivoBloqueio, onChangeDraft]);
 
   const tipoOptions = useMemo(() => {
     if (!temIAValida) return [{ value: LABEL_SEMIA, label: LABEL_SEMIA }];
@@ -308,6 +346,9 @@ export default function Diagnostico({
 
   // Avisos
   const avisos = [];
+  if (temIAValida && !isDGValido && motivoBloqueio) {
+    avisos.push({ type: "error", title: "Bloqueio de janela mínima", text: motivoBloqueio });
+  }
   if (!temIAValida) {
     avisos.push({ type: "error", title: "Sem IA registrada", text: "Registre uma inseminação antes do diagnóstico." });
   } else {
@@ -317,6 +358,9 @@ export default function Diagnostico({
       } else {
         avisos.push({ type: "warning", title: "Muito cedo", text: `IA há apenas ${diasDesdeIA} dias. Mínimo recomendado: ${dopplerMin} dias (Doppler) ou ${dg30[0]} dias (DG30).` });
       }
+    }
+    if (tipoExame === LABEL_DG30 && diasDesdeIA > dg30[1]) {
+      avisos.push({ type: "info", title: "DG30 tardio", text: `IA há ${diasDesdeIA} dias. DG30 tardio permitido como primeiro diagnóstico.` });
     }
     if (diasDesdeIA > dg60[1] && diasDesdeIA < avancadoMin) {
       avisos.push({ type: "info", title: "DG tardia", text: `IA há ${diasDesdeIA} dias. Fora da janela DG60. Considere exame avançado.` });
