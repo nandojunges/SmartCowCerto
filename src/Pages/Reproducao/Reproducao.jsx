@@ -18,6 +18,7 @@ export default function Reproducao() {
   const [eventosRepro, setEventosRepro] = useState([]);
   const [carregandoEventos, setCarregandoEventos] = useState(false);
   const [aplicacoesAtivasMap, setAplicacoesAtivasMap] = useState({});
+  const [bulkManejoOpen, setBulkManejoOpen] = useState(false);
 
   // =========================
   // Estilos (otimizado p/ caber + reduzir margens)
@@ -40,9 +41,37 @@ export default function Reproducao() {
       display: "flex",
       alignItems: "center",
       gap: "12px",
+      justifyContent: "space-between",
       marginBottom: "10px",
       fontSize: "13px",
       color: "#64748b",
+    },
+    statusBarLeft: {
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+      flexWrap: "wrap",
+    },
+    statusBarActions: {
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+    },
+    bulkBtn: {
+      padding: "6px 12px",
+      borderRadius: "9999px",
+      border: "1px solid #cbd5e1",
+      backgroundColor: "#ffffff",
+      color: "#0f172a",
+      fontSize: "12.5px",
+      fontWeight: 700,
+      cursor: "pointer",
+      transition: "all 0.2s ease",
+      whiteSpace: "nowrap",
+    },
+    bulkBtnDisabled: {
+      opacity: 0.5,
+      cursor: "not-allowed",
     },
 
     card: {
@@ -551,19 +580,46 @@ export default function Reproducao() {
   const conteudoTabela = (
     <>
       <div style={styles.statusBar}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              backgroundColor: carregando ? "#f59e0b" : "#22c55e",
-            }}
-          />
-          <span>{carregando ? "Carregando..." : `${linhas.length} animais`}</span>
+        <div style={styles.statusBarLeft}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                backgroundColor: carregando ? "#f59e0b" : "#22c55e",
+              }}
+            />
+            <span>{carregando ? "Carregando..." : `${linhas.length} animais`}</span>
+          </div>
+          <span style={{ color: "#cbd5e1" }}>•</span>
+          <span>{fazendaAtualId ? "Dados atualizados" : "Selecione uma fazenda"}</span>
         </div>
-        <span style={{ color: "#cbd5e1" }}>•</span>
-        <span>{fazendaAtualId ? "Dados atualizados" : "Selecione uma fazenda"}</span>
+        <div style={styles.statusBarActions}>
+          <button
+            type="button"
+            style={{
+              ...styles.bulkBtn,
+              ...((!fazendaAtualId || linhas.length === 0) ? styles.bulkBtnDisabled : null),
+            }}
+            onClick={() => {
+              if (!fazendaAtualId || linhas.length === 0) return;
+              setBulkManejoOpen(true);
+            }}
+            onMouseEnter={(e) => {
+              if (!fazendaAtualId || linhas.length === 0) return;
+              e.currentTarget.style.background = "#f8fafc";
+              e.currentTarget.style.borderColor = "#94a3b8";
+            }}
+            onMouseLeave={(e) => {
+              if (!fazendaAtualId || linhas.length === 0) return;
+              e.currentTarget.style.background = "#ffffff";
+              e.currentTarget.style.borderColor = "#cbd5e1";
+            }}
+          >
+            + Ação Coletiva
+          </button>
+        </div>
       </div>
 
       {TabelaModerna}
@@ -607,11 +663,23 @@ export default function Reproducao() {
       </div>
 
       <Manejo
-        open={!!animalSelecionado}
+        open={!!animalSelecionado || bulkManejoOpen}
         animal={animalSelecionado}
+        bulkMode={bulkManejoOpen}
+        bulkAnimals={linhas.map((linha) => ({
+          ...(linha.raw || {}),
+          id: linha.raw?.id ?? linha.animalId ?? null,
+          animal_id: linha.raw?.animal_id ?? linha.animalId ?? null,
+          animalId: linha.animalId,
+          numero: linha.numero,
+          brinco: linha.brinco,
+        }))}
         eventosRepro={eventosRepro}
         carregandoEventos={carregandoEventos}
-        onClose={() => setAnimalSelecionado(null)}
+        onClose={() => {
+          setAnimalSelecionado(null);
+          setBulkManejoOpen(false);
+        }}
         onSaved={async () => {
           await carregarTabela();
           await carregarAplicacoesAtivas();
