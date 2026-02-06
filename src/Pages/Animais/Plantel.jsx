@@ -844,12 +844,15 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     manejosSection: {
       marginBottom: "24px",
       overflow: "visible",
-      borderRadius: 0,
-      border: "none",
-      boxShadow: "none",
-      backgroundColor: "transparent",
+      borderRadius: "12px",
+      border: "1px solid #e2e8f0",
+      boxShadow: "0 8px 20px rgba(15,23,42,0.08)",
+      backgroundColor: "#ffffff",
+      padding: "16px",
     },
     tableSection: {
+      marginTop: 0,
+      padding: 0,
       overflow: "visible",
       borderRadius: 0,
       border: "none",
@@ -965,9 +968,9 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         {loteAviso && <div style={{...styles.alert, ...styles.alertWarn}}>{loteAviso}</div>}
         {offlineAviso && <div style={{...styles.alert, backgroundColor: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe"}}>{offlineAviso}</div>}
 
-        <div style={styles.manejosSection}>
+        <section className="manejos-pendentes-wrapper" style={styles.manejosSection}>
           <ManejosPendentes />
-        </div>
+        </section>
 
         {atualizando && hasAnimais && (
           <div style={{padding: "0 24px 16px", fontSize: "13px", color: "#64748b"}}>
@@ -975,7 +978,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
           </div>
         )}
 
-        <div style={styles.tableSection}>
+        <section className="plantel-tabela-wrapper" style={styles.tableSection}>
           <div style={styles.tableContainer}>
             <table style={styles.table} onMouseLeave={() => { setHoveredRowId(null); setHoveredColKey(null); }}>
               <colgroup>
@@ -1204,7 +1207,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
           </div>
 
           {carregando && !hasAnimais && <div style={styles.loading}>Carregando plantel...</div>}
-        </div>
+        </section>
       </div>
 
       {animalSelecionado && <FichaAnimal animal={animalSelecionado} onClose={fecharFichaAnimal} />}

@@ -471,6 +471,26 @@ export default function Animais() {
   const cardMaxHeight = "calc(100vh - 2 * 24px)";
   const hasAnimais = animaisAtivos.length > 0 || animaisInativos.length > 0;
 
+  const isPlantelTab = abaAtiva === "todos";
+  const cardBaseStyle = {
+    backgroundColor: "#f8fafc",
+    borderRadius: 18,
+    boxShadow: "0 12px 30px rgba(15,23,42,0.18)",
+    padding: "16px 18px 18px",
+    maxHeight: cardMaxHeight,
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+  };
+  const plantelWrapperStyle = {
+    ...cardBaseStyle,
+    backgroundColor: "transparent",
+    borderRadius: 0,
+    boxShadow: "none",
+    padding: 0,
+    overflow: "visible",
+  };
+
   return (
     <div style={{ minHeight: "100vh", overflow: "hidden" }}>
       <BarraLateral abaAtiva={abaAtiva} setAbaAtiva={setAbaAtiva} />
@@ -484,18 +504,7 @@ export default function Animais() {
           paddingBottom: 24,
         }}
       >
-        <div
-          style={{
-            backgroundColor: "#f8fafc",
-            borderRadius: 18,
-            boxShadow: "0 12px 30px rgba(15,23,42,0.18)",
-            padding: "16px 18px 18px",
-            maxHeight: cardMaxHeight,
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
+        <div style={isPlantelTab ? plantelWrapperStyle : cardBaseStyle}>
           <div style={{ flex: 1, overflowY: "auto" }}>
             {carregando && hasAnimais && (
               <div className="px-4 pb-2 text-xs font-medium text-gray-500">
