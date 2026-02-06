@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "react-toastify";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 import ModalNovoProtocolo from "./ModalNovoProtocolo";
@@ -304,19 +305,36 @@ export default function Protocolos() {
       setEditando(null);
     } catch (e) {
       console.error(e);
-      alert("Erro ao salvar: " + (e?.message || "desconhecido"));
+      toast.error(`Erro ao salvar: ${e?.message || "desconhecido"}`);
     }
   };
 
   const handleExcluir = async (prot) => {
     if (!window.confirm(`Excluir "${prot.nome}" permanentemente?`)) return;
     try {
+      if (!fazendaAtualId) throw new Error("Fazenda não selecionada");
+      const { count, error: countError } = await supabase
+        .from("repro_aplicacoes")
+        .select("id", { count: "exact", head: true })
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("protocolo_id", prot.id)
+        .eq("status", "ATIVO");
+
+      if (countError) throw countError;
+      if ((count ?? 0) > 0) {
+        toast.error("Protocolo em uso. Não é permitido apagar.");
+        return;
+      }
+
       const { error } = await supabase.from("repro_protocolos").delete().eq("id", prot.id);
-      if (error) throw error;
+      if (error) {
+        toast.error("Protocolo em uso. Não é permitido apagar.");
+        return;
+      }
       setProtocolos((prev) => prev.filter((p) => p.id !== prot.id));
     } catch (e) {
       console.error(e);
-      alert("Erro ao excluir");
+      toast.error("Protocolo em uso. Não é permitido apagar.");
     }
   };
 
@@ -341,7 +359,7 @@ export default function Protocolos() {
       setProtocolos((prev) => [{ ...data, etapas: parseEtapas(data.etapas) }, ...prev]);
     } catch (e) {
       console.error(e);
-      alert("Erro ao duplicar");
+      toast.error("Erro ao duplicar");
     }
   };
 
