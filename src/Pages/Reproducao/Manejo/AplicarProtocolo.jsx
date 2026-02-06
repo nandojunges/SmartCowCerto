@@ -257,7 +257,7 @@ const selectStyles = {
   menuPortal: (base) => ({ ...base, zIndex: 9999 }),
 };
 
-export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) {
+export default function AplicarProtocolo({ animal, protocolos = [], onSubmit, bulkMode = false }) {
   const { fazendaAtualId } = useFazenda();
   const [tipo, setTipo] = useState("IATF");
   const [protId, setProtId] = useState("");
@@ -337,10 +337,23 @@ export default function AplicarProtocolo({ animal, protocolos = [], onSubmit }) 
     setTouched({ data: true, hora: true, protocolo: true });
     
     if (!fazendaAtualId) return setErro("Fazenda não identificada. Tente novamente.");
-    if (!getAnimalId(animal)) return setErro("Animal inválido (sem identificador).");
     if (!protId) return setErro("Escolha um protocolo.");
     if (!isValidBRDate(dataInicio)) return setErro("Data de início inválida.");
     if (!isValidHour(horaInicio)) return setErro("Hora inválida.");
+
+    if (bulkMode) {
+      setErro("");
+      onSubmit?.({
+        kind: "PROTOCOLO",
+        protocolo_id: protId,
+        data: dataInicio,
+        horaInicio,
+        tipo,
+      });
+      return;
+    }
+
+    if (!getAnimalId(animal)) return setErro("Animal inválido (sem identificador).");
 
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();

@@ -86,9 +86,9 @@ async function insertReproEvento(payload) {
    ========================================================= */
 
 // Navegação lateral tipo "Rail" - muito usada em software profissional (Linear, Figma, etc)
-const NavItem = ({ icon: Icon, label, description, active, onClick, color }) => (
+const NavItem = ({ icon: Icon, label, description, active, onClick, disabled }) => (
   <button
-    onClick={onClick}
+    onClick={disabled ? undefined : onClick}
     style={{
       display: "flex",
       width: "100%",
@@ -100,16 +100,16 @@ const NavItem = ({ icon: Icon, label, description, active, onClick, color }) => 
       border: "none",
       borderLeft: active ? `2px solid ${theme.colors.accent[600]}` : "2px solid transparent",
       borderRadius: `0 ${theme.radius.md} ${theme.radius.md} 0`,
-      cursor: "pointer",
+      cursor: disabled ? "not-allowed" : "pointer",
       textAlign: "left",
       transition: "all 0.15s ease",
-      opacity: active ? 1 : 0.7,
+      opacity: disabled ? 0.4 : (active ? 1 : 0.7),
     }}
     onMouseEnter={(e) => {
-      if (!active) e.currentTarget.style.background = theme.colors.slate[100];
+      if (!active && !disabled) e.currentTarget.style.background = theme.colors.slate[100];
     }}
     onMouseLeave={(e) => {
-      if (!active) e.currentTarget.style.background = "transparent";
+      if (!active && !disabled) e.currentTarget.style.background = "transparent";
     }}
   >
     <div style={{ 
@@ -145,7 +145,7 @@ const NavItem = ({ icon: Icon, label, description, active, onClick, color }) => 
       </div>
     </div>
     
-    {active && (
+    {active && !disabled && (
       <div style={{ color: theme.colors.accent[600], marginTop: "2px" }}>
         <Icons.chevronRight />
       </div>
@@ -153,7 +153,15 @@ const NavItem = ({ icon: Icon, label, description, active, onClick, color }) => 
   </button>
 );
 
-export default function VisaoGeral({ open = false, animal = null, initialTab = null, onClose, onSaved }) {
+export default function VisaoGeral({
+  open = false,
+  animal = null,
+  initialTab = null,
+  bulkMode = false,
+  bulkAnimals = [],
+  onClose,
+  onSaved,
+}) {
   const { fazendaAtualId } = useFazenda();
   const animalId = animal?.id || animal?.animal_id;
   const isDebug = Boolean(import.meta.env.DEV);
@@ -168,6 +176,26 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
   const [draftIA, setDraftIA] = useState(null);
   const [erroSalvar, setErroSalvar] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [bulkSearch, setBulkSearch] = useState("");
+  const [bulkSelectedIds, setBulkSelectedIds] = useState([]);
+  const [bulkReady, setBulkReady] = useState(false);
+
+  const bulkActive = Boolean(bulkMode);
+
+  const resolveAnimalId = (item) => item?.animal_id ?? item?.id ?? item?.animalId ?? null;
+
+  const bulkList = (Array.isArray(bulkAnimals) ? bulkAnimals : [])
+    .map((item) => ({
+      ...item,
+      _bulkId: resolveAnimalId(item),
+    }))
+    .filter((item) => item._bulkId);
+
+  const bulkSelectedAnimals = bulkList.filter((item) =>
+    bulkSelectedIds.includes(String(item._bulkId))
+  );
+
+  const bulkPreviewAnimal = bulkSelectedAnimals[0] || null;
 
   useEffect(() => {
     if (open) {
@@ -187,6 +215,17 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+
+  useEffect(() => {
+    if (open && bulkActive) {
+      setSelectedType(null);
+      setDraftIA(null);
+      setErroSalvar("");
+      setBulkSearch("");
+      setBulkSelectedIds([]);
+      setBulkReady(false);
+    }
+  }, [open, bulkActive]);
 
   useEffect(() => {
     const fetchInseminadores = async () => {
@@ -289,6 +328,9 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
     setDraftIA(null);
     setErroSalvar("");
     setSalvando(false);
+    setBulkSearch("");
+    setBulkSelectedIds([]);
+    setBulkReady(false);
     onClose?.();
   };
 
@@ -297,13 +339,27 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
     handleClose();
   };
 
+  const insertReproEventos = async (payloads) => {
+    const sanitizedPayloads = payloads.map((item) => sanitizeReproEventoPayload(item));
+    const { error } = await supabase.from("repro_eventos").insert(sanitizedPayloads);
+    if (error) throw error;
+  };
+
   const handleSubmit = async (payload) => {
-    if (!fazendaAtualId || !animalId) {
+    const hasBulkSelection = bulkActive && bulkReady && bulkSelectedAnimals.length > 0;
+    const baseAnimalId = animalId;
+
+    if (!fazendaAtualId || (!hasBulkSelection && !baseAnimalId)) {
       console.warn("Manejo salvar: fazendaAtualId", fazendaAtualId, "animal", animal);
       setErroSalvar("Não foi possível salvar: fazenda ou animal não identificado.");
       return;
     }
-    
+
+    if (bulkActive && !hasBulkSelection) {
+      setErroSalvar("Selecione ao menos 1 animal para a ação coletiva.");
+      return;
+    }
+
     try {
       setErroSalvar("");
       setSalvando(true);
@@ -317,22 +373,36 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
         const dataEvento = normalizePayloadDate(payload.data);
         if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
         const mapa = { Prenhe: "POSITIVO", Vazia: "NEGATIVO", "Não vista": "PENDENTE" };
-        await insertReproEvento({
-          fazenda_id: fazendaAtualId,
-          animal_id: animalId,
-          tipo: "DG",
-          data_evento: dataEvento,
-          user_id: userId,
-          resultado_dg: mapa[payload.dg] || "PENDENTE",
-          observacoes: payload?.extras?.obs,
-          meta: payload?.extras,
-        });
+        if (hasBulkSelection) {
+          await insertReproEventos(
+            bulkSelectedAnimals.map((item) => ({
+              fazenda_id: fazendaAtualId,
+              animal_id: resolveAnimalId(item),
+              tipo: "DG",
+              data_evento: dataEvento,
+              user_id: userId,
+              resultado_dg: mapa[payload.dg] || "PENDENTE",
+              observacoes: payload?.extras?.obs,
+              meta: payload?.extras,
+            }))
+          );
+        } else {
+          await insertReproEvento({
+            fazenda_id: fazendaAtualId,
+            animal_id: baseAnimalId,
+            tipo: "DG",
+            data_evento: dataEvento,
+            user_id: userId,
+            resultado_dg: mapa[payload.dg] || "PENDENTE",
+            observacoes: payload?.extras?.obs,
+            meta: payload?.extras,
+          });
+        }
       } else if (payload.kind === "IA") {
         const dataEvento = normalizePayloadDate(payload.data);
         if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
-        await insertReproEvento({
+        const baseEvento = {
           fazenda_id: fazendaAtualId,
-          animal_id: animalId,
           tipo: "IA",
           data_evento: dataEvento,
           user_id: userId,
@@ -344,20 +414,33 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
           palhetas: payload?.extras?.palhetas ?? null,
           observacoes: payload.obs || null,
           meta: payload?.extras || null,
-        });
+        };
+
+        if (hasBulkSelection) {
+          await insertReproEventos(
+            bulkSelectedAnimals.map((item) => ({
+              ...baseEvento,
+              animal_id: resolveAnimalId(item),
+            }))
+          );
+        } else {
+          await insertReproEvento({
+            ...baseEvento,
+            animal_id: baseAnimalId,
+          });
+        }
       } else if (payload.kind === "PROTOCOLO_APLICADO") {
         if (!payload?.aplicacao) {
           throw new Error("Aplicação de protocolo não retornada.");
         }
         toast.success("Protocolo aplicado com sucesso");
       } else if (payload.kind === "PROTOCOLO") {
-        const animalPayloadId = payload?.animal_id || animalId;
         const protocoloId = payload?.protocolo_id;
         const dataInicio = normalizePayloadDate(payload?.data);
         const horaInicio = normalizePayloadTime(payload?.horaInicio);
 
-        if (!animalPayloadId || !protocoloId || !fazendaAtualId || !userId) {
-          throw new Error("Não foi possível aplicar o protocolo: valide animal, protocolo, fazenda e sessão do usuário.");
+        if (!protocoloId || !fazendaAtualId || !userId) {
+          throw new Error("Não foi possível aplicar o protocolo: valide protocolo, fazenda e sessão do usuário.");
         }
         if (!dataInicio) {
           throw new Error("Não foi possível aplicar o protocolo: data de início inválida.");
@@ -366,20 +449,37 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
           throw new Error("Não foi possível aplicar o protocolo: horário inicial inválido (use HH:mm).");
         }
 
-        const { error: aplicacaoError } = await supabase
-          .from("repro_aplicacoes")
-          .insert({
+        if (hasBulkSelection) {
+          const inserts = bulkSelectedAnimals.map((item) => ({
             user_id: userId,
             fazenda_id: fazendaAtualId,
-            animal_id: animalPayloadId,
+            animal_id: resolveAnimalId(item),
             protocolo_id: protocoloId,
             data_inicio: dataInicio,
             status: "ATIVO",
             tipo: payload?.tipo || null,
             hora_inicio: horaInicio,
-          });
-
-        if (aplicacaoError) throw aplicacaoError;
+          }));
+          const { error: aplicacaoError } = await supabase
+            .from("repro_aplicacoes")
+            .insert(inserts);
+          if (aplicacaoError) throw aplicacaoError;
+        } else {
+          const animalPayloadId = payload?.animal_id || baseAnimalId;
+          const { error: aplicacaoError } = await supabase
+            .from("repro_aplicacoes")
+            .insert({
+              user_id: userId,
+              fazenda_id: fazendaAtualId,
+              animal_id: animalPayloadId,
+              protocolo_id: protocoloId,
+              data_inicio: dataInicio,
+              status: "ATIVO",
+              tipo: payload?.tipo || null,
+              hora_inicio: horaInicio,
+            });
+          if (aplicacaoError) throw aplicacaoError;
+        }
         toast.success("Protocolo aplicado com sucesso");
       }
       await handleSaved();
@@ -395,9 +495,14 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
   const handleSalvarRegistro = async () => {
     setErroSalvar("");
 
-    if (!fazendaAtualId || !animalId) {
+    if (!fazendaAtualId || (!bulkActive && !animalId)) {
       console.warn("Manejo salvar: fazendaAtualId", fazendaAtualId, "animal", animal);
       setErroSalvar("Não foi possível salvar: fazenda ou animal não identificado.");
+      return;
+    }
+
+    if (bulkActive && (!bulkReady || bulkSelectedAnimals.length === 0)) {
+      setErroSalvar("Selecione ao menos 1 animal para continuar.");
       return;
     }
 
@@ -498,6 +603,19 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
 
   const currentEvent = eventTypes.find(e => e.id === selectedType);
   const FormComponent = currentEvent?.component;
+  const selectionCount = bulkSelectedAnimals.length;
+  const bulkSelectionNumbers = bulkSelectedAnimals
+    .map((item) => item?.numero)
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(", ");
+  const filteredBulkAnimals = bulkList.filter((item) => {
+    if (!bulkSearch) return true;
+    const term = bulkSearch.trim().toLowerCase();
+    const numero = String(item?.numero || "").toLowerCase();
+    const brinco = String(item?.brinco || "").toLowerCase();
+    return numero.includes(term) || brinco.includes(term);
+  });
 
   return (
     <div 
@@ -555,25 +673,36 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
               overflow: "hidden",
               textOverflow: "ellipsis"
             }}>
-              {animal?.numero ? `Animal ${animal.numero}` : 'Novo Registro'}
+              {bulkActive ? "Ação Coletiva" : (animal?.numero ? `Animal ${animal.numero}` : "Novo Registro")}
             </div>
-            <div style={{
-              fontSize: "12px",
-              color: theme.colors.slate[500],
-              marginTop: "2px"
-            }}>
-              Brinco: {animal?.brinco || "—"}
-            </div>
+            {bulkActive ? (
+              <div style={{
+                fontSize: "12px",
+                color: theme.colors.slate[500],
+                marginTop: "2px"
+              }}>
+                Selecionados: {selectionCount || 0}
+                {bulkSelectionNumbers ? ` • ${bulkSelectionNumbers}${selectionCount > 3 ? "..." : ""}` : ""}
+              </div>
+            ) : (
+              <div style={{
+                fontSize: "12px",
+                color: theme.colors.slate[500],
+                marginTop: "2px"
+              }}>
+                Brinco: {animal?.brinco || "—"}
+              </div>
+            )}
             {isDebug && (
               <div style={{
                 fontSize: "11px",
                 color: theme.colors.slate[400],
                 marginTop: "2px"
               }}>
-                ID: {animalId || "—"}
+                ID: {bulkActive ? (bulkSelectedAnimals[0]?._bulkId || "—") : (animalId || "—")}
               </div>
             )}
-            {animal?.lote && (
+            {!bulkActive && animal?.lote && (
               <div style={{ 
                 fontSize: "12px", 
                 color: theme.colors.slate[500], 
@@ -609,6 +738,7 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
                 description={type.description}
                 active={selectedType === type.id}
                 onClick={() => setSelectedType(type.id)}
+                disabled={bulkActive && !bulkReady}
               />
             ))}
           </div>
@@ -653,9 +783,9 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
                 color: theme.colors.slate[900],
                 letterSpacing: "-0.01em"
               }}>
-                {currentEvent?.fullTitle || "Selecione uma opção"}
+                {bulkActive && !bulkReady ? "Selecione os animais" : (currentEvent?.fullTitle || "Selecione uma opção")}
               </h2>
-              {currentEvent && (
+              {currentEvent && !(bulkActive && !bulkReady) && (
                 <p style={{ 
                   margin: "2px 0 0 0", 
                   fontSize: "13px", 
@@ -702,41 +832,180 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
             background: "#fff"
           }}>
             {!selectedType ? (
-              <div style={{
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                color: theme.colors.slate[400],
-                textAlign: "center",
-              }}>
-                <div style={{ 
-                  width: "48px", 
-                  height: "48px", 
-                  borderRadius: "50%",
-                  background: theme.colors.slate[100],
+              bulkActive && !bulkReady ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px", height: "100%" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: theme.colors.slate[600],
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                    }}>
+                      Buscar animal
+                    </label>
+                    <input
+                      value={bulkSearch}
+                      onChange={(e) => setBulkSearch(e.target.value)}
+                      placeholder="Digite número ou brinco..."
+                      style={{
+                        width: "100%",
+                        padding: "12px 14px",
+                        borderRadius: theme.radius.md,
+                        border: `1px solid ${theme.colors.slate[200]}`,
+                        fontSize: "14px",
+                        outline: "none",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ fontSize: "13px", color: theme.colors.slate[500] }}>
+                    Selecionados: <strong style={{ color: theme.colors.slate[800] }}>{selectionCount}</strong>
+                  </div>
+
+                  <div style={{
+                    flex: 1,
+                    overflowY: "auto",
+                    border: `1px solid ${theme.colors.slate[200]}`,
+                    borderRadius: theme.radius.md,
+                  }}>
+                    {filteredBulkAnimals.length === 0 ? (
+                      <div style={{ padding: "16px", color: theme.colors.slate[500], fontSize: "13px" }}>
+                        Nenhum animal encontrado.
+                      </div>
+                    ) : (
+                      filteredBulkAnimals.map((item) => {
+                        const isSelected = bulkSelectedIds.includes(String(item._bulkId));
+                        return (
+                          <button
+                            key={item._bulkId}
+                            type="button"
+                            onClick={() => {
+                              setBulkSelectedIds((prev) => {
+                                const key = String(item._bulkId);
+                                if (prev.includes(key)) return prev.filter((id) => id !== key);
+                                return [...prev, key];
+                              });
+                            }}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              border: "none",
+                              background: isSelected ? theme.colors.accent[50] : "#fff",
+                              padding: "12px 14px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              cursor: "pointer",
+                              borderBottom: `1px solid ${theme.colors.slate[100]}`,
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: "14px", fontWeight: 600, color: theme.colors.slate[800] }}>
+                                Nº {item?.numero || "—"}
+                              </div>
+                              <div style={{ fontSize: "12px", color: theme.colors.slate[500] }}>
+                                Brinco {item?.brinco || "—"}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <span style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                width: "20px",
+                                height: "20px",
+                                borderRadius: "50%",
+                                background: theme.colors.accent[600],
+                                color: "#fff",
+                                fontSize: "12px",
+                              }}>
+                                <Icons.check />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+                    <button
+                      type="button"
+                      onClick={handleClose}
+                      style={{
+                        padding: "10px 16px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        background: "transparent",
+                        border: `1px solid ${theme.colors.slate[200]}`,
+                        borderRadius: theme.radius.md,
+                        cursor: "pointer",
+                        color: theme.colors.slate[600],
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectionCount === 0) return;
+                        setBulkReady(true);
+                      }}
+                      disabled={selectionCount === 0}
+                      style={{
+                        padding: "10px 18px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        color: "#fff",
+                        background: selectionCount === 0 ? theme.colors.slate[300] : theme.colors.accent[600],
+                        border: "none",
+                        borderRadius: theme.radius.md,
+                        cursor: selectionCount === 0 ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Prosseguir
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  height: "100%",
                   display: "flex",
+                  flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  marginBottom: "16px",
-                  color: theme.colors.slate[400]
+                  color: theme.colors.slate[400],
+                  textAlign: "center",
                 }}>
-                  <Icons.stethoscope />
+                  <div style={{ 
+                    width: "48px", 
+                    height: "48px", 
+                    borderRadius: "50%",
+                    background: theme.colors.slate[100],
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: "16px",
+                    color: theme.colors.slate[400]
+                  }}>
+                    <Icons.stethoscope />
+                  </div>
+                  <p style={{ margin: 0, fontSize: "14px" }}>
+                    Selecione um tipo de evento no menu lateral<br/>
+                    para iniciar o registro
+                  </p>
                 </div>
-                <p style={{ margin: 0, fontSize: "14px" }}>
-                  Selecione um tipo de evento no menu lateral<br/>
-                  para iniciar o registro
-                </p>
-              </div>
+              )
             ) : (
               <FormComponent 
-                animal={animal} 
+                animal={bulkActive ? bulkPreviewAnimal : animal}
                 inseminadores={inseminadores}
                 touros={touros}
                 protocolos={protocolos}
                 onSubmit={handleSubmit}
                 onChangeDraft={selectedType === "IA" ? setDraftIA : undefined}
+                bulkMode={bulkActive}
                 key={selectedType} // Força remount ao trocar de aba
               />
             )}
