@@ -681,7 +681,7 @@ export default function VisaoGeral({
     if (!fazendaAtualId || !targetAnimalId || !dataEvento) return null;
     const { data, error } = await supabase
       .from("repro_eventos")
-      .select("id, inseminador_id, touro_id, touro_nome, protocolo_id, protocolo_aplicacao_id, razao, tipo_semen, palhetas, lote, data_evento")
+      .select("id, data_evento, inseminador_id, touro_id, touro_nome, protocolo_id, protocolo_aplicacao_id, razao, tipo_semen, palhetas, lote, evidencia, user_id, fazenda_id")
       .eq("fazenda_id", fazendaAtualId)
       .eq("animal_id", targetAnimalId)
       .eq("tipo", "IA")
@@ -734,12 +734,6 @@ export default function VisaoGeral({
         const dataEvento = normalizePayloadDate(payload.data);
         if (!dataEvento) throw new Error("Não foi possível salvar: confira a data no formato dd/mm/aaaa.");
         const mapa = { Prenhe: "POSITIVO", Vazia: "NEGATIVO", "Não vista": "PENDENTE" };
-        const meta = {
-          dg: payload?.dg || "PENDENTE",
-          tipoExame: payload?.extras?.tipoExame || null,
-          diasDesdeIA: payload?.extras?.diasDesdeIA ?? null,
-          comentario: payload?.extras?.comentario || "",
-        };
         const mapIAFields = (iaAlvo) => ({
           evento_pai_id: iaAlvo?.id || null,
           inseminador_id: iaAlvo?.inseminador_id || null,
@@ -751,6 +745,14 @@ export default function VisaoGeral({
           tipo_semen: iaAlvo?.tipo_semen || null,
           palhetas: iaAlvo?.palhetas ?? null,
           lote: iaAlvo?.lote || null,
+          evidencia: iaAlvo?.evidencia || null,
+        });
+        const buildDGMeta = (iaAlvo) => ({
+          dg: payload?.dg || "PENDENTE",
+          tipoExame: payload?.extras?.tipoExame || null,
+          diasDesdeIA: payload?.extras?.diasDesdeIA ?? null,
+          comentario: payload?.extras?.comentario || "",
+          ia_ref: iaAlvo?.id ? { id: iaAlvo.id, data: iaAlvo.data_evento } : null,
         });
         if (hasBulkSelection) {
           const targets = await Promise.all(
@@ -774,10 +776,11 @@ export default function VisaoGeral({
               user_id: userId,
               resultado_dg: mapa[payload.dg] || "PENDENTE",
               observacoes: payload?.extras?.obs,
-              meta,
+              meta: buildDGMeta(iaAlvo),
               ...mapIAFields(iaAlvo),
             }))
           );
+          toast.success("DG salvo");
         } else {
           const iaAlvo = await getIATarget({ animalId: baseAnimalId, dataEvento });
           if (!iaAlvo) {
@@ -792,9 +795,10 @@ export default function VisaoGeral({
             user_id: userId,
             resultado_dg: mapa[payload.dg] || "PENDENTE",
             observacoes: payload?.extras?.obs,
-            meta,
+            meta: buildDGMeta(iaAlvo),
             ...mapIAFields(iaAlvo),
           });
+          toast.success("DG salvo");
         }
       } else if (payload.kind === "IA") {
         const dataEvento = normalizePayloadDate(payload.data);
