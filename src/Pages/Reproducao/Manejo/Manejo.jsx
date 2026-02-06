@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useFazenda } from "../../../context/FazendaContext";
+import { toast } from "react-toastify";
 
 import Inseminacao from "./Inseminacao";
 import Diagnostico from "./Diagnostico";
@@ -50,6 +51,14 @@ function normalizePayloadDate(value) {
   if (!raw) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return brToISO(raw);
+  return null;
+}
+
+function normalizePayloadTime(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}:\d{2}$/.test(raw)) return `${raw}:00`;
   return null;
 }
 
@@ -261,7 +270,8 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
       setSalvando(true);
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
-      const userId = authData?.user?.id;
+      const legacyAuthUser = typeof supabase.auth.user === "function" ? supabase.auth.user() : null;
+      const userId = authData?.user?.id || legacyAuthUser?.id;
       if (!userId) throw new Error("Sessão inválida (auth.uid vazio)");
 
       if (payload.kind === "DG") {
@@ -296,6 +306,37 @@ export default function VisaoGeral({ open = false, animal = null, initialTab = n
           observacoes: payload.obs || null,
           meta: payload?.extras || null,
         });
+      } else if (payload.kind === "PROTOCOLO") {
+        const animalPayloadId = payload?.animal_id || animalId;
+        const protocoloId = payload?.protocolo_id;
+        const dataInicio = normalizePayloadDate(payload?.data);
+        const horaInicio = normalizePayloadTime(payload?.horaInicio);
+
+        if (!animalPayloadId || !protocoloId || !fazendaAtualId || !userId) {
+          throw new Error("Não foi possível aplicar o protocolo: valide animal, protocolo, fazenda e sessão do usuário.");
+        }
+        if (!dataInicio) {
+          throw new Error("Não foi possível aplicar o protocolo: data de início inválida.");
+        }
+        if (!horaInicio) {
+          throw new Error("Não foi possível aplicar o protocolo: horário inicial inválido (use HH:mm).");
+        }
+
+        const { error: aplicacaoError } = await supabase
+          .from("repro_aplicacoes")
+          .insert({
+            user_id: userId,
+            fazenda_id: fazendaAtualId,
+            animal_id: animalPayloadId,
+            protocolo_id: protocoloId,
+            data_inicio: dataInicio,
+            status: "ATIVO",
+            tipo: payload?.tipo || null,
+            hora_inicio: horaInicio,
+          });
+
+        if (aplicacaoError) throw aplicacaoError;
+        toast.success("Protocolo aplicado com sucesso");
       }
       await handleSaved();
     } catch (e) {
