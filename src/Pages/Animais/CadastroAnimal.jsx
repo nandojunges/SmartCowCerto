@@ -72,19 +72,6 @@ function dataBRParaISO(br) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function obterUltimaDataValidaBR(lista) {
-  const datas = (lista || [])
-    .map(parseBRtoDate)
-    .filter(Boolean)
-    .sort((a, b) => a.getTime() - b.getTime());
-  if (!datas.length) return "";
-  const dt = datas[datas.length - 1];
-  const dd = String(dt.getDate()).padStart(2, "0");
-  const mm = String(dt.getMonth() + 1).padStart(2, "0");
-  const yyyy = dt.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-}
-
 function diasEntre(br) {
   const dt = parseBRtoDate(br);
   if (!dt) return null;
@@ -93,15 +80,65 @@ function diasEntre(br) {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
-function previsaoPartoBR(ultimaIABR) {
-  const dt = parseBRtoDate(ultimaIABR);
+function formatDateBR(dt) {
   if (!dt) return "";
-  const previsao = new Date(dt);
-  previsao.setDate(previsao.getDate() + 283);
-  const dd = String(previsao.getDate()).padStart(2, "0");
-  const mm = String(previsao.getMonth() + 1).padStart(2, "0");
-  const yyyy = previsao.getFullYear();
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
   return `${dd}/${mm}/${yyyy}`;
+}
+
+function obterUltimaDataValida(lista) {
+  const datas = (lista || []).map(parseBRtoDate).filter(Boolean);
+  if (!datas.length) return null;
+  return datas.reduce((max, dt) => (max && max > dt ? max : dt), null);
+}
+
+function calcResumoReproProd({ partos, ias, secagens, hoje = new Date() }) {
+  const dtUltParto = obterUltimaDataValida(partos);
+  const dtUltIA = obterUltimaDataValida(ias);
+  const dtUltSecagem = obterUltimaDataValida(secagens);
+
+  const ultimoParto = formatDateBR(dtUltParto);
+  const ultimaIA = formatDateBR(dtUltIA);
+  const ultimaSecagem = formatDateBR(dtUltSecagem);
+
+  let previsaoParto = "";
+  let aguardandoPartoDias = 0;
+
+  if (dtUltIA) {
+    const previsao = new Date(dtUltIA);
+    previsao.setDate(previsao.getDate() + 280);
+    previsaoParto = formatDateBR(previsao);
+
+    const diffMs = hoje.getTime() - previsao.getTime();
+    const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDias > 3) {
+      aguardandoPartoDias = diffDias;
+    }
+  }
+
+  let situacaoReprodutiva = "vazia";
+  if (dtUltIA && (!dtUltParto || dtUltIA > dtUltParto)) {
+    situacaoReprodutiva = "prenha_presumida";
+  }
+
+  let situacaoProdutiva = "";
+  if (dtUltSecagem && (!dtUltParto || dtUltParto <= dtUltSecagem)) {
+    situacaoProdutiva = "seca";
+  } else if (dtUltParto && (!dtUltSecagem || dtUltSecagem < dtUltParto)) {
+    situacaoProdutiva = "lactante";
+  }
+
+  return {
+    ultimoParto,
+    ultimaIA,
+    ultimaSecagem,
+    previsaoParto,
+    situacaoProdutiva,
+    situacaoReprodutiva,
+    aguardandoPartoDias,
+  };
 }
 
 function gerarUUID() {
@@ -212,20 +249,21 @@ export default function CadastroAnimal() {
     if (ultimo && ultimo.length === 10) setLista([...lista, ""]);
   };
 
-  const ultimaIAResumo = useMemo(
-    () => obterUltimaDataValidaBR(inseminacoesAnteriores),
-    [inseminacoesAnteriores]
-  );
-  const ultimoPartoResumo = useMemo(
-    () => obterUltimaDataValidaBR(partosAnteriores),
-    [partosAnteriores]
-  );
-  const ultimaSecagemResumo = useMemo(
-    () => obterUltimaDataValidaBR(secagensAnteriores),
-    [secagensAnteriores]
+  const resumoReproProd = useMemo(
+    () =>
+      calcResumoReproProd({
+        partos: partosAnteriores,
+        ias: inseminacoesAnteriores,
+        secagens: secagensAnteriores,
+        hoje: new Date(),
+      }),
+    [partosAnteriores, inseminacoesAnteriores, secagensAnteriores]
   );
 
-  const prevPartoBR = useMemo(() => previsaoPartoBR(ultimaIAResumo), [ultimaIAResumo]);
+  const ultimoPartoResumo = resumoReproProd?.ultimoParto || "";
+  const ultimaIAResumo = resumoReproProd?.ultimaIA || "";
+  const ultimaSecagemResumo = resumoReproProd?.ultimaSecagem || "";
+  const prevPartoBR = resumoReproProd?.previsaoParto || "";
 
   // idade/categoria automáticas (UI)
   useEffect(() => {
@@ -587,28 +625,16 @@ export default function CadastroAnimal() {
   /* ========= UI resumo (somente visual) ========= */
   const situacaoProdutivaResumo = useMemo(() => {
     if (sexo === "macho") return "não lactante";
-    const dtUltParto = parseBRtoDate(ultimoPartoResumo);
-    const dtUltSecagem = parseBRtoDate(ultimaSecagemResumo);
-    if (dtUltParto && (!dtUltSecagem || dtUltParto > dtUltSecagem)) return "lactante";
-    if (dtUltSecagem && (!dtUltParto || dtUltSecagem >= dtUltParto)) return "seca";
+    if (resumoReproProd?.situacaoProdutiva) return resumoReproProd.situacaoProdutiva;
     if (mesesIdade < 24) return "novilha";
     return "não lactante";
-  }, [sexo, mesesIdade, ultimoPartoResumo, ultimaSecagemResumo]);
+  }, [sexo, mesesIdade, resumoReproProd]);
 
   const situacaoReprodutivaResumo = useMemo(() => {
-    const dtUltIA = parseBRtoDate(ultimaIAResumo);
-    const dtUltParto = parseBRtoDate(ultimoPartoResumo);
-    const dtUltSecagem = parseBRtoDate(ultimaSecagemResumo);
-
-    if (!dtUltIA) return "vazia";
-
-    const temEventoDepoisDaIA =
-      (dtUltParto && dtUltParto > dtUltIA) || (dtUltSecagem && dtUltSecagem > dtUltIA);
-
-    if (!temEventoDepoisDaIA) return "inseminada";
-    if (dtUltParto && dtUltParto > dtUltIA) return "pev / pós-parto";
+    const situacao = resumoReproProd?.situacaoReprodutiva;
+    if (situacao === "prenha_presumida") return "prenha (presumida por IA)";
     return "vazia";
-  }, [ultimaIAResumo, ultimoPartoResumo, ultimaSecagemResumo]);
+  }, [resumoReproProd]);
 
   /* ============================
      Layout
@@ -948,7 +974,14 @@ export default function CadastroAnimal() {
                 </div>
                 <div style={rowKV}>
                   <span style={k}>Situação reprodutiva</span>
-                  <span style={v}>{situacaoReprodutivaResumo || "—"}</span>
+                  <span style={v}>
+                    {situacaoReprodutivaResumo || "—"}
+                    {resumoReproProd?.aguardandoPartoDias > 0 && (
+                      <span style={avisoAguardandoParto}>
+                        Aguardando parto: +{resumoReproProd.aguardandoPartoDias} dias
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div style={rowKV}>
                   <span style={k}>DEL</span>
@@ -1136,4 +1169,12 @@ const k = {
 const v = {
   color: "#111827",
   fontWeight: 900,
+};
+
+const avisoAguardandoParto = {
+  display: "block",
+  marginTop: 4,
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#b45309",
 };
