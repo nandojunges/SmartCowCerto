@@ -1,5 +1,5 @@
 // src/Auth/VerificarEmail.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { toast } from "react-toastify";
@@ -10,8 +10,30 @@ export default function VerificarEmail() {
   const [codigo, setCodigo] = useState("");
   const [erro, setErro] = useState("");
   const [cadastro, setCadastro] = useState(null); // dados salvos no localStorage
+  const [enviando, setEnviando] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+
+  // cooldown pra evitar 429 e evitar spam de OTP (e lembrar que só o último código vale)
+  const [cooldown, setCooldown] = useState(0);
+  const cooldownTimerRef = useRef(null);
+
   const navigate = useNavigate();
   const { clearFazendaAtualId } = useFazenda();
+
+  const startCooldown = (seconds = 60) => {
+    if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    setCooldown(seconds);
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldown((c) => {
+        if (c <= 1) {
+          clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+  };
 
   useEffect(() => {
     const salvo = localStorage.getItem("pendingCadastro");
@@ -27,16 +49,85 @@ export default function VerificarEmail() {
         navigate("/cadastro", { replace: true });
         return;
       }
-      setCadastro(obj);
-      setEmail(obj.email);
+
+      // normaliza email
+      const emailNorm = String(obj.email || "").trim().toLowerCase();
+
+      setCadastro({ ...obj, email: emailNorm });
+      setEmail(emailNorm);
     } catch (e) {
       console.error("Erro ao ler pendingCadastro:", e);
       navigate("/cadastro", { replace: true });
     }
+
+    return () => {
+      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    };
   }, [navigate]);
+
+  const handleResend = async () => {
+    if (!cadastro) {
+      setErro("Dados do cadastro não encontrados. Refaça o cadastro.");
+      toast.error("Dados do cadastro não encontrados.");
+      navigate("/cadastro", { replace: true });
+      return;
+    }
+
+    if (cooldown > 0 || enviando) return;
+
+    setErro("");
+    setEnviando(true);
+
+    try {
+      const tipoConta = cadastro?.tipo_conta || cadastro?.tipoConta || "PRODUTOR";
+      const emailNorm = String(cadastro.email || "").trim().toLowerCase();
+      const telDigitos = String(cadastro.telefone || "").replace(/\D/g, "");
+      const cpfDigitos = String(cadastro.cpf || "").replace(/\D/g, "");
+      const fazendaTrim = String(cadastro.fazenda || "").trim();
+
+      const metadata = {
+        full_name: String(cadastro.nome || "").trim(),
+        phone: telDigitos,
+        cpf: cpfDigitos,
+        tipo_conta: tipoConta,
+        ...(tipoConta === "PRODUTOR" ? { fazenda: fazendaTrim } : {}),
+      };
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email: emailNorm,
+        options: {
+          shouldCreateUser: true,
+          data: metadata,
+        },
+      });
+
+      if (error) {
+        console.error("Erro ao reenviar OTP:", error);
+        const msg =
+          error.status === 429
+            ? "Muitas tentativas. Aguarde um pouco e tente novamente."
+            : error.message || "Erro ao reenviar código.";
+        setErro(msg);
+        toast.error(msg);
+        setEnviando(false);
+        return;
+      }
+
+      toast.success("Novo código enviado! Use sempre o ÚLTIMO código recebido.");
+      // inicia um cooldown local (além do rate limit do Supabase)
+      startCooldown(60);
+    } catch (err) {
+      console.error(err);
+      setErro("Erro inesperado ao reenviar código.");
+      toast.error("Erro inesperado ao reenviar código.");
+    } finally {
+      setEnviando(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (confirmando) return;
 
     if (!codigo.trim()) {
       setErro("Digite o código enviado para o seu e-mail.");
@@ -50,31 +141,45 @@ export default function VerificarEmail() {
     }
 
     setErro("");
+    setConfirmando(true);
 
     try {
       const tipoConta = cadastro?.tipo_conta || cadastro?.tipoConta || "PRODUTOR";
+
+      const emailNorm = String(cadastro.email || "").trim().toLowerCase();
+      const token = String(codigo || "").trim();
+
       // 1) Verifica o código recebido por e-mail (OTP)
       const { data, error } = await supabase.auth.verifyOtp({
-        email: cadastro.email,
-        token: codigo.trim(),
-        type: "email", // verifica código de e-mail
+        email: emailNorm,
+        token,
+        type: "email",
       });
 
       console.log("verifyOtp:", data, error);
 
       if (error) {
-        setErro(error.message || "Código inválido ou expirado.");
-        toast.error(error.message || "Código inválido ou expirado.");
+        const msg =
+          error.status === 429
+            ? "Muitas tentativas. Aguarde um pouco e tente novamente."
+            : error.message || "Código inválido ou expirado.";
+        setErro(msg);
+        toast.error(msg);
+        setConfirmando(false);
         return;
       }
 
       // 2) Já autenticado → define a senha e metadata
+      const telDigitos = String(cadastro.telefone || "").replace(/\D/g, "");
+      const cpfDigitos = String(cadastro.cpf || "").replace(/\D/g, "");
+      const fazendaTrim = String(cadastro.fazenda || "").trim();
+
       const metadata = {
-        full_name: cadastro.nome,
-        phone: cadastro.telefone,
-        cpf: cadastro.cpf,
+        full_name: String(cadastro.nome || "").trim(),
+        phone: telDigitos,
+        cpf: cpfDigitos,
         tipo_conta: tipoConta,
-        ...(tipoConta === "PRODUTOR" ? { fazenda: cadastro.fazenda } : {}),
+        ...(tipoConta === "PRODUTOR" ? { fazenda: fazendaTrim } : {}),
       };
 
       const { error: updateError } = await supabase.auth.updateUser({
@@ -100,12 +205,12 @@ export default function VerificarEmail() {
       if (userId) {
         const profilePayload = {
           id: userId,
-          full_name: cadastro.nome,
-          email: cadastro.email,
-          phone: cadastro.telefone,
-          cpf: cadastro.cpf,
+          full_name: String(cadastro.nome || "").trim(),
+          email: emailNorm,
+          phone: telDigitos,
+          cpf: cpfDigitos,
           tipo_conta: tipoConta,
-          fazenda: tipoConta === "PRODUTOR" ? cadastro.fazenda : null,
+          fazenda: tipoConta === "PRODUTOR" ? fazendaTrim : null,
         };
 
         const { data: perfilAtualizado, error: profileError } = await supabase
@@ -141,6 +246,8 @@ export default function VerificarEmail() {
       console.error(err);
       setErro("Erro inesperado ao verificar código.");
       toast.error("Erro inesperado ao verificar código.");
+    } finally {
+      setConfirmando(false);
     }
   };
 
@@ -211,6 +318,17 @@ export default function VerificarEmail() {
           <strong>{email}</strong>
         </p>
 
+        <p
+          style={{
+            fontSize: 12,
+            color: "#6b7280",
+            textAlign: "center",
+            marginBottom: 10,
+          }}
+        >
+          Dica: se você pediu mais de um código, use sempre o <strong>último</strong>.
+        </p>
+
         {erro && (
           <div
             style={{
@@ -242,8 +360,9 @@ export default function VerificarEmail() {
 
           <button
             type="submit"
+            disabled={confirmando}
             style={{
-              backgroundColor: "#1565c0",
+              backgroundColor: confirmando ? "#93c5fd" : "#1565c0",
               color: "#fff",
               borderRadius: 30,
               padding: "10px 18px",
@@ -251,10 +370,35 @@ export default function VerificarEmail() {
               border: "none",
               width: 220,
               margin: "10px auto 0",
-              cursor: "pointer",
+              cursor: confirmando ? "not-allowed" : "pointer",
+              opacity: confirmando ? 0.9 : 1,
             }}
           >
-            Confirmar
+            {confirmando ? "Confirmando..." : "Confirmar"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={enviando || cooldown > 0}
+            style={{
+              backgroundColor: "transparent",
+              border: "1px solid #cbd5e1",
+              color: "#0f172a",
+              borderRadius: 30,
+              padding: "10px 18px",
+              fontWeight: 700,
+              width: 220,
+              margin: "0 auto",
+              cursor: enviando || cooldown > 0 ? "not-allowed" : "pointer",
+              opacity: enviando || cooldown > 0 ? 0.65 : 1,
+            }}
+          >
+            {enviando
+              ? "Enviando..."
+              : cooldown > 0
+              ? `Reenviar em ${cooldown}s`
+              : "Reenviar código"}
           </button>
 
           <button
