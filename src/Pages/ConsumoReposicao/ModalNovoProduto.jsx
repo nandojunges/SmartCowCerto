@@ -213,21 +213,25 @@ const TAGS_TIPO_FARMACIA = [
   { termos: ["Soluções", "Fluidoterapia"], tags: ["SOLUTION"] },
 ];
 
-const RACAS_FALLBACK = ["Holandês", "Jersey", "Gir", "Girolando", "Angus", "Nelore", "SRD"].map((raca) => ({
+const RACAS_LEITE_FALLBACK = [
+  "Ayrshire",
+  "Caracu",
+  "Gir Leiteiro",
+  "Girolando",
+  "Guernsey",
+  "Holandês",
+  "Holandês Vermelho",
+  "Jersey",
+  "Jersolando",
+  "Montbéliarde",
+  "Normando",
+  "Pardo Suíço (Brown Swiss)",
+  "Simental (Fleckvieh leiteiro)",
+  "SRD",
+].map((raca) => ({
   value: raca,
   label: raca,
 }));
-
-const TOUROS_FALLBACK = [
-  { value: "Bluff", label: "Bluff" },
-  { value: "Impressor", label: "Impressor" },
-  { value: "Goldwyn", label: "Goldwyn" },
-  { value: "Shottle", label: "Shottle" },
-  { value: "Bolton", label: "Bolton" },
-  { value: "Supersire", label: "Supersire" },
-  { value: "Mogul", label: "Mogul" },
-  { value: "Doorman", label: "Doorman" },
-];
 
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
   const { fazendaAtualId, session } = useFazenda();
@@ -236,7 +240,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const [loteEditId, setLoteEditId] = useState(null);
   const [gruposEq, setGruposEq] = useState([]);
   const [carregandoGrupos, setCarregandoGrupos] = useState(false);
-  const [racasOptions, setRacasOptions] = useState(RACAS_FALLBACK);
+  const [racasOptions, setRacasOptions] = useState(RACAS_LEITE_FALLBACK);
   const [carregandoRacas, setCarregandoRacas] = useState(false);
   const [tabelaRacasDisponivel, setTabelaRacasDisponivel] = useState(false);
 
@@ -359,21 +363,21 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
         if (errorSemAtivo) {
           logRacasError(errorSemAtivo);
           setTabelaRacasDisponivel(false);
-          setRacasOptions(RACAS_FALLBACK);
+          setRacasOptions(RACAS_LEITE_FALLBACK);
           setCarregandoRacas(false);
           return;
         }
 
         setTabelaRacasDisponivel(true);
         const listaSemAtivo = (dataSemAtivo || []).map((raca) => ({ value: raca.nome, label: raca.nome }));
-        setRacasOptions(listaSemAtivo.length ? listaSemAtivo : RACAS_FALLBACK);
+        setRacasOptions(construirRacasOptions(listaSemAtivo));
         setCarregandoRacas(false);
         return;
       }
 
       setTabelaRacasDisponivel(true);
       const lista = (dataComAtivo || []).map((raca) => ({ value: raca.nome, label: raca.nome }));
-      setRacasOptions(lista.length ? lista : RACAS_FALLBACK);
+      setRacasOptions(construirRacasOptions(lista));
 
       setCarregandoRacas(false);
     };
@@ -443,7 +447,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const mostraGrupoEquivalencia = isFarmacia || isReproducao || isCozinha || isHigiene;
   const categoriaGrupoEquivalencia = normalizarCategoriaGrupo(form.categoria);
   const precisaRacaRepro = isReproducao && (form.subTipo === "Sêmen" || form.subTipo === "Embrião");
-  const precisaTouro = isReproducao && form.subTipo === "Sêmen";
 
   const gruposOptions = useMemo(() => {
     const listaBase = (gruposEq || []).filter((g) => (g.categoria || "") === categoriaGrupoEquivalencia);
@@ -531,12 +534,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
     }
 
     if (precisaRacaRepro && !form.racaRepro) {
-      alert("Selecione a raça do sêmen/embrião.");
-      return null;
-    }
-
-    if (precisaTouro && !form.touroNome.trim()) {
-      alert("Selecione/informe o touro do sêmen.");
+      alert("Selecione a raça do Sêmen/Embrião.");
       return null;
     }
 
@@ -654,7 +652,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                       subTipo: "",
                       grupoEquivalencia: "",
                       racaRepro: "",
-                      touroNome: "",
                       formaCompra: "",
                       tipoEmbalagem: "",
                       qtdEmbalagens: "",
@@ -694,7 +691,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                         subTipo: v,
                         grupoEquivalencia: f.categoria === "Farmácia" ? "" : f.grupoEquivalencia,
                         racaRepro: v === "Sêmen" || v === "Embrião" ? f.racaRepro : "",
-                        touroNome: v === "Sêmen" ? f.touroNome : "",
                         ...(v !== "Antibiótico"
                           ? {
                               carenciaLeiteDias: "",
@@ -728,7 +724,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                       if (!valor) return;
                       setForm((f) => ({ ...f, racaRepro: valor }));
                       setRacasOptions((prev) => {
-                        if (prev.some((item) => item.value === valor)) return prev;
+                        if (prev.some((item) => normalizarRacaKey(item.value) === normalizarRacaKey(valor))) return prev;
                         return [...prev, { value: valor, label: valor }];
                       });
                       if (tabelaRacasDisponivel && fazendaAtualId) {
@@ -746,31 +742,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                     menuPortalTarget={menuPortalTarget}
                   />
                   <span style={fieldHint}>Se a raça não estiver na lista, digite e pressione Enter.</span>
-                </Field>
-              </div>
-            )}
-
-            {precisaTouro && (
-              <div style={{ marginTop: 14 }}>
-                <Field label="Touro (identificação) *">
-                  <CreatableSelect
-                    options={TOUROS_FALLBACK}
-                    value={
-                      TOUROS_FALLBACK.find((touro) => touro.value === form.touroNome) ||
-                      (form.touroNome ? { value: form.touroNome, label: form.touroNome } : null)
-                    }
-                    onChange={(opt) => setForm((f) => ({ ...f, touroNome: opt?.value || "" }))}
-                    onCreateOption={(novoValor) => {
-                      const valor = String(novoValor || "").trim();
-                      if (!valor) return;
-                      setForm((f) => ({ ...f, touroNome: valor }));
-                    }}
-                    isSearchable
-                    styles={rsStyles}
-                    placeholder="Selecione ou digite..."
-                    menuPortalTarget={menuPortalTarget}
-                  />
-                  <span style={fieldHint}>Se não estiver na lista, digite e pressione Enter.</span>
                 </Field>
               </div>
             )}
@@ -1125,6 +1096,24 @@ function toNum(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function normalizarRacaKey(valor) {
+  return String(valor || "").trim().toLowerCase();
+}
+
+function construirRacasOptions(racasBanco = []) {
+  const listaBanco = Array.isArray(racasBanco) ? racasBanco : [];
+  if (listaBanco.length === 0) return RACAS_LEITE_FALLBACK;
+
+  const combinadas = [...listaBanco, ...RACAS_LEITE_FALLBACK];
+  const vistos = new Set();
+  return combinadas.filter((item) => {
+    const chave = normalizarRacaKey(item.value);
+    if (!chave || vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+}
+
 function toForm(initial) {
   const d = initial || {};
   const categoriaInicial = pick(d, "categoria");
@@ -1161,7 +1150,6 @@ function toForm(initial) {
 
     grupoEquivalencia: pick(d, "grupoEquivalencia", "grupo_equivalencia") ?? "",
     racaRepro: pick(d, "racaRepro", "raca_repro") ?? "",
-    touroNome: pick(d, "touroNome", "touro_nome") ?? "",
 
     // ativo (edição)
     ativo: pick(d, "ativo"),
@@ -1247,8 +1235,6 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
   const categoriaGrupo = normalizarCategoriaGrupo(f.categoria);
   const precisaRacaRepro = categoriaFinal === "Reprodução" && (f.subTipo === "Sêmen" || f.subTipo === "Embrião");
   const racaReproFinal = precisaRacaRepro && f.racaRepro ? String(f.racaRepro).trim() : null;
-  const precisaTouro = categoriaFinal === "Reprodução" && f.subTipo === "Sêmen";
-  const touroNomeFinal = precisaTouro && f.touroNome ? String(f.touroNome).trim() : null;
   const grupoEquivalenciaFinal = CATEGORIAS_GRUPO_EQ.has(categoriaGrupo)
     ? f.grupoEquivalencia && String(f.grupoEquivalencia).trim()
       ? String(f.grupoEquivalencia).trim()
@@ -1271,7 +1257,6 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
     sem_carencia_leite: !!f.semCarenciaLeite,
     sem_carencia_carne: !!f.semCarenciaCarne,
     raca_repro: racaReproFinal,
-    touro_nome: touroNomeFinal,
     ativo: isEdit && f.ativo === false ? false : true,
     quantidade_total: quantidadeEntrada,
     total_calculado: quantidadeEntrada,
