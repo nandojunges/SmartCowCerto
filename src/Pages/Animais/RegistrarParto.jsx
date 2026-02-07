@@ -323,15 +323,17 @@ export default function RegistrarParto(props) {
 
       const { data: maxData, error: maxError } = await supabase
         .from("animais")
-        .select("max_num:max(numero)")
+        .select("numero")
         .eq("fazenda_id", resolvedFazendaId)
+        .order("numero", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (maxError) {
         throw maxError;
       }
 
-      let proximoNumero = (Number(maxData?.max_num) || 0) + 1;
+      let proximoNumero = (Number(maxData?.numero) || 0) + 1;
 
       const bezerrosPayload = bezerros.map((bezerro) => {
         const numero = proximoNumero++;
