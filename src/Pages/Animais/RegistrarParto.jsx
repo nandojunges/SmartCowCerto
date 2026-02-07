@@ -162,6 +162,45 @@ export default function RegistrarParto(props) {
     return dt.toLocaleDateString("pt-BR");
   };
 
+  const normalizeText = (valor) =>
+    String(valor || "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+  const mapTipoParto = (uiFacilidade) => {
+    const normalizado = normalizeText(uiFacilidade);
+    if (normalizado === "sem assistencia") return "Normal";
+    if (normalizado) return "Distócico";
+    return "Normal";
+  };
+
+  const mapTeveAuxilio = (uiAssistencia) => {
+    const normalizado = normalizeText(uiAssistencia);
+    if (!normalizado) return false;
+    if (normalizado === "nao necessaria" || normalizado === "nao necessario") return false;
+    if (normalizado.includes("assistencia") || normalizado.includes("auxilio")) return true;
+    return true;
+  };
+
+  const mapSexo = (uiSexo) => {
+    const normalizado = normalizeText(uiSexo);
+    if (!normalizado) return null;
+    if (normalizado.startsWith("macho")) return "Macho";
+    if (normalizado.startsWith("femea") || normalizado.startsWith("fêmea")) return "Fêmea";
+    return null;
+  };
+
+  const mapStatus = (uiStatus) => {
+    if (uiStatus === true) return "Natimorto";
+    if (uiStatus === false) return "Vivo";
+    const normalizado = normalizeText(uiStatus);
+    if (normalizado.includes("natimorto")) return "Natimorto";
+    if (normalizado.includes("vivo")) return "Vivo";
+    return "Vivo";
+  };
+
   const adicionarBezerro = () => {
     setBezerros((prev) => [...prev, criarBezerroVazio(prev.length + 1)]);
   };
@@ -360,13 +399,14 @@ export default function RegistrarParto(props) {
 
     const logSupabaseError = (error, contexto) => {
       if (!error) return;
-      console.error(`Erro Supabase (${contexto}):`, {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        status: error.status,
-      });
+      const code = error.code ?? "sem_code";
+      const message = error.message ?? "sem_mensagem";
+      const details = error.details ?? "sem_detalhes";
+      const hint = error.hint ?? "sem_hint";
+      const status = error.status ?? "sem_status";
+      console.error(
+        `Erro Supabase (${contexto}): code=${code} message=${message} details=${details} hint=${hint} status=${status}`
+      );
     };
 
     try {
@@ -445,20 +485,27 @@ export default function RegistrarParto(props) {
           : null;
 
       const bezerroPrincipal = bezerros.find((b) => !b?.natimorto) ?? bezerros[0] ?? null;
-      const statusBezerro = bezerroPrincipal && !bezerroPrincipal?.natimorto ? "Vivo" : "Natimorto";
+      const statusBezerro = mapStatus(bezerroPrincipal?.natimorto);
       const sexoBezerro =
-        statusBezerro === "Vivo" && bezerroPrincipal?.sexo?.value
-          ? bezerroPrincipal.sexo.value
-          : null;
-      const tipoParto = facilidade?.value === "Sem assistência" ? "Normal" : "Distócico";
-      const teveAuxilio = !!(assistencia?.value && assistencia.value !== "Não necessária");
+        statusBezerro === "Vivo" ? mapSexo(bezerroPrincipal?.sexo?.value) : null;
+      const tipoParto = mapTipoParto(facilidade?.value);
+      const teveAuxilio = mapTeveAuxilio(assistencia?.value);
 
       const colostroTextoAtual = String(colostroBrix ?? "").trim();
       const colostroNumero =
         colostroTextoAtual === "" ? null : Number(colostroTextoAtual.replace(",", "."));
       const colostroValidoAtual = Number.isFinite(colostroNumero);
       const colostroAdequadoAtual = colostroValidoAtual ? colostroNumero >= 22 : null;
-      const extrasPayload = null;
+      const extrasExistentes =
+        vacaSafe?.extras && typeof vacaSafe.extras === "object" ? vacaSafe.extras : {};
+      const extrasPayload = {
+        ...extrasExistentes,
+        facilidade_ui: facilidade?.value ?? null,
+        assistencia_ui: assistencia?.value ?? null,
+        temperatura: temperatura || null,
+        complicacoes: complicacoesSelecionadas.map((item) => item.value),
+        complicacoes_custom: complicacoesCustom,
+      };
 
       const { error: reproPartoError } = await supabase.from("repro_partos").insert([
         {
@@ -482,32 +529,33 @@ export default function RegistrarParto(props) {
       if (reproPartoError) {
         logSupabaseError(reproPartoError, "insert_repro_partos");
         console.warn(
-          "Aviso: repro_eventos inserido, mas repro_partos falhou (evento órfão).",
-          {
-            fazenda_id: resolvedFazendaId,
-            user_id: userId,
-            parto_evento_id: partoData?.id ?? null,
-          },
-          reproPartoError
+          `Aviso: repro_eventos inserido, mas repro_partos falhou (evento órfão). fazenda_id=${resolvedFazendaId} user_id=${userId} parto_evento_id=${
+            partoData?.id ?? "sem_id"
+          }`
         );
         const partoEventoId = partoData?.id ?? null;
         if (partoEventoId) {
           const { error: rollbackError } = await supabase
             .from("repro_eventos")
             .delete()
-            .eq("id", partoEventoId);
+            .eq("id", partoEventoId)
+            .eq("fazenda_id", resolvedFazendaId);
           if (rollbackError) {
             logSupabaseError(rollbackError, "rollback_repro_eventos_parto");
-            console.error("Falha ao remover repro_eventos após erro em repro_partos.", {
-              fazenda_id: resolvedFazendaId,
-              user_id: userId,
-              parto_evento_id: partoEventoId,
-            });
+            console.error(
+              `Falha ao remover repro_eventos após erro em repro_partos. fazenda_id=${resolvedFazendaId} user_id=${userId} parto_evento_id=${partoEventoId}`
+            );
+            setErro(
+              "Erro ao salvar parto e falha ao reverter evento. Verifique a conexão e tente novamente."
+            );
+            return;
           }
+          setErro("Erro ao salvar parto. O evento foi revertido para evitar inconsistência.");
+          return;
         } else {
           console.warn("Parto_evento_id ausente; rollback não executado.");
         }
-        setErro("Permissão do banco bloqueou repro_partos; nada foi salvo");
+        setErro("Permissão do banco bloqueou repro_partos; nada foi salvo.");
         return;
       }
 
@@ -536,7 +584,15 @@ export default function RegistrarParto(props) {
       props.onSaved?.({ data: dataISO, bezerros: bezerrosPayload });
     } catch (error) {
       logSupabaseError(error, "salvar_parto");
-      console.error("Erro ao salvar parto:", error);
+      if (error) {
+        const code = error.code ?? "sem_code";
+        const message = error.message ?? "sem_mensagem";
+        const details = error.details ?? "sem_detalhes";
+        const hint = error.hint ?? "sem_hint";
+        console.error(
+          `Erro ao salvar parto: code=${code} message=${message} details=${details} hint=${hint}`
+        );
+      }
       setErro("Não foi possível salvar o parto agora. Tente novamente.");
     }
   };
