@@ -700,6 +700,7 @@ export default function ConsumoReposicao() {
           grupoEquivalencia && String(grupoEquivalencia).trim()
             ? String(grupoEquivalencia).trim()
             : null;
+        const racaReproRaw = pick(produtoPayload, "raca_repro", "racaRepro");
 
         const unidadeMedidaFinal =
           String(unidade_medida || "").trim() || (reutilizavel ? "uso" : "un");
@@ -741,10 +742,25 @@ export default function ConsumoReposicao() {
           grupo_equivalencia,
 
           ativo,
+          raca_repro: null,
         };
 
         if (!String(row.nome_comercial || "").trim()) throw new Error("Nome do produto é obrigatório.");
         if (!String(row.categoria || "").trim()) row.categoria = "Cozinha";
+
+        const categoriaNormalizada = String(row.categoria || "").trim().toLowerCase();
+        const subTipoNormalizado = String(row.sub_tipo || "").trim().toLowerCase();
+        const precisaRacaRepro =
+          categoriaNormalizada === "reprodução" &&
+          ["sêmen", "semen", "embrião", "embriao"].includes(subTipoNormalizado);
+
+        if (precisaRacaRepro) {
+          const racaRepro = String(racaReproRaw || "").trim();
+          if (!racaRepro) throw new Error("Raça reprodutiva é obrigatória para produtos de reprodução.");
+          row.raca_repro = racaRepro;
+        } else {
+          row.raca_repro = null;
+        }
 
         if (row.forma_compra === "A_GRANEL") {
           row.tipo_embalagem = null;
@@ -771,6 +787,12 @@ export default function ConsumoReposicao() {
           }
           produtoRow = data;
         } else {
+          console.log("[estoque_produtos:insert] payloadInsert", row);
+          console.log("[estoque_produtos:insert] raca_repro", {
+            raca_repro: row.raca_repro,
+            categoria: row.categoria,
+            sub_tipo: row.sub_tipo,
+          });
           const { data, error } = await supabase
             .from("estoque_produtos")
             .insert(row)
