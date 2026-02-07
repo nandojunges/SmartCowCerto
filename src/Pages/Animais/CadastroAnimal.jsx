@@ -173,7 +173,6 @@ export default function CadastroAnimal() {
   const [nascimento, setNascimento] = useState("");
   const [sexo, setSexo] = useState("");
   const [raca, setRaca] = useState("");
-  const [novaRaca, setNovaRaca] = useState("");
   const [racasBanco, setRacasBanco] = useState([]);
 
   // complementar
@@ -321,47 +320,20 @@ export default function CadastroAnimal() {
 
   useEffect(() => {
     async function carregarRacas() {
-      if (!fazendaAtualId) {
-        setRacasBanco([]);
-        return;
-      }
-      const { data, error } = await withFazendaId(
-        supabase.from("racas").select("id, nome"),
-        fazendaAtualId
-      ).order("nome", { ascending: true });
+      const { data, error } = await supabase
+        .from("racas")
+        .select("id, nome")
+        .order("nome", { ascending: true });
       if (!error && data) setRacasBanco(data);
     }
     carregarRacas();
-  }, [fazendaAtualId]);
-
-  /* ========= ações ========= */
-  const adicionarNovaRaca = async () => {
-    const v = (novaRaca || "").trim();
-    if (!v) return;
-    if (!fazendaAtualId) {
-      setMensagemErro("Selecione uma fazenda antes de cadastrar raça.");
-      setTimeout(() => setMensagemErro(""), 2500);
-      return;
-    }
-    const { data, error } = await supabase
-      .from("racas")
-      .insert({ nome: v, fazenda_id: fazendaAtualId })
-      .select("id, nome")
-      .single();
-
-    if (!error && data) {
-      setRacasBanco((prev) => [...prev, data]);
-      setRaca(data.id);
-      setNovaRaca("");
-    }
-  };
+  }, []);
 
   const limpar = () => {
     setBrinco("");
     setNascimento("");
     setSexo("");
     setRaca("");
-    setNovaRaca("");
 
     setPai("");
     setMae("");
@@ -773,16 +745,6 @@ export default function CadastroAnimal() {
                       }),
                     }}
                   />
-                  <input
-                    type="text"
-                    value={novaRaca}
-                    onChange={(e) => setNovaRaca(e.target.value)}
-                    placeholder="Nova raça"
-                    style={{ ...inputBase, flex: 1 }}
-                  />
-                  <button type="button" style={btnVerde} onClick={adicionarNovaRaca}>
-                    Adicionar
-                  </button>
                 </div>
               </div>
             </div>
