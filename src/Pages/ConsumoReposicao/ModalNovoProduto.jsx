@@ -3,6 +3,7 @@ import Select from "react-select";
 import { X, Package, Pill, FlaskConical, Info, Box, Calendar, DollarSign, AlertCircle } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
+import { toast } from "react-toastify";
 
 /* ===================== DESIGN SYSTEM ===================== */
 const theme = {
@@ -212,20 +213,6 @@ const TAGS_TIPO_FARMACIA = [
   { termos: ["Soluções", "Fluidoterapia"], tags: ["SOLUTION"] },
 ];
 
-const RACAS_LEITEIRAS = [
-  { value: "Holandês", label: "Holandês" },
-  { value: "Jersey", label: "Jersey" },
-  { value: "Girolando", label: "Girolando" },
-  { value: "Gir Leiteiro", label: "Gir Leiteiro" },
-  { value: "Pardo-Suíço", label: "Pardo-Suíço" },
-  { value: "Ayrshire", label: "Ayrshire" },
-  { value: "Guernsey", label: "Guernsey" },
-  { value: "Normando", label: "Normando" },
-  { value: "Simental Leiteiro", label: "Simental Leiteiro" },
-  { value: "Montbéliarde", label: "Montbéliarde" },
-  { value: "Caracu", label: "Caracu" },
-];
-
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
   const { fazendaAtualId } = useFazenda();
   const isEdit = !!initial?.id;
@@ -233,6 +220,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const [loteEditId, setLoteEditId] = useState(null);
   const [gruposEq, setGruposEq] = useState([]);
   const [carregandoGrupos, setCarregandoGrupos] = useState(false);
+  const [racasBanco, setRacasBanco] = useState([]);
+  const [carregandoRacas, setCarregandoRacas] = useState(false);
 
   /* ===================== LOOKUPS ===================== */
   const categorias = useMemo(
@@ -317,6 +306,41 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   useEffect(() => {
     let ativo = true;
 
+    if (!open) return undefined;
+
+    const carregarRacas = async () => {
+      setCarregandoRacas(true);
+      const { data, error } = await supabase
+        .from("racas")
+        .select("id, nome")
+        .order("nome", { ascending: true });
+      if (!ativo) return;
+      if (error) {
+        console.warn("Erro ao carregar raças:", error);
+        setRacasBanco([]);
+      } else {
+        setRacasBanco(data || []);
+      }
+      setCarregandoRacas(false);
+    };
+
+    carregarRacas();
+
+    return () => {
+      ativo = false;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!form.racaReproId || form.racaReproNome || racasBanco.length === 0) return;
+    const encontrada = racasBanco.find((r) => r.id === form.racaReproId);
+    if (!encontrada) return;
+    setForm((f) => ({ ...f, racaReproNome: encontrada.nome }));
+  }, [form.racaReproId, form.racaReproNome, racasBanco]);
+
+  useEffect(() => {
+    let ativo = true;
+
     if (!open || !initial?.id || !fazendaAtualId) return undefined;
 
     const buscarLote = async (orderBy) => {
@@ -372,6 +396,10 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const mostraGrupoEquivalencia = isFarmacia || isReproducao || isCozinha || isHigiene;
   const categoriaGrupoEquivalencia = normalizarCategoriaGrupo(form.categoria);
   const exigeRacaRepro = isReproducao && (form.subTipo === "Sêmen" || form.subTipo === "Embrião");
+  const racasOptions = useMemo(
+    () => (racasBanco || []).map((r) => ({ value: r.id, label: r.nome })),
+    [racasBanco]
+  );
 
   const gruposOptions = useMemo(() => {
     const listaBase = (gruposEq || []).filter((g) => (g.categoria || "") === categoriaGrupoEquivalencia);
@@ -458,8 +486,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       return null;
     }
 
-    if (exigeRacaRepro && !String(form.racaRepro || "").trim()) {
-      alert("Selecione a raça do sêmen/embrião.");
+    if (exigeRacaRepro && !String(form.racaReproId || "").trim()) {
+      toast.error("Selecione a raça do sêmen/embrião.");
       return null;
     }
 
@@ -576,7 +604,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                       categoria: opt?.value || "",
                       subTipo: "",
                       grupoEquivalencia: "",
-                      racaRepro: "",
+                      racaReproId: "",
+                      racaReproNome: "",
                       formaCompra: "",
                       tipoEmbalagem: "",
                       qtdEmbalagens: "",
@@ -615,7 +644,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                         ...f,
                         subTipo: v,
                         grupoEquivalencia: f.categoria === "Farmácia" ? "" : f.grupoEquivalencia,
-                        racaRepro: v === "Sêmen" || v === "Embrião" ? f.racaRepro : "",
+                        racaReproId: v === "Sêmen" || v === "Embrião" ? f.racaReproId : "",
+                        racaReproNome: v === "Sêmen" || v === "Embrião" ? f.racaReproNome : "",
                         ...(v !== "Antibiótico"
                           ? {
                               carenciaLeiteDias: "",
@@ -638,12 +668,19 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
               <div style={{ marginTop: 14 }}>
                 <Field label="Raça (do Sêmen/Embrião) *">
                   <Select
-                    options={RACAS_LEITEIRAS}
-                    value={RACAS_LEITEIRAS.find((r) => r.value === form.racaRepro) || null}
-                    onChange={(opt) => setForm((f) => ({ ...f, racaRepro: opt?.value || "" }))}
+                    options={racasOptions}
+                    value={racasOptions.find((r) => r.value === form.racaReproId) || null}
+                    onChange={(opt) =>
+                      setForm((f) => ({
+                        ...f,
+                        racaReproId: opt?.value || "",
+                        racaReproNome: opt?.label || "",
+                      }))
+                    }
                     styles={rsStyles}
                     placeholder="Selecione..."
                     menuPortalTarget={menuPortalTarget}
+                    isLoading={carregandoRacas}
                   />
                 </Field>
               </div>
@@ -1037,7 +1074,8 @@ function toForm(initial) {
     semCarenciaCarne: !!pick(d, "semCarenciaCarne", "sem_carencia_carne"),
 
     grupoEquivalencia: pick(d, "grupoEquivalencia", "grupo_equivalencia") ?? "",
-    racaRepro: pick(d, "racaRepro", "raca_repro") ?? "",
+    racaReproId: pick(d, "racaId", "raca_id") ?? "",
+    racaReproNome: pick(d, "racaRepro", "raca_repro") ?? "",
 
     // ativo (edição)
     ativo: pick(d, "ativo"),
@@ -1122,7 +1160,8 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
   const usosPorUnidadeFinal = f.reutilizavel ? toNum(f.usosPorUnidade) : null;
   const categoriaGrupo = normalizarCategoriaGrupo(f.categoria);
   const exigeRacaRepro = categoriaFinal === "Reprodução" && (f.subTipo === "Sêmen" || f.subTipo === "Embrião");
-  const racaReproFinal = exigeRacaRepro ? String(f.racaRepro || "").trim() : null;
+  const racaReproFinal = exigeRacaRepro ? String(f.racaReproNome || "").trim() : null;
+  const racaIdFinal = exigeRacaRepro ? String(f.racaReproId || "").trim() || null : null;
   const grupoEquivalenciaFinal = CATEGORIAS_GRUPO_EQ.has(categoriaGrupo)
     ? f.grupoEquivalencia && String(f.grupoEquivalencia).trim()
       ? String(f.grupoEquivalencia).trim()
@@ -1145,6 +1184,7 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
     sem_carencia_leite: !!f.semCarenciaLeite,
     sem_carencia_carne: !!f.semCarenciaCarne,
     raca_repro: racaReproFinal,
+    raca_id: racaIdFinal,
     ativo: isEdit && f.ativo === false ? false : true,
     quantidade_total: quantidadeEntrada,
     total_calculado: quantidadeEntrada,
