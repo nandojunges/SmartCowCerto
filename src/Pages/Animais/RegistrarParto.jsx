@@ -392,6 +392,25 @@ export default function RegistrarParto(props) {
         sem_secagem: semSecagem || false,
       };
 
+      const { data: iaData, error: iaError } = await supabase
+        .from("repro_eventos")
+        .select("id,touro_nome")
+        .eq("fazenda_id", resolvedFazendaId)
+        .eq("animal_id", animalId)
+        .eq("tipo", "IA")
+        .lte("data_evento", dataISO)
+        .order("data_evento", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (iaError) {
+        logSupabaseError(iaError, "consultar_ia_parto");
+      }
+
+      const iaId = iaData?.id ?? null;
+      const paiNome = iaData?.touro_nome ?? null;
+
       const { data: partoData, error: partoError } = await supabase
         .from("repro_eventos")
         .insert([
@@ -400,6 +419,7 @@ export default function RegistrarParto(props) {
             animal_id: animalId,
             tipo: "PARTO",
             data_evento: dataISO,
+            evento_pai_id: iaId,
             user_id: userId,
             meta: metaParto,
           },
@@ -514,22 +534,6 @@ export default function RegistrarParto(props) {
 
       let bezerrosPayload = [];
       if (statusBezerro === "Vivo" && bezerrosVivos.length > 0) {
-        const { data: iaData, error: iaError } = await supabase
-          .from("repro_eventos")
-          .select("touro_nome")
-          .eq("fazenda_id", resolvedFazendaId)
-          .eq("animal_id", animalId)
-          .eq("tipo", "IA")
-          .lte("data_evento", dataISO)
-          .order("data_evento", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (iaError) {
-          logSupabaseError(iaError, "consultar_ia_parto");
-        }
-
         const sexosNormalizados = bezerrosVivos.map((bezerro) =>
           normalizarSexoBezerro(bezerro?.sexo?.value ?? bezerro?.sexo)
         );
@@ -567,7 +571,7 @@ export default function RegistrarParto(props) {
             mae_id: animalId,
             pai_nome: paiNomeInformado?.trim()
               ? paiNomeInformado.trim()
-              : iaData?.touro_nome ?? null,
+              : paiNome,
           };
         });
 
