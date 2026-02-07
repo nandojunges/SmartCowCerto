@@ -434,6 +434,23 @@ export default function RegistrarParto(props) {
       ]);
 
       if (reproPartoError) {
+        console.warn(
+          "Aviso: repro_eventos inserido, mas repro_partos falhou (evento órfão).",
+          {
+            fazenda_id: resolvedFazendaId,
+            user_id: userId,
+            parto_evento_id: partoData?.id ?? null,
+          },
+          reproPartoError
+        );
+        if (reproPartoError?.status === 403) {
+          console.error("Permissão/RLS bloqueou repro_partos.", {
+            fazenda_id: resolvedFazendaId,
+            user_id: userId,
+          });
+          setErro("Permissão/RLS do Supabase bloqueou repro_partos.");
+          return;
+        }
         throw reproPartoError;
       }
 
@@ -804,7 +821,7 @@ export default function RegistrarParto(props) {
       minHeight: "40px",
       fontSize: "0.9rem",
       "&:hover": {
-        borderColor: "#10b981",
+        border: "2px solid #10b981",
       },
     }),
     menu: (base) => ({
