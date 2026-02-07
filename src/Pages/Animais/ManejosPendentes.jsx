@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import RegistrarParto from "./RegistrarParto";
 import RegistrarSecagem from "./RegistrarSecagem";
+import ModalParametrosRepro from "./ModalParametrosRepro";
 
 const MAX_ROWS = 8;
 
@@ -80,10 +81,14 @@ const fmtBR = (date) => {
 export default function ManejosPendentes({
   pendencias = { secagem: [], preparto: [], parto: [] },
   hasDpp = false,
+  fazendaId,
+  userId,
+  onParamsSaved,
 }) {
   const [pendTabAtiva, setPendTabAtiva] = useState("secagem");
   const [modalSecagemOpen, setModalSecagemOpen] = useState(false);
   const [modalPartoOpen, setModalPartoOpen] = useState(false);
+  const [openParamsModal, setOpenParamsModal] = useState(false);
   const [animalSelecionado, setAnimalSelecionado] = useState(null);
   const [prePartoSelecionado, setPrePartoSelecionado] = useState(null);
   const [hoveredRowId, setHoveredRowId] = useState(null);
@@ -342,29 +347,40 @@ export default function ManejosPendentes({
 
   return (
     <div style={styles.wrapper}>
-      <div style={styles.pillsContainer}>
-        {tabs.map((key) => {
-          const cfg = CONFIGS[key];
-          const count = pendencias?.[key]?.length || 0;
-          const isActive = pendTabAtiva === key;
+      <div style={styles.tabsRow}>
+        <div style={styles.pillsContainer}>
+          {tabs.map((key) => {
+            const cfg = CONFIGS[key];
+            const count = pendencias?.[key]?.length || 0;
+            const isActive = pendTabAtiva === key;
 
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setPendTabAtiva(key)}
-              style={{
-                ...styles.pill,
-                ...(isActive ? styles.pillActive : {}),
-              }}
-            >
-              <span style={styles.pillLabel}>{cfg.label}</span>
-              <span style={{ ...styles.pillBadge, ...(isActive ? styles.pillBadgeActive : {}) }}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPendTabAtiva(key)}
+                style={{
+                  ...styles.pill,
+                  ...(isActive ? styles.pillActive : {}),
+                }}
+              >
+                <span style={styles.pillLabel}>{cfg.label}</span>
+                <span style={{ ...styles.pillBadge, ...(isActive ? styles.pillBadgeActive : {}) }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          style={styles.gearButton}
+          title="Parâmetros reprodutivos"
+          aria-label="Parâmetros reprodutivos"
+          onClick={() => setOpenParamsModal(true)}
+        >
+          ⚙️
+        </button>
       </div>
 
       <div>
@@ -399,6 +415,16 @@ export default function ManejosPendentes({
           setAnimalSelecionado(null);
         }}
       />
+
+      <ModalParametrosRepro
+        open={openParamsModal}
+        onClose={() => setOpenParamsModal(false)}
+        fazendaId={fazendaId}
+        userId={userId}
+        onSaved={() => {
+          onParamsSaved?.();
+        }}
+      />
     </div>
   );
 }
@@ -410,10 +436,29 @@ const styles = {
     gap: "12px",
     marginBottom: "16px",
   },
+  tabsRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+  },
   pillsContainer: {
     display: "flex",
     gap: "8px",
     flexWrap: "wrap",
+  },
+  gearButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "34px",
+    height: "34px",
+    borderRadius: "999px",
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    fontSize: "16px",
+    cursor: "pointer",
+    boxShadow: "0 6px 14px rgba(15, 23, 42, 0.06)",
   },
   pill: {
     display: "inline-flex",

@@ -68,7 +68,7 @@ function obterValor(obj, chaves, fallback = null) {
    Componente Principal
 ========================= */
 export default function Plantel({ isOnline = navigator.onLine }) {
-  const { fazendaAtualId } = useFazenda();
+  const { fazendaAtualId, session } = useFazenda();
 
   const CACHE_ANIMAIS = "cache:animais:list";
   const CACHE_FALLBACK = "cache:animais:plantel:v1";
@@ -94,6 +94,8 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const popoverRef = useRef(null);
   const triggerRefs = useRef({});
   const [popoverStyle, setPopoverStyle] = useState({ left: "50%", transform: "translateX(-50%)" });
+  const [pendenciasView, setPendenciasView] = useState(null);
+  const [pendenciaPorIdView, setPendenciaPorIdView] = useState(new Map());
 
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [filtros, setFiltros] = useState({
@@ -110,6 +112,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const LOTE_TABLE = "lotes";
   const PLANTEL_VIEW = "v_animais_plantel";
   const REPRO_VIEW = "v_repro_tabela";
+  const PENDENCIAS_VIEW = "v_manejos_pendentes";
   const DIAS_PARA_SECAGEM = 60;
   const DIAS_INICIO_PREPARTO = 21;
   const DIAS_ALERTA_PARTO = 7;
@@ -525,12 +528,98 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     return Math.floor(ms / (1000 * 60 * 60 * 24));
   }, []);
 
+  const normalizePendenciaAba = useCallback((value) => {
+    const raw = String(value || "").trim().toUpperCase();
+    if (!raw) return null;
+    if (raw === "SECAGEM") return "secagem";
+    if (raw === "PARTO") return "parto";
+    if (raw === "PREPARTO" || raw === "PRÉ-PARTO" || raw === "PRE-PARTO") return "preparto";
+    if (raw.includes("PRE") && raw.includes("PARTO")) return "preparto";
+    return null;
+  }, []);
+
+  const prepararPendenciasView = useCallback(
+    (rows) => {
+      const base = { secagem: [], preparto: [], parto: [] };
+      const map = new Map();
+      const hoje = startOfDay(new Date());
+
+      (rows || []).forEach((row) => {
+        const abaKey = normalizePendenciaAba(row?.aba ?? row?.tipo ?? row?.categoria);
+        if (!abaKey) return;
+
+        const animal = row?.animal ?? row;
+        const animalId = row?.animal_id ?? animal?.animal_id ?? row?.id ?? animal?.id;
+        const dppValue =
+          row?.dpp ??
+          row?.data_prevista_parto ??
+          row?.data_prev_parto ??
+          row?.prev_parto ??
+          row?.previsto_parto;
+        const dppDate = startOfDay(parseDateFlexible(dppValue) || dppValue);
+        const diasParaDpp = dppDate ? diffDays(hoje, dppDate) : null;
+
+        const item = {
+          ...row,
+          animal,
+          dpp: dppValue,
+          diasParaDpp,
+          dataPrevSecagem:
+            row?.data_prev_secagem ??
+            row?.data_prevista_secagem ??
+            row?.prev_secagem ??
+            row?.previsto_secagem,
+          ultima_ia: row?.ultima_ia ?? row?.ultima_inseminacao ?? row?.ultima_inseminacao_data,
+        };
+
+        base[abaKey].push(item);
+        if (animalId != null) map.set(String(animalId), abaKey);
+      });
+
+      base.secagem.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
+      base.preparto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
+      base.parto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
+
+      return { base, map };
+    },
+    [diffDays, normalizePendenciaAba, startOfDay]
+  );
+
+  const carregarPendencias = useCallback(async () => {
+    if (!fazendaAtualId || !isOnline) {
+      setPendenciasView(null);
+      setPendenciaPorIdView(new Map());
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from(PENDENCIAS_VIEW)
+      .select("*")
+      .eq("fazenda_id", fazendaAtualId)
+      .in("aba", ["SECAGEM", "PREPARTO", "PARTO"]);
+
+    if (error) {
+      console.warn("Erro ao carregar pendências:", error);
+      setPendenciasView(null);
+      setPendenciaPorIdView(new Map());
+      return;
+    }
+
+    const { base, map } = prepararPendenciasView(data);
+    setPendenciasView(base);
+    setPendenciaPorIdView(map);
+  }, [PENDENCIAS_VIEW, fazendaAtualId, isOnline, prepararPendenciasView]);
+
+  useEffect(() => {
+    carregarPendencias();
+  }, [carregarPendencias]);
+
   const isWithin = useCallback((value, min, max) => {
     if (!Number.isFinite(value)) return false;
     return value >= min && value <= max;
   }, []);
 
-  const { pendencias, pendenciaPorId, hasDpp } = useMemo(() => {
+  const fallbackPendencias = useMemo(() => {
     const base = { secagem: [], preparto: [], parto: [] };
     const map = new Map();
     let hasDppValue = false;
@@ -605,6 +694,10 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     DIAS_INICIO_PREPARTO,
     DIAS_PARA_SECAGEM,
   ]);
+
+  const pendencias = pendenciasView ?? fallbackPendencias.pendencias;
+  const pendenciaPorId = pendenciasView ? pendenciaPorIdView : fallbackPendencias.pendenciaPorId;
+  const hasDpp = fallbackPendencias.hasDpp;
 
   const situacoesProdutivas = useMemo(() => {
     const set = new Set();
@@ -1059,6 +1152,9 @@ export default function Plantel({ isOnline = navigator.onLine }) {
             pendencias={pendencias}
             onAction={handleManejoAction}
             hasDpp={hasDpp}
+            fazendaId={fazendaAtualId}
+            userId={session?.user?.id}
+            onParamsSaved={carregarPendencias}
           />
         </section>
 
