@@ -109,6 +109,27 @@ export default function RegistrarParto(props) {
     ).padStart(2, "0")}`;
   };
 
+  const brToISODate = (valor) => {
+    if (!valor) return null;
+    if (valor instanceof Date) {
+      const dt = new Date(valor);
+      if (Number.isNaN(dt.getTime())) return null;
+      const ano = dt.getFullYear();
+      const mes = String(dt.getMonth() + 1).padStart(2, "0");
+      const dia = String(dt.getDate()).padStart(2, "0");
+      return `${ano}-${mes}-${dia}`;
+    }
+    const texto = String(valor || "").trim();
+    if (!texto) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(texto)) {
+      return converterDataParaISO(texto);
+    }
+    return null;
+  };
+
+  const isISODate = (valor) => /^\d{4}-\d{2}-\d{2}$/.test(String(valor || "").trim());
+
   const converterDataParaDate = (valor) => {
     if (!valor) return null;
     if (valor instanceof Date) {
@@ -327,8 +348,8 @@ export default function RegistrarParto(props) {
   const salvar = async () => {
     if (!validarFormulario()) return;
 
-    const dataISO = converterDataParaISO(dataParto);
-    if (!dataISO) {
+    const dataISO = brToISODate(dataParto);
+    if (!isISODate(dataISO)) {
       setErro("Data do parto inválida. Use o formato dd/mm/aaaa.");
       return;
     }
@@ -438,7 +459,7 @@ export default function RegistrarParto(props) {
         vacaSafe?.data_prevista_parto ??
         vacaSafe?.previsaoParto ??
         null;
-      const previsaoPartoISO = formatarDateISO(previsaoPartoRaw);
+      const previsaoPartoISO = brToISODate(previsaoPartoRaw);
       const previsaoPartoDate = converterDataParaDate(previsaoPartoRaw);
       const dataPartoDate = converterDataParaDate(dataISO);
       const desvioDiasParto =
@@ -455,13 +476,14 @@ export default function RegistrarParto(props) {
           ? bezerroPrincipal.sexo.value
           : null;
       const tipoParto = facilidade?.value === "Sem assistência" ? "Normal" : "Distócico";
-      const teveAuxilio = assistencia?.value ? assistencia.value !== "Não necessária" : false;
+      const teveAuxilio = !!(assistencia?.value && assistencia.value !== "Não necessária");
 
       const colostroTextoAtual = String(colostroBrix ?? "").trim();
       const colostroNumero =
         colostroTextoAtual === "" ? null : Number(colostroTextoAtual.replace(",", "."));
       const colostroValidoAtual = Number.isFinite(colostroNumero);
       const colostroAdequadoAtual = colostroValidoAtual ? colostroNumero >= 22 : null;
+      const extrasPayload = null;
 
       const { error: reproPartoError } = await supabase.from("repro_partos").insert([
         {
@@ -478,11 +500,12 @@ export default function RegistrarParto(props) {
           sexo_bezerro: sexoBezerro,
           colostro_brix: colostroValidoAtual ? colostroNumero : null,
           colostro_adequado: colostroAdequadoAtual,
-          extras: null,
+          extras: extrasPayload,
         },
       ]);
 
       if (reproPartoError) {
+        logSupabaseError(reproPartoError, "insert_repro_partos");
         console.warn(
           "Aviso: repro_eventos inserido, mas repro_partos falhou (evento órfão).",
           {
@@ -499,6 +522,7 @@ export default function RegistrarParto(props) {
             .delete()
             .eq("id", partoEventoId);
           if (rollbackError) {
+            logSupabaseError(rollbackError, "rollback_repro_eventos_parto");
             console.error("Falha ao remover repro_eventos após erro em repro_partos.", {
               fazenda_id: resolvedFazendaId,
               user_id: userId,
