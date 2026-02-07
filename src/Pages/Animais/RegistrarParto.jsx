@@ -343,6 +343,17 @@ export default function RegistrarParto(props) {
       return;
     }
 
+    const logSupabaseError = (error, contexto) => {
+      if (!error) return;
+      console.error(`Erro Supabase (${contexto}):`, {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        status: error.status,
+      });
+    };
+
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) {
@@ -535,9 +546,23 @@ export default function RegistrarParto(props) {
         });
 
         if (bezerrosPayload.length > 0) {
-          const { error: bezerrosError } = await supabase.from("animais").insert(bezerrosPayload);
-          if (bezerrosError) {
-            throw bezerrosError;
+          const bezerrosCriados = [];
+          for (const payload of bezerrosPayload) {
+            const { data: bezerroData, error: bezerrosError } = await supabase
+              .from("animais")
+              .insert(payload)
+              .select("fazenda_id,user_id,numero,brinco,nascimento,sexo,origem,mae_nome,meta")
+              .single();
+            if (bezerrosError) {
+              logSupabaseError(bezerrosError, "insert_animais");
+              throw bezerrosError;
+            }
+            if (bezerroData) {
+              bezerrosCriados.push(bezerroData);
+            }
+          }
+          if (bezerrosCriados.length > 0) {
+            bezerrosPayload = bezerrosCriados;
           }
         }
       }
@@ -546,6 +571,7 @@ export default function RegistrarParto(props) {
       onClose?.();
       props.onSaved?.({ data: dataISO, bezerros: bezerrosPayload });
     } catch (error) {
+      logSupabaseError(error, "salvar_parto");
       console.error("Erro ao salvar parto:", error);
       setErro("Não foi possível salvar o parto agora. Tente novamente.");
     }
@@ -825,12 +851,16 @@ export default function RegistrarParto(props) {
     control: (base, state) => ({
       ...base,
       borderRadius: "0.5rem",
-      border: `2px solid ${state.isFocused ? "#10b981" : "#e5e7eb"}`,
+      borderWidth: "2px",
+      borderStyle: "solid",
+      borderColor: state.isFocused ? "#10b981" : "#e5e7eb",
       boxShadow: "none",
       minHeight: "40px",
       fontSize: "0.9rem",
       "&:hover": {
-        border: "2px solid #10b981",
+        borderWidth: "2px",
+        borderStyle: "solid",
+        borderColor: "#10b981",
       },
     }),
     menu: (base) => ({
