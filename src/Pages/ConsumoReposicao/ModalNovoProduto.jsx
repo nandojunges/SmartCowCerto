@@ -316,23 +316,53 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
 
     const carregarRacas = async () => {
       setCarregandoRacas(true);
-      const { data, error } = await supabase
-        .from("racas")
-        .select("id, nome")
-        .eq("fazenda_id", fazendaAtualId)
-        .eq("ativo", true)
-        .order("nome");
+      const logRacasError = (error) => {
+        console.error("[racas] error", {
+          code: error?.code,
+          message: error?.message,
+          details: error?.details,
+          hint: error?.hint,
+        });
+      };
+
+      const buscarRacas = async (usarFiltroAtivo) => {
+        let query = supabase.from("racas").select("id, nome").eq("fazenda_id", fazendaAtualId);
+
+        if (usarFiltroAtivo) {
+          query = query.eq("ativo", true);
+        }
+
+        return query.order("nome", { ascending: true });
+      };
+
+      const { data: dataComAtivo, error: errorComAtivo } = await buscarRacas(true);
 
       if (!ativo) return;
 
-      if (error) {
-        setTabelaRacasDisponivel(false);
-        setRacasOptions(RACAS_FALLBACK);
-      } else {
+      if (errorComAtivo) {
+        logRacasError(errorComAtivo);
+        const { data: dataSemAtivo, error: errorSemAtivo } = await buscarRacas(false);
+
+        if (!ativo) return;
+
+        if (errorSemAtivo) {
+          logRacasError(errorSemAtivo);
+          setTabelaRacasDisponivel(false);
+          setRacasOptions(RACAS_FALLBACK);
+          setCarregandoRacas(false);
+          return;
+        }
+
         setTabelaRacasDisponivel(true);
-        const lista = (data || []).map((raca) => ({ value: raca.nome, label: raca.nome }));
-        setRacasOptions(lista.length ? lista : RACAS_FALLBACK);
+        const listaSemAtivo = (dataSemAtivo || []).map((raca) => ({ value: raca.nome, label: raca.nome }));
+        setRacasOptions(listaSemAtivo.length ? listaSemAtivo : RACAS_FALLBACK);
+        setCarregandoRacas(false);
+        return;
       }
+
+      setTabelaRacasDisponivel(true);
+      const lista = (dataComAtivo || []).map((raca) => ({ value: raca.nome, label: raca.nome }));
+      setRacasOptions(lista.length ? lista : RACAS_FALLBACK);
 
       setCarregandoRacas(false);
     };
