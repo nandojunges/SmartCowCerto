@@ -354,6 +354,17 @@ export default function RegistrarParto(props) {
       });
     };
 
+    const normalizarSexoBezerro = (valor) => {
+      if (valor === null || valor === undefined) return null;
+      const texto = String(valor).trim();
+      if (!texto) return null;
+      const semAcento = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const minusculo = semAcento.toLowerCase();
+      if (minusculo === "femea" || minusculo === "f") return "femea";
+      if (minusculo === "macho" || minusculo === "m") return "macho";
+      return null;
+    };
+
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) {
@@ -496,6 +507,14 @@ export default function RegistrarParto(props) {
 
       let bezerrosPayload = [];
       if (statusBezerro === "Vivo" && bezerrosVivos.length > 0) {
+        const sexosNormalizados = bezerrosVivos.map((bezerro) =>
+          normalizarSexoBezerro(bezerro?.sexo?.value ?? bezerro?.sexo)
+        );
+        if (sexosNormalizados.some((sexo) => !sexo)) {
+          setErro("Selecione o sexo do bezerro (Macho ou Fêmea)");
+          return;
+        }
+
         const { data: maxData, error: maxError } = await supabase
           .from("animais")
           .select("numero")
@@ -510,19 +529,15 @@ export default function RegistrarParto(props) {
 
         let proximoNumero = (Number(maxData?.numero) || 0) + 1;
 
-        bezerrosPayload = bezerrosVivos.map((bezerro) => {
+        bezerrosPayload = bezerrosVivos.map((bezerro, index) => {
           const numero = proximoNumero++;
-          const sexoValue =
-            bezerro?.sexo?.value === "Macho" || bezerro?.sexo?.value === "Fêmea"
-              ? bezerro.sexo.value
-              : null;
           return {
             fazenda_id: resolvedFazendaId,
             user_id: userId,
             numero,
             brinco: `TEMP-${numero}`,
             nascimento: dataISO,
-            sexo: sexoValue,
+            sexo: sexosNormalizados[index],
             origem: "propriedade",
             mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
           };
