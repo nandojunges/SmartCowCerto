@@ -214,13 +214,6 @@ export default function RegistrarParto(props) {
     });
   };
 
-  const obterPaiNomeInformado = (bezerro) => {
-    if (!bezerro) return "";
-    if (typeof bezerro.pai_nome === "string") return bezerro.pai_nome;
-    if (typeof bezerro.paiNome === "string") return bezerro.paiNome;
-    return "";
-  };
-
   const calcularTempoColostragem = (horaPartoStr, horaColostro) => {
     if (!horaPartoStr || !horaColostro) return null;
     const [h1, m1] = String(horaPartoStr).split(":").map(Number);
@@ -311,17 +304,11 @@ export default function RegistrarParto(props) {
     const partosAtual = parseInt(animais[indexMae].numeroPartos || "0", 10);
     animais[indexMae].numeroPartos = String(Number.isFinite(partosAtual) ? partosAtual + 1 : 1);
 
-    const todosNumeros = [
-      ...animais.map((a) => Number(a?.numero) || 0),
-      ...bezerrosExistentes.map((b) => Number(b?.numero) || 0),
-    ];
-    let proximoNumero = todosNumeros.length > 0 ? Math.max(...todosNumeros) + 1 : 1;
-
     const novosBezerros = bezerros.filter((b) => !b?.natimorto).map((b) => {
       const minutos = calcularTempoColostragem(horaParto, b.colostragem.hora);
       return {
-        numero: proximoNumero++,
-        mae: vacaSafe.numero,
+        numero: null,
+        mae: vacaSafe.numero ?? null,
         sexo: b.sexo.value,
         dataNascimento: dataParto,
         horaNascimento: horaParto,
@@ -382,17 +369,6 @@ export default function RegistrarParto(props) {
       });
     };
 
-    const normalizarSexoBezerro = (valor) => {
-      if (valor === null || valor === undefined) return null;
-      const texto = String(valor).trim();
-      if (!texto) return null;
-      const semAcento = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const minusculo = semAcento.toLowerCase();
-      if (minusculo === "femea" || minusculo === "f") return "femea";
-      if (minusculo === "macho" || minusculo === "m") return "macho";
-      return null;
-    };
-
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) {
@@ -430,7 +406,6 @@ export default function RegistrarParto(props) {
       }
 
       const iaId = iaData?.id ?? null;
-      const paiNome = iaData?.touro_nome ?? null;
 
       const { data: partoData, error: partoError } = await supabase
         .from("repro_eventos")
@@ -554,104 +529,7 @@ export default function RegistrarParto(props) {
         }
       }
 
-      const bezerrosVivos = bezerros.filter((bezerro) => !bezerro?.natimorto);
-
-      let bezerrosPayload = [];
-      if (statusBezerro === "Vivo" && bezerrosVivos.length > 0) {
-        const sexosNormalizados = bezerrosVivos.map((bezerro) =>
-          normalizarSexoBezerro(bezerro?.sexo?.value ?? bezerro?.sexo)
-        );
-        if (sexosNormalizados.some((sexo) => !sexo)) {
-          setErro("Selecione o sexo do bezerro (Macho ou Fêmea)");
-          return;
-        }
-
-        const { data: maxData, error: maxError } = await supabase
-          .from("animais")
-          .select("numero")
-          .eq("fazenda_id", resolvedFazendaId)
-          .order("numero", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (maxError) {
-          throw maxError;
-        }
-
-        let proximoNumero = (Number(maxData?.numero) || 0) + 1;
-
-        bezerrosPayload = bezerrosVivos.map((bezerro, index) => {
-          const numero = proximoNumero++;
-          const paiNomeInformado = obterPaiNomeInformado(bezerro);
-          const paiNomeInformadoTrim = paiNomeInformado?.trim() ?? "";
-          const paiNomeBase = paiNome?.trim() ?? "";
-          const paiNomeFinal = paiNomeInformadoTrim || paiNomeBase;
-          const payload = {
-            fazenda_id: resolvedFazendaId,
-            user_id: userId,
-            numero,
-            brinco: `TEMP-${numero}`,
-            nascimento: dataISO,
-            sexo: sexosNormalizados[index],
-            origem: "propriedade",
-            mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
-            mae_id: animalId,
-          };
-          if (paiNomeFinal) {
-            payload.pai_nome = paiNomeFinal;
-          }
-          return payload;
-        });
-
-        if (bezerrosPayload.length > 0) {
-          const bezerrosCriados = [];
-          for (const payload of bezerrosPayload) {
-            const { data: bezerroData, error: bezerrosError } = await supabase
-              .from("animais")
-              .insert(payload)
-              .select("id")
-              .single();
-            if (bezerrosError) {
-              logSupabaseError(bezerrosError, "insert_animais");
-              if (bezerrosError.code === "23505") {
-                const { data: existente, error: existenteError } = await supabase
-                  .from("animais")
-                  .select("id,pai_nome")
-                  .eq("fazenda_id", resolvedFazendaId)
-                  .eq("numero", payload.numero)
-                  .maybeSingle();
-                if (existenteError) {
-                  logSupabaseError(existenteError, "select_animais_existente");
-                  throw existenteError;
-                }
-                if (existente) {
-                  const paiNomeAtual = existente?.pai_nome ?? "";
-                  const paiNomeNovo = payload?.pai_nome ?? "";
-                  if (!paiNomeAtual && paiNomeNovo) {
-                    const { error: updateError } = await supabase
-                      .from("animais")
-                      .update({ pai_nome: paiNomeNovo })
-                      .eq("id", existente.id);
-                    if (updateError) {
-                      logSupabaseError(updateError, "update_pai_nome");
-                      throw updateError;
-                    }
-                  }
-                  bezerrosCriados.push({ id: existente.id });
-                  continue;
-                }
-              }
-              throw bezerrosError;
-            }
-            if (bezerroData) {
-              bezerrosCriados.push(bezerroData);
-            }
-          }
-          if (bezerrosCriados.length > 0) {
-            bezerrosPayload = bezerrosCriados;
-          }
-        }
-      }
+      const bezerrosPayload = [];
 
       window.dispatchEvent(new Event("animaisAtualizados"));
       onClose?.();
