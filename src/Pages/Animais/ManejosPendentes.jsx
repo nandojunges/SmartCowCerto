@@ -1,382 +1,215 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
-function formatDateBR(dateObj) {
-  if (!dateObj) return "—";
-  const dd = String(dateObj.getDate()).padStart(2, "0");
-  const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
-  const yyyy = dateObj.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-}
-
-const Icon = ({ name, size = 16 }) => {
-  const icons = {
-    droplet: (
-      <path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z" />
-    ),
-    home: (
-      <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-    ),
-    heart: (
-      <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
-    ),
-    calendar: (
-      <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    ),
-    clock: (
-      <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    ),
-    check: (
-      <path d="M5 13l4 4L19 7" />
-    ),
-    chevronRight: (
-      <path d="M9 5l7 7-7 7" />
-    ),
-    chevronDown: (
-      <path d="M19 9l-7 7-7-7" />
-    ),
-  };
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ flexShrink: 0 }}
-    >
-      {icons[name] || null}
-    </svg>
-  );
-};
+const MAX_ROWS = 8;
 
 const CONFIGS = {
   secagem: {
     label: "Secagem",
     action: "Registrar Secagem",
-    icon: "droplet",
-    color: "#3B82F6",
-    lightBg: "#DBEAFE",
-    darkBg: "#1E40AF",
+    buttonStyle: { background: "#eef6ff", color: "#1e40af", borderColor: "rgba(37, 99, 235, 0.35)" },
   },
   preparto: {
     label: "Pré-parto",
-    action: "Iniciar Pré-parto",
-    icon: "home",
-    color: "#F59E0B",
-    lightBg: "#FEF3C7",
-    darkBg: "#D97706",
+    action: "Marcar Pré-parto",
+    buttonStyle: { background: "#fff7ed", color: "#9a3412", borderColor: "rgba(154, 52, 18, 0.35)" },
   },
   parto: {
     label: "Parto",
     action: "Registrar Parto",
-    icon: "heart",
-    color: "#10B981",
-    lightBg: "#D1FAE5",
-    darkBg: "#059669",
+    buttonStyle: { background: "#ecfdf3", color: "#166534", borderColor: "rgba(22, 163, 74, 0.35)" },
   },
+};
+
+const startOfDay = (date) => {
+  if (!date) return null;
+  const dt = new Date(date);
+  if (Number.isNaN(dt.getTime())) return null;
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+
+const diffDays = (a, b) => {
+  if (!a || !b) return null;
+  const ms = b.getTime() - a.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+};
+
+const fmtBR = (date) => {
+  if (!date) return "—";
+  const dt = new Date(date);
+  if (Number.isNaN(dt.getTime())) return "—";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 };
 
 export default function ManejosPendentes({
   pendencias = { secagem: [], preparto: [], parto: [] },
-  activeKey = null,
-  onFilterChange,
   onAction,
   hasDpp = false,
 }) {
-  const [expandedRow, setExpandedRow] = useState(null);
+  const [pendTabAtiva, setPendTabAtiva] = useState("secagem");
 
-  const listas = pendencias;
-  const active = activeKey;
-  const activeList = active ? listas[active] || [] : [];
-  const config = active ? CONFIGS[active] : null;
-
-  const handleToggle = (key) => {
-    if (onFilterChange) {
-      onFilterChange(active === key ? null : key);
+  useEffect(() => {
+    if (!CONFIGS[pendTabAtiva]) {
+      setPendTabAtiva("secagem");
     }
-    setExpandedRow(null);
-  };
+  }, [pendTabAtiva]);
+
+  const tabs = useMemo(() => Object.keys(CONFIGS), []);
+  const activeList = pendencias?.[pendTabAtiva] || [];
 
   const handleAction = (tipo, animal) => {
-    const id = animal?.animal_id ?? animal?.id;
     if (onAction) {
-      onAction({ tipo, animalId: id, animal });
+      onAction({ tipo, animalId: animal?.animal_id ?? animal?.id, animal });
       return;
     }
-    console.log("manejo_pendente", { tipo, animal_id: id });
   };
 
-  const getUrgencyColor = (dias) => {
-    if (dias <= 3) return "#EF4444";
-    if (dias <= 7) return "#F59E0B";
-    if (dias <= 14) return "#3B82F6";
-    return "#6B7280";
+  const renderPendenciasTable = (rows, tipo) => {
+    if (!rows.length) {
+      return (
+        <div style={styles.emptyState}>
+          Nenhuma pendência para este período.
+        </div>
+      );
+    }
+
+    const visibleRows = rows.slice(0, MAX_ROWS);
+    const hiddenCount = rows.length - visibleRows.length;
+    const cfg = CONFIGS[tipo];
+
+    return (
+      <div className="st-table-container">
+        <div className="st-table-wrap">
+          <table className="st-table st-table--darkhead">
+            <colgroup>
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "18%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="st-th"><span className="st-th-label">Animal</span></th>
+                <th className="st-th st-td-right"><span className="st-th-label">DEL</span></th>
+                <th className="st-th"><span className="st-th-label">Última IA</span></th>
+                <th className="st-th"><span className="st-th-label">Prev. Parto</span></th>
+                <th className="st-th"><span className="st-th-label">Prev. Secagem</span></th>
+                <th className="st-th st-td-right"><span className="st-th-label">Ações</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((item, idx) => {
+                const animal = item?.animal || item || {};
+                const numero = animal?.numero ?? "—";
+                const brinco = animal?.brinco ?? "—";
+                const del = animal?.del ?? "—";
+                const dpp = item?.dpp ?? animal?.dpp ?? animal?.data_prevista_parto;
+                const ultimaIa = item?.ultima_ia ?? animal?.ultima_ia;
+                const diasParaDpp =
+                  Number.isFinite(item?.diasParaDpp)
+                    ? item.diasParaDpp
+                    : diffDays(startOfDay(new Date()), startOfDay(dpp));
+                const dataPrevSecagem =
+                  item?.dataPrevSecagem ??
+                  (dpp
+                    ? (() => {
+                        const dt = startOfDay(dpp);
+                        if (!dt) return null;
+                        dt.setDate(dt.getDate() - 60);
+                        return dt;
+                      })()
+                    : null);
+
+                return (
+                  <tr key={`${tipo}-${animal?.id ?? animal?.animal_id ?? idx}`} className="st-row">
+                    <td className="st-col-animal">
+                      <div style={styles.animalCell}>
+                        <div style={styles.animalNum}>#{numero}</div>
+                        <div style={styles.animalInfo}>
+                          <span style={styles.animalTitle}>Brinco {brinco}</span>
+                          <span style={styles.animalSub}>
+                            {Number.isFinite(diasParaDpp) ? `${diasParaDpp} dias` : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="st-td-right">
+                      <span className="st-num">{del ?? "—"}</span>
+                    </td>
+                    <td>{fmtBR(ultimaIa)}</td>
+                    <td>{fmtBR(dpp)}</td>
+                    <td>{fmtBR(dataPrevSecagem)}</td>
+                    <td className="st-td-right">
+                      <button
+                        type="button"
+                        className="st-btn"
+                        style={{
+                          ...cfg.buttonStyle,
+                          borderWidth: "1px",
+                          borderStyle: "solid",
+                        }}
+                        onClick={() => handleAction(tipo, animal)}
+                      >
+                        {cfg.action}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {hiddenCount > 0 && (
+              <tfoot>
+                <tr>
+                  <td colSpan={6} style={styles.moreRow}>
+                    +{hiddenCount} pendência{hiddenCount > 1 ? "s" : ""} ocultas
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div style={styles.wrapper}>
-      {/* Pills */}
       <div style={styles.pillsContainer}>
-        {Object.entries(CONFIGS).map(([key, cfg]) => {
-          const count = listas[key]?.length || 0;
-          const isActive = active === key;
+        {tabs.map((key) => {
+          const cfg = CONFIGS[key];
+          const count = pendencias?.[key]?.length || 0;
+          const isActive = pendTabAtiva === key;
 
           return (
             <button
               key={key}
               type="button"
-              onClick={() => handleToggle(key)}
+              onClick={() => setPendTabAtiva(key)}
               style={{
                 ...styles.pill,
-                background: isActive ? cfg.lightBg : "#fff",
-                borderColor: isActive ? cfg.color : "#E5E7EB",
-                transform: isActive ? "translateY(-2px)" : "translateY(0)",
-                boxShadow: isActive
-                  ? "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
-                  : "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                  e.currentTarget.style.boxShadow = "0 2px 4px 0 rgba(0, 0, 0, 0.1)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.transform = "translateY(0)";
-                  e.currentTarget.style.boxShadow = "0 1px 2px 0 rgba(0, 0, 0, 0.05)";
-                }
+                ...(isActive ? styles.pillActive : {}),
               }}
             >
-              <div
-                style={{
-                  ...styles.pillIcon,
-                  background: isActive ? cfg.color : cfg.lightBg,
-                  color: isActive ? "#fff" : cfg.color,
-                }}
-              >
-                <Icon name={cfg.icon} size={14} />
-              </div>
-              <span style={{ ...styles.pillLabel, color: isActive ? cfg.darkBg : "#374151" }}>
-                {cfg.label}
-              </span>
-              <span
-                style={{
-                  ...styles.pillBadge,
-                  background: isActive ? cfg.color : "#F3F4F6",
-                  color: isActive ? "#fff" : "#6B7280",
-                }}
-              >
+              <span style={styles.pillLabel}>{cfg.label}</span>
+              <span style={{ ...styles.pillBadge, ...(isActive ? styles.pillBadgeActive : {}) }}>
                 {count}
               </span>
             </button>
           );
         })}
-        {active && (
-          <button
-            type="button"
-            onClick={() => onFilterChange?.(null)}
-            style={styles.clearFilterBtn}
-          >
-            Mostrar todos
-          </button>
-        )}
       </div>
 
-      {!hasDpp && (
-        <div style={styles.disclaimer}>
-          <Icon name="calendar" size={14} />
-          <span>Pendências baseadas na previsão de parto dos animais</span>
-        </div>
-      )}
+      <div style={styles.infoBar}>
+        <span style={styles.infoTitle}>Pendências baseadas na previsão de parto dos animais</span>
+        {!hasDpp && <span style={styles.infoMuted}>Nenhuma previsão de parto registrada.</span>}
+      </div>
 
-      {/* Lista expandida */}
-      {active && config && (
-        <div
-          style={{
-            ...styles.listContainer,
-            borderColor: config.color,
-          }}
-        >
-          <div
-            style={{
-              ...styles.listHeader,
-              background: config.lightBg,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div
-                style={{
-                  width: "28px",
-                  height: "28px",
-                  borderRadius: "8px",
-                  background: config.color,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#fff",
-                }}
-              >
-                <Icon name={config.icon} size={16} />
-              </div>
-              <div>
-                <div style={{ fontSize: "14px", fontWeight: "700", color: "#111827" }}>
-                  {config.label}
-                </div>
-              <div style={{ fontSize: "11px", color: "#6B7280" }}>
-                {activeList.length} {activeList.length === 1 ? "animal" : "animais"}
-              </div>
-            </div>
-          </div>
-            <button
-              onClick={() => onFilterChange?.(null)}
-              style={styles.closeBtn}
-            >
-              <Icon name="chevronDown" size={16} />
-            </button>
-          </div>
-
-          {activeList.length === 0 ? (
-            <div style={styles.emptyState}>
-              <div style={{ fontSize: "32px", marginBottom: "8px" }}>🎉</div>
-              <div style={{ fontSize: "13px", fontWeight: "600", color: "#374151" }}>
-                Nenhum animal pendente
-              </div>
-              <div style={{ fontSize: "12px", color: "#9CA3AF" }}>
-                Tudo em dia para {config.label.toLowerCase()}
-              </div>
-            </div>
-          ) : (
-            <div style={styles.listContent}>
-              {activeList.map((item) => {
-                const animal = item.animal || {};
-                const id = animal?.animal_id ?? animal?.id;
-                const numero = animal?.numero ?? "—";
-                const brinco = animal?.brinco ?? "—";
-                const isExpanded = expandedRow === id;
-                const urgencyColor = getUrgencyColor(item.diasParaDpp);
-
-                return (
-                  <div key={`${active}-${id}`} style={styles.rowContainer}>
-                    <button
-                      style={styles.row}
-                      onClick={() => setExpandedRow(isExpanded ? null : id)}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = config.lightBg;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "#fff";
-                      }}
-                    >
-                      <div style={styles.rowLeft}>
-                        <div
-                          style={{
-                            ...styles.rowIndicator,
-                            background: urgencyColor,
-                          }}
-                        />
-                        <div style={styles.animalInfo}>
-                          <div style={styles.animalNumero}>#{numero}</div>
-                          <div style={styles.animalBrinco}>{brinco}</div>
-                        </div>
-                      </div>
-
-                      <div style={styles.rowRight}>
-                        <div
-                          style={{
-                            ...styles.daysChip,
-                            background: `${urgencyColor}15`,
-                            color: urgencyColor,
-                            borderColor: `${urgencyColor}30`,
-                          }}
-                        >
-                          <Icon name="clock" size={12} />
-                          <span style={{ fontWeight: "700" }}>
-                            {item.diasParaDpp}d
-                          </span>
-                        </div>
-                        <Icon
-                          name={isExpanded ? "chevronDown" : "chevronRight"}
-                          size={16}
-                          color="#9CA3AF"
-                        />
-                      </div>
-                    </button>
-
-                    {isExpanded && (
-                      <div
-                        style={{
-                          ...styles.expandedContent,
-                          background: config.lightBg,
-                        }}
-                      >
-                        <div style={styles.detailsGrid}>
-                          <div style={styles.detailItem}>
-                            <Icon name="calendar" size={14} color="#6B7280" />
-                            <div>
-                              <div style={styles.detailLabel}>Previsão</div>
-                              <div style={styles.detailValue}>
-                                {formatDateBR(item.dpp)}
-                              </div>
-                            </div>
-                          </div>
-                          <div style={styles.detailItem}>
-                            <Icon name="clock" size={14} color="#6B7280" />
-                            <div>
-                              <div style={styles.detailLabel}>Faltam</div>
-                              <div style={styles.detailValue}>
-                                {item.diasParaDpp} {item.diasParaDpp === 1 ? "dia" : "dias"}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          style={{
-                            ...styles.actionButton,
-                            background: config.color,
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleAction(active, animal);
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = config.darkBg;
-                            e.currentTarget.style.transform = "scale(1.02)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = config.color;
-                            e.currentTarget.style.transform = "scale(1)";
-                          }}
-                        >
-                          <Icon name="check" size={14} />
-                          {config.action}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      <style>{`
-        @keyframes slideDown {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
+      <div style={styles.tableBlock}>{renderPendenciasTable(activeList, pendTabAtiva)}</div>
     </div>
   );
 }
@@ -394,196 +227,108 @@ const styles = {
     flexWrap: "wrap",
   },
   pill: {
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
     gap: "8px",
-    padding: "8px 12px",
-    borderRadius: "12px",
-    border: "2px solid",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
+    padding: "8px 14px",
+    borderRadius: "999px",
+    border: "1px solid #e5e7eb",
     background: "#fff",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 700,
+    color: "#0f172a",
   },
-  pillIcon: {
-    width: "24px",
-    height: "24px",
-    borderRadius: "6px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "all 0.2s ease",
+  pillActive: {
+    borderColor: "#1d4ed8",
+    boxShadow: "0 6px 14px rgba(29, 78, 216, 0.12)",
   },
   pillLabel: {
     fontSize: "13px",
-    fontWeight: "700",
-    transition: "color 0.2s ease",
+    fontWeight: 700,
   },
   pillBadge: {
-    minWidth: "20px",
-    height: "20px",
-    padding: "0 6px",
-    borderRadius: "10px",
-    fontSize: "11px",
-    fontWeight: "800",
-    display: "flex",
+    minWidth: "22px",
+    height: "22px",
+    padding: "0 8px",
+    borderRadius: "999px",
+    background: "#f1f5f9",
+    color: "#475569",
+    fontSize: "12px",
+    fontWeight: 800,
+    display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    transition: "all 0.2s ease",
   },
-  clearFilterBtn: {
-    marginLeft: "auto",
-    padding: "6px 10px",
-    borderRadius: "10px",
-    border: "1px solid #E5E7EB",
-    background: "#F9FAFB",
-    color: "#374151",
-    fontSize: "12px",
-    fontWeight: 700,
-    cursor: "pointer",
+  pillBadgeActive: {
+    background: "#1d4ed8",
+    color: "#fff",
   },
-  disclaimer: {
+  infoBar: {
     display: "flex",
     alignItems: "center",
-    gap: "6px",
+    gap: "10px",
     padding: "8px 12px",
-    background: "#F9FAFB",
-    borderRadius: "8px",
+    borderRadius: "10px",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
     fontSize: "12px",
-    color: "#6B7280",
   },
-  listContainer: {
-    border: "2px solid",
-    borderRadius: "16px",
-    background: "#fff",
-    overflow: "hidden",
-    animation: "slideDown 0.3s ease",
+  infoTitle: {
+    fontWeight: 700,
+    color: "#1e293b",
   },
-  listHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "12px 16px",
+  infoMuted: {
+    color: "#64748b",
   },
-  closeBtn: {
-    width: "28px",
-    height: "28px",
-    borderRadius: "8px",
-    border: "none",
-    background: "rgba(255, 255, 255, 0.8)",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "all 0.2s ease",
+  tableBlock: {
+    width: "100%",
   },
   emptyState: {
+    padding: "18px",
+    borderRadius: "12px",
+    border: "1px dashed #cbd5f5",
+    background: "#f8fafc",
+    textAlign: "center",
+    fontSize: "13px",
+    color: "#64748b",
+    fontWeight: 600,
+  },
+  animalCell: {
     display: "flex",
-    flexDirection: "column",
+    alignItems: "center",
+    gap: "10px",
+  },
+  animalNum: {
+    minWidth: "36px",
+    height: "32px",
+    borderRadius: "10px",
+    background: "#e0f2fe",
+    color: "#0c4a6e",
+    display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "32px 16px",
-    textAlign: "center",
-  },
-  listContent: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  rowContainer: {
-    borderTop: "1px solid #F3F4F6",
-  },
-  row: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "12px 16px",
-    background: "#fff",
-    border: "none",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-  },
-  rowLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-  rowIndicator: {
-    width: "4px",
-    height: "32px",
-    borderRadius: "2px",
+    fontWeight: 800,
+    fontSize: "12px",
   },
   animalInfo: {
     display: "flex",
     flexDirection: "column",
     gap: "2px",
-    alignItems: "flex-start",
   },
-  animalNumero: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#111827",
+  animalTitle: {
+    fontSize: "12.5px",
+    fontWeight: 700,
+    color: "#0f172a",
   },
-  animalBrinco: {
+  animalSub: {
     fontSize: "11px",
-    color: "#6B7280",
+    color: "#64748b",
   },
-  rowRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
-  daysChip: {
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "4px 8px",
-    borderRadius: "8px",
+  moreRow: {
+    padding: "10px 14px",
     fontSize: "12px",
-    border: "1px solid",
-  },
-  expandedContent: {
-    padding: "12px 16px 16px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    animation: "slideDown 0.2s ease",
-  },
-  detailsGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "12px",
-  },
-  detailItem: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "8px",
-    padding: "10px",
-    background: "#fff",
-    borderRadius: "8px",
-  },
-  detailLabel: {
-    fontSize: "11px",
-    color: "#6B7280",
-    marginBottom: "2px",
-  },
-  detailValue: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#111827",
-  },
-  actionButton: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "6px",
-    padding: "10px",
-    border: "none",
-    borderRadius: "10px",
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#fff",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
+    color: "#64748b",
+    textAlign: "right",
   },
 };
