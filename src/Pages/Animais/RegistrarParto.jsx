@@ -193,6 +193,13 @@ export default function RegistrarParto(props) {
     });
   };
 
+  const obterPaiNomeInformado = (bezerro) => {
+    if (!bezerro) return "";
+    if (typeof bezerro.pai_nome === "string") return bezerro.pai_nome;
+    if (typeof bezerro.paiNome === "string") return bezerro.paiNome;
+    return "";
+  };
+
   const calcularTempoColostragem = (horaPartoStr, horaColostro) => {
     if (!horaPartoStr || !horaColostro) return null;
     const [h1, m1] = String(horaPartoStr).split(":").map(Number);
@@ -507,6 +514,22 @@ export default function RegistrarParto(props) {
 
       let bezerrosPayload = [];
       if (statusBezerro === "Vivo" && bezerrosVivos.length > 0) {
+        const { data: iaData, error: iaError } = await supabase
+          .from("repro_eventos")
+          .select("touro_nome")
+          .eq("fazenda_id", resolvedFazendaId)
+          .eq("animal_id", animalId)
+          .eq("tipo", "IA")
+          .lte("data_evento", dataISO)
+          .order("data_evento", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (iaError) {
+          logSupabaseError(iaError, "consultar_ia_parto");
+        }
+
         const sexosNormalizados = bezerrosVivos.map((bezerro) =>
           normalizarSexoBezerro(bezerro?.sexo?.value ?? bezerro?.sexo)
         );
@@ -531,6 +554,7 @@ export default function RegistrarParto(props) {
 
         bezerrosPayload = bezerrosVivos.map((bezerro, index) => {
           const numero = proximoNumero++;
+          const paiNomeInformado = obterPaiNomeInformado(bezerro);
           return {
             fazenda_id: resolvedFazendaId,
             user_id: userId,
@@ -541,6 +565,9 @@ export default function RegistrarParto(props) {
             origem: "propriedade",
             mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
             mae_id: animalId,
+            pai_nome: paiNomeInformado?.trim()
+              ? paiNomeInformado.trim()
+              : iaData?.touro_nome ?? null,
           };
         });
 
