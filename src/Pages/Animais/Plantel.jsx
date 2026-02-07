@@ -97,7 +97,6 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const popoverRef = useRef(null);
   const triggerRefs = useRef({});
   const [popoverStyle, setPopoverStyle] = useState({ left: "50%", transform: "translateX(-50%)" });
-  const [filtroPendencia, setFiltroPendencia] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [filtros, setFiltros] = useState({
@@ -115,6 +114,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const PLANTEL_VIEW = "v_animais_plantel";
   const REPRO_VIEW = "v_repro_tabela";
   const DIAS_PARA_SECAGEM = 60;
+  const DIAS_INICIO_PREPARTO = 21;
   const DIAS_ALERTA_PARTO = 7;
 
   // ficha
@@ -514,6 +514,14 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   ========================= */
   const linhas = useMemo(() => (Array.isArray(animais) ? animais : []), [animais]);
 
+  const startOfDay = useCallback((date) => {
+    if (!date) return null;
+    const dt = new Date(date);
+    if (Number.isNaN(dt.getTime())) return null;
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+  }, []);
+
   const diffDays = useCallback((dateA, dateB) => {
     if (!dateA || !dateB) return null;
     const ms = dateB.getTime() - dateA.getTime();
@@ -529,33 +537,77 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     const base = { secagem: [], preparto: [], parto: [] };
     const map = new Map();
     let hasDppValue = false;
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    const hoje = startOfDay(new Date());
 
     linhas.forEach((animal) => {
-      const dpp = parseDateFlexible(animal?.dpp);
+      const dppRaw = parseDateFlexible(animal?.dpp ?? animal?.data_prevista_parto);
+      const dpp = startOfDay(dppRaw);
       if (!dpp) return;
       hasDppValue = true;
       const diasParaDpp = diffDays(hoje, dpp);
       if (!Number.isFinite(diasParaDpp)) return;
-      const item = { animal, dpp, diasParaDpp };
+      const dataPrevSecagem = new Date(dpp);
+      dataPrevSecagem.setDate(dpp.getDate() - DIAS_PARA_SECAGEM);
+      const dataInicioPreParto = new Date(dpp);
+      dataInicioPreParto.setDate(dpp.getDate() - DIAS_INICIO_PREPARTO);
+      const item = { animal, dpp, diasParaDpp, dataPrevSecagem, dataInicioPreParto };
       const animalId = animal?.animal_id ?? animal?.id;
       const key = animalId != null ? String(animalId) : null;
 
       if (isWithin(diasParaDpp, 0, DIAS_ALERTA_PARTO)) {
         base.parto.push(item);
         if (key) map.set(key, "parto");
-      } else if (diasParaDpp > DIAS_ALERTA_PARTO && diasParaDpp <= DIAS_PARA_SECAGEM) {
+      } else if (diasParaDpp > DIAS_ALERTA_PARTO && diasParaDpp <= DIAS_INICIO_PREPARTO) {
+        base.preparto.push(item);
+        if (key) map.set(key, "preparto");
+      } else if (diasParaDpp > DIAS_INICIO_PREPARTO && diasParaDpp <= DIAS_PARA_SECAGEM) {
         base.secagem.push(item);
         if (key) map.set(key, "secagem");
       }
     });
 
     base.secagem.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
+    base.preparto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
     base.parto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
 
+    if (import.meta.env?.DEV) {
+      const mockAnimal = {
+        id: "mock-casa",
+        numero: "999",
+        brinco: "Casa",
+        del: 120,
+      };
+      const mockDpp = startOfDay(new Date());
+      if (mockDpp) {
+        mockDpp.setDate(mockDpp.getDate() + 10);
+        const diasMock = diffDays(hoje, mockDpp);
+        const dataPrevSecagem = new Date(mockDpp);
+        dataPrevSecagem.setDate(mockDpp.getDate() - DIAS_PARA_SECAGEM);
+        const dataInicioPreParto = new Date(mockDpp);
+        dataInicioPreParto.setDate(mockDpp.getDate() - DIAS_INICIO_PREPARTO);
+        base.preparto.push({
+          animal: mockAnimal,
+          dpp: mockDpp,
+          diasParaDpp: diasMock,
+          dataPrevSecagem,
+          dataInicioPreParto,
+          ultima_ia: mockDpp,
+        });
+        map.set("mock-casa", "preparto");
+        hasDppValue = true;
+      }
+    }
+
     return { pendencias: base, pendenciaPorId: map, hasDpp: hasDppValue };
-  }, [linhas, diffDays, isWithin, DIAS_ALERTA_PARTO, DIAS_PARA_SECAGEM]);
+  }, [
+    linhas,
+    diffDays,
+    isWithin,
+    startOfDay,
+    DIAS_ALERTA_PARTO,
+    DIAS_INICIO_PREPARTO,
+    DIAS_PARA_SECAGEM,
+  ]);
 
   const situacoesProdutivas = useMemo(() => {
     const set = new Set();
@@ -748,17 +800,17 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     }
     if (tipo === "parto") {
       abrirParto(animal);
+      return;
+    }
+    if (tipo === "preparto") {
+      setLoteAviso("Função será conectada ao banco.");
+      setTimeout(() => setLoteAviso(""), 2500);
     }
   }, [abrirParto, abrirSecagem]);
 
   const linhasFiltradas = useMemo(() => {
     const busca = filtros.animalBusca.trim().toLowerCase();
     return linhas.filter((a) => {
-      if (filtroPendencia) {
-        const id = a?.animal_id ?? a?.id;
-        const key = id != null ? String(id) : null;
-        if (!key || pendenciaPorId.get(key) !== filtroPendencia) return false;
-      }
       if (filtros.lote !== allValue) {
         if (filtros.lote === semLoteValue) {
           if (a?.[LOTE_FIELD] != null && a?.[LOTE_FIELD] !== "") return false;
@@ -794,7 +846,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       }
       return true;
     });
-  }, [linhas, filtros, allValue, semLoteValue, resolveSituacaoProdutiva, resolveStatusReprodutivo, filtroPendencia, pendenciaPorId]);
+  }, [linhas, filtros, allValue, semLoteValue, resolveSituacaoProdutiva, resolveStatusReprodutivo]);
 
   const linhasOrdenadas = useMemo(() => {
     if (!sortConfig.key || !sortConfig.direction) return linhasFiltradas;
@@ -1008,8 +1060,6 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         <section className="manejos-pendentes-wrapper" style={styles.manejosSection}>
           <ManejosPendentes
             pendencias={pendencias}
-            activeKey={filtroPendencia}
-            onFilterChange={setFiltroPendencia}
             onAction={handleManejoAction}
             hasDpp={hasDpp}
           />
