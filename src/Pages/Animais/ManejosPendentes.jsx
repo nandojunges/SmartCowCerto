@@ -99,6 +99,7 @@ export default function ManejosPendentes({
 
   const tabs = useMemo(() => Object.keys(CONFIGS), []);
   const activeList = pendencias?.[pendTabAtiva] || [];
+
   const mapaAnimais = useMemo(() => {
     const map = new Map();
     (animais || []).forEach((animal) => {
@@ -110,16 +111,19 @@ export default function ManejosPendentes({
 
   const handleAction = (tipo, animal) => {
     if (!animal) return;
+
     if (tipo === "secagem") {
       setAnimalSelecionado(animal);
       setModalSecagemOpen(true);
       return;
     }
+
     if (tipo === "parto") {
       setAnimalSelecionado(animal);
       setModalPartoOpen(true);
       return;
     }
+
     if (tipo === "preparto") {
       setPrePartoSelecionado(animal);
     }
@@ -364,6 +368,7 @@ export default function ManejosPendentes({
             );
           })}
         </div>
+
         <button
           type="button"
           style={styles.gearButton}
@@ -382,31 +387,37 @@ export default function ManejosPendentes({
 
       <div>{renderPendenciasTable(activeList, pendTabAtiva)}</div>
 
-      <RegistrarSecagem
-        open={modalSecagemOpen}
-        onClose={() => {
-          setModalSecagemOpen(false);
-          setAnimalSelecionado(null);
-        }}
-        animal={animalSelecionado}
-        onSaved={() => {
-          setModalSecagemOpen(false);
-          setAnimalSelecionado(null);
-        }}
-      />
+      {/* ✅ Só monta quando estiver aberto (não aparece ao entrar na aba) */}
+      {modalSecagemOpen && animalSelecionado && (
+        <RegistrarSecagem
+          open={modalSecagemOpen}
+          onClose={() => {
+            setModalSecagemOpen(false);
+            setAnimalSelecionado(null);
+          }}
+          animal={animalSelecionado}
+          onSaved={() => {
+            setModalSecagemOpen(false);
+            setAnimalSelecionado(null);
+          }}
+        />
+      )}
 
-      <RegistrarParto
-        open={modalPartoOpen}
-        onClose={() => {
-          setModalPartoOpen(false);
-          setAnimalSelecionado(null);
-        }}
-        animal={animalSelecionado}
-        onSaved={() => {
-          setModalPartoOpen(false);
-          setAnimalSelecionado(null);
-        }}
-      />
+      {/* ✅ Só monta quando estiver aberto */}
+      {modalPartoOpen && animalSelecionado && (
+        <RegistrarParto
+          open={modalPartoOpen}
+          onClose={() => {
+            setModalPartoOpen(false);
+            setAnimalSelecionado(null);
+          }}
+          animal={animalSelecionado}
+          onSaved={() => {
+            setModalPartoOpen(false);
+            setAnimalSelecionado(null);
+          }}
+        />
+      )}
 
       <ModalParametrosRepro
         open={openParamsModal}
@@ -502,8 +513,7 @@ const styles = {
     backgroundColor: "#ffffff",
     borderRadius: "16px",
     border: "1px solid #e2e8f0",
-    boxShadow:
-      "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
     overflow: "hidden",
   },
   tableContainer: { overflowX: "auto" },
@@ -559,7 +569,14 @@ const styles = {
   },
   animalInfo: { display: "flex", flexDirection: "column", gap: "1px", minWidth: 0 },
   animalTitle: { fontWeight: 700, color: "#0f172a", fontSize: "14px", lineHeight: 1.1 },
-  animalSub: { fontSize: "12.5px", color: "#64748b", display: "flex", alignItems: "center", gap: "6px", lineHeight: 1.1 },
+  animalSub: {
+    fontSize: "12.5px",
+    color: "#64748b",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    lineHeight: 1.1,
+  },
   dot: { color: "#cbd5e1" },
   actionBtn: {
     padding: "6px 10px",
