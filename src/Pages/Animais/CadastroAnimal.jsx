@@ -303,6 +303,41 @@ export default function CadastroAnimal() {
 
   useEffect(() => {
     let ativo = true;
+    const carregarConfigSequencial = async () => {
+      if (!fazendaAtualId) return;
+      const { data, error } = await supabase
+        .from("config_animais")
+        .select("numero_sequencial")
+        .eq("fazenda_id", fazendaAtualId)
+        .maybeSingle();
+      if (error) {
+        console.warn("Erro ao carregar config_animais:", error);
+        return;
+      }
+      if (!ativo || !data || typeof data.numero_sequencial !== "boolean") return;
+      setAutoNumero(data.numero_sequencial);
+    };
+    carregarConfigSequencial();
+    return () => {
+      ativo = false;
+    };
+  }, [fazendaAtualId]);
+
+  const atualizarConfigSequencial = async (valor) => {
+    if (!fazendaAtualId) return;
+    const { error } = await supabase
+      .from("config_animais")
+      .upsert(
+        { fazenda_id: fazendaAtualId, numero_sequencial: valor },
+        { onConflict: "fazenda_id" }
+      );
+    if (error) {
+      console.warn("Erro ao salvar config_animais:", error);
+    }
+  };
+
+  useEffect(() => {
+    let ativo = true;
     const carregarUsuario = async () => {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
@@ -434,8 +469,6 @@ export default function CadastroAnimal() {
     const payloadAnimal = {
       user_id: userId,
       fazenda_id: fazendaAtualId,
-
-      numero: Number(numero),
       brinco,
       nascimento: nascimentoISO,
       sexo,
@@ -450,6 +483,9 @@ export default function CadastroAnimal() {
 
       ativo: true,
     };
+    if (!autoNumero) {
+      payloadAnimal.numero = Number(numero);
+    }
 
     // OFFLINE
     if (!navigator.onLine) {
@@ -664,7 +700,11 @@ export default function CadastroAnimal() {
                       <input
                         type="checkbox"
                         checked={autoNumero}
-                        onChange={(e) => setAutoNumero(e.target.checked)}
+                        onChange={(e) => {
+                          const valor = e.target.checked;
+                          setAutoNumero(valor);
+                          atualizarConfigSequencial(valor);
+                        }}
                         style={{ marginRight: 4 }}
                       />
                       numeração automática
