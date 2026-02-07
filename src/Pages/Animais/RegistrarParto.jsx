@@ -1,5 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Select from "react-select";
+import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
 
 export default function RegistrarParto(props) {
   // ✅ Compatível com as duas assinaturas:
@@ -32,6 +34,7 @@ export default function RegistrarParto(props) {
   const [bezerros, setBezerros] = useState([]);
   const [erro, setErro] = useState("");
   const [mostrarAvisoSemSecagem, setMostrarAvisoSemSecagem] = useState(semSecagem);
+  const { fazendaAtualId } = useFazenda();
 
   function criarBezerroVazio(numero) {
     return {
@@ -87,6 +90,18 @@ export default function RegistrarParto(props) {
     const mes = limpo.slice(2, 4);
     const ano = limpo.slice(4, 8);
     return [dia, mes, ano].filter(Boolean).join("/");
+  };
+
+  const converterDataParaISO = (valor) => {
+    const [dia, mes, ano] = String(valor || "").split("/");
+    if (!dia || !mes || !ano) return null;
+    const diaNum = Number(dia);
+    const mesNum = Number(mes);
+    const anoNum = Number(ano);
+    if (!diaNum || !mesNum || !anoNum) return null;
+    return `${String(anoNum).padStart(4, "0")}-${String(mesNum).padStart(2, "0")}-${String(
+      diaNum
+    ).padStart(2, "0")}`;
   };
 
   const adicionarBezerro = () => {
@@ -157,9 +172,7 @@ export default function RegistrarParto(props) {
     return true;
   };
 
-  const salvar = () => {
-    if (!validarFormulario()) return;
-
+  const salvarLocalStorage = () => {
     const animais = JSON.parse(localStorage.getItem("animais") || "[]");
     const bezerrosExistentes = JSON.parse(localStorage.getItem("bezerros") || "[]");
 
@@ -241,6 +254,117 @@ export default function RegistrarParto(props) {
 
     onClose?.();
     props.onSaved?.(dadosParto);
+  };
+
+  const salvar = async () => {
+    if (!validarFormulario()) return;
+
+    const dataISO = converterDataParaISO(dataParto);
+    if (!dataISO) {
+      setErro("Data do parto inválida. Use o formato dd/mm/aaaa.");
+      return;
+    }
+
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      salvarLocalStorage();
+      return;
+    }
+
+    const resolvedFazendaId = fazendaIdProp ?? fazendaAtualId ?? vacaSafe?.fazenda_id ?? null;
+    if (!resolvedFazendaId) {
+      setErro("Não foi possível identificar a fazenda para registrar o parto.");
+      return;
+    }
+
+    const animalId = animalIdProp ?? vacaSafe?.id ?? vacaSafe?.animal_id ?? null;
+    if (!animalId) {
+      setErro("Não foi possível identificar a vaca para registrar o parto.");
+      return;
+    }
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) {
+        throw authError;
+      }
+
+      const userId = authData?.user?.id ?? null;
+      if (!userId) {
+        setErro("Sessão expirada. Faça login novamente.");
+        return;
+      }
+
+      const metaParto = {
+        origem: "manejos_pendentes",
+        input_br: dataParto,
+        bezerros_qtd: bezerros.length,
+        modo: assumidoCadastro ? "historico" : "operacional",
+        sem_secagem: semSecagem || false,
+      };
+
+      const { data: partoData, error: partoError } = await supabase
+        .from("repro_eventos")
+        .insert([
+          {
+            fazenda_id: resolvedFazendaId,
+            animal_id: animalId,
+            tipo: "PARTO",
+            data_evento: dataISO,
+            user_id: userId,
+            meta: metaParto,
+          },
+        ])
+        .select("id")
+        .maybeSingle();
+
+      if (partoError) {
+        throw partoError;
+      }
+
+      const { data: maxData, error: maxError } = await supabase
+        .from("animais")
+        .select("max_num:max(numero)")
+        .eq("fazenda_id", resolvedFazendaId)
+        .maybeSingle();
+
+      if (maxError) {
+        throw maxError;
+      }
+
+      let proximoNumero = (Number(maxData?.max_num) || 0) + 1;
+
+      const bezerrosPayload = bezerros.map((bezerro) => {
+        const numero = proximoNumero++;
+        const sexoValue =
+          bezerro?.sexo?.value === "Macho" || bezerro?.sexo?.value === "Fêmea"
+            ? bezerro.sexo.value
+            : null;
+        return {
+          fazenda_id: resolvedFazendaId,
+          user_id: userId,
+          numero,
+          brinco: `TEMP-${numero}`,
+          nascimento: dataISO,
+          sexo: sexoValue,
+          origem: "propriedade",
+          mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
+          pai_nome: null,
+        };
+      });
+
+      const { error: bezerrosError } = await supabase.from("animais").insert(bezerrosPayload);
+
+      if (bezerrosError) {
+        throw bezerrosError;
+      }
+
+      window.dispatchEvent(new Event("animaisAtualizados"));
+      onClose?.();
+      props.onSaved?.({ data: dataISO, bezerros: bezerrosPayload });
+    } catch (error) {
+      console.error("Erro ao salvar parto:", error);
+      setErro("Não foi possível salvar o parto agora. Tente novamente.");
+    }
   };
 
   const estilos = {
