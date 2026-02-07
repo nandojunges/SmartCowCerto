@@ -443,15 +443,24 @@ export default function RegistrarParto(props) {
           },
           reproPartoError
         );
-        if (reproPartoError?.status === 403) {
-          console.error("Permissão/RLS bloqueou repro_partos.", {
-            fazenda_id: resolvedFazendaId,
-            user_id: userId,
-          });
-          setErro("Permissão/RLS do Supabase bloqueou repro_partos.");
-          return;
+        const partoEventoId = partoData?.id ?? null;
+        if (partoEventoId) {
+          const { error: rollbackError } = await supabase
+            .from("repro_eventos")
+            .delete()
+            .eq("id", partoEventoId);
+          if (rollbackError) {
+            console.error("Falha ao remover repro_eventos após erro em repro_partos.", {
+              fazenda_id: resolvedFazendaId,
+              user_id: userId,
+              parto_evento_id: partoEventoId,
+            });
+          }
+        } else {
+          console.warn("Parto_evento_id ausente; rollback não executado.");
         }
-        throw reproPartoError;
+        setErro("Permissão do banco bloqueou repro_partos; nada foi salvo");
+        return;
       }
 
       if (complicacoesSelecionadas.length > 0) {
