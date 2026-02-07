@@ -534,7 +534,7 @@ export default function RegistrarParto(props) {
             const { data: bezerroData, error: bezerrosError } = await supabase
               .from("animais")
               .insert(payload)
-              .select("fazenda_id,user_id,numero,brinco,nascimento,sexo,origem,mae_nome")
+              .select("id")
               .single();
             if (bezerrosError) {
               logSupabaseError(bezerrosError, "insert_animais");
@@ -831,8 +831,10 @@ export default function RegistrarParto(props) {
   };
 
   const selectStyles = {
-    control: (base, state) => ({
-      ...base,
+    control: (base, state) => {
+      const { border, borderColor, ...baseStyles } = base;
+      return {
+        ...baseStyles,
       borderRadius: "0.5rem",
       border: state.isFocused ? "2px solid #10b981" : "2px solid #e5e7eb",
       boxShadow: "none",
@@ -841,7 +843,8 @@ export default function RegistrarParto(props) {
       "&:hover": {
         border: "2px solid #10b981",
       },
-    }),
+      };
+    },
     menu: (base) => ({
       ...base,
       zIndex: 9999,
