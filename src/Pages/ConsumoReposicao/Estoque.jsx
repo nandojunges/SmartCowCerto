@@ -14,6 +14,7 @@ import ModalNovoProduto from "./ModalNovoProduto";
 import ModalAjusteEstoque from "./ModalAjusteEstoque";
 
 // ✅ Supabase + escopo de fazenda (padrão do teu sistema)
+import { toast } from "react-toastify";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 
@@ -701,6 +702,9 @@ export default function ConsumoReposicao() {
             ? String(grupoEquivalencia).trim()
             : null;
         const racaReproRaw = pick(produtoPayload, "raca_repro", "racaRepro");
+        const racaIdRaw = pick(produtoPayload, "raca_id", "racaId");
+        const racaReproLabel = racaReproRaw?.label ?? racaReproRaw ?? null;
+        const racaIdFinal = racaIdRaw?.value ?? racaIdRaw ?? null;
 
         const unidadeMedidaFinal =
           String(unidade_medida || "").trim() || (reutilizavel ? "uso" : "un");
@@ -743,6 +747,7 @@ export default function ConsumoReposicao() {
 
           ativo,
           raca_repro: null,
+          raca_id: null,
         };
 
         if (!String(row.nome_comercial || "").trim()) throw new Error("Nome do produto é obrigatório.");
@@ -755,11 +760,16 @@ export default function ConsumoReposicao() {
           ["sêmen", "semen", "embrião", "embriao"].includes(subTipoNormalizado);
 
         if (precisaRacaRepro) {
-          const racaRepro = String(racaReproRaw || "").trim();
-          if (!racaRepro) throw new Error("Raça reprodutiva é obrigatória para produtos de reprodução.");
+          if (!String(racaIdFinal || "").trim()) {
+            toast.error("Selecione a raça do sêmen/embrião antes de salvar.");
+            return;
+          }
+          const racaRepro = String(racaReproLabel || "").trim() || null;
           row.raca_repro = racaRepro;
+          row.raca_id = String(racaIdFinal || "").trim() || null;
         } else {
           row.raca_repro = null;
+          row.raca_id = null;
         }
 
         if (row.forma_compra === "A_GRANEL") {
