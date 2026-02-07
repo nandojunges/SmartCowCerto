@@ -1,30 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
-
-function parseDateFlexible(s) {
-  if (!s) return null;
-  const str = String(s).trim();
-  if (!str) return null;
-
-  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) {
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-    const dt = new Date(y, mo - 1, d);
-    return Number.isFinite(dt.getTime()) ? dt : null;
-  }
-
-  m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) {
-    const d = Number(m[1]);
-    const mo = Number(m[2]);
-    const y = Number(m[3]);
-    const dt = new Date(y, mo - 1, d);
-    return Number.isFinite(dt.getTime()) ? dt : null;
-  }
-
-  return null;
-}
+import React, { useState } from "react";
 
 function formatDateBR(dateObj) {
   if (!dateObj) return "—";
@@ -32,12 +6,6 @@ function formatDateBR(dateObj) {
   const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
   const yyyy = dateObj.getFullYear();
   return `${dd}/${mm}/${yyyy}`;
-}
-
-function daysBetween(dateA, dateB) {
-  if (!dateA || !dateB) return null;
-  const ms = dateA.getTime() - dateB.getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
 const Icon = ({ name, size = 16 }) => {
@@ -88,7 +56,7 @@ const Icon = ({ name, size = 16 }) => {
 const CONFIGS = {
   secagem: {
     label: "Secagem",
-    action: "Secar",
+    action: "Registrar Secagem",
     icon: "droplet",
     color: "#3B82F6",
     lightBg: "#DBEAFE",
@@ -96,7 +64,7 @@ const CONFIGS = {
   },
   preparto: {
     label: "Pré-parto",
-    action: "Iniciar",
+    action: "Iniciar Pré-parto",
     icon: "home",
     color: "#F59E0B",
     lightBg: "#FEF3C7",
@@ -104,7 +72,7 @@ const CONFIGS = {
   },
   parto: {
     label: "Parto",
-    action: "Registrar",
+    action: "Registrar Parto",
     icon: "heart",
     color: "#10B981",
     lightBg: "#D1FAE5",
@@ -112,57 +80,24 @@ const CONFIGS = {
   },
 };
 
-export default function ManejosPendentes({ animais = [], onAction }) {
-  const [active, setActive] = useState(null);
+export default function ManejosPendentes({
+  pendencias = { secagem: [], preparto: [], parto: [] },
+  activeKey = null,
+  onFilterChange,
+  onAction,
+  hasDpp = false,
+}) {
   const [expandedRow, setExpandedRow] = useState(null);
 
-  const hoje = useMemo(() => {
-    const base = new Date();
-    base.setHours(0, 0, 0, 0);
-    return base;
-  }, []);
-
-  const resolvePrevParto = useCallback((animal) => {
-    return (
-      parseDateFlexible(animal?.data_prev_parto) ||
-      parseDateFlexible(animal?.dataPrevParto) ||
-      parseDateFlexible(animal?.previsao_parto) ||
-      parseDateFlexible(animal?.previsaoParto) ||
-      parseDateFlexible(animal?.data_prevista_parto) ||
-      parseDateFlexible(animal?.dataPrevistaParto) ||
-      null
-    );
-  }, []);
-
-  const { listas, temPrevParto } = useMemo(() => {
-    const base = { secagem: [], preparto: [], parto: [] };
-    let hasPrev = false;
-    (Array.isArray(animais) ? animais : []).forEach((animal) => {
-      const prevParto = resolvePrevParto(animal);
-      if (!prevParto) return;
-      hasPrev = true;
-      const diasPara = daysBetween(prevParto, hoje);
-      if (!Number.isFinite(diasPara)) return;
-      const item = { animal, prevParto, diasPara };
-      if (diasPara <= 7) {
-        base.parto.push(item);
-      } else if (diasPara <= 21) {
-        base.preparto.push(item);
-      } else if (diasPara <= 60) {
-        base.secagem.push(item);
-      }
-    });
-    base.secagem.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
-    base.preparto.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
-    base.parto.sort((a, b) => (a.diasPara ?? 0) - (b.diasPara ?? 0));
-    return { listas: base, temPrevParto: hasPrev };
-  }, [animais, hoje, resolvePrevParto]);
-
+  const listas = pendencias;
+  const active = activeKey;
   const activeList = active ? listas[active] || [] : [];
   const config = active ? CONFIGS[active] : null;
 
   const handleToggle = (key) => {
-    setActive((prev) => (prev === key ? null : key));
+    if (onFilterChange) {
+      onFilterChange(active === key ? null : key);
+    }
     setExpandedRow(null);
   };
 
@@ -241,9 +176,18 @@ export default function ManejosPendentes({ animais = [], onAction }) {
             </button>
           );
         })}
+        {active && (
+          <button
+            type="button"
+            onClick={() => onFilterChange?.(null)}
+            style={styles.clearFilterBtn}
+          >
+            Mostrar todos
+          </button>
+        )}
       </div>
 
-      {!temPrevParto && (
+      {!hasDpp && (
         <div style={styles.disclaimer}>
           <Icon name="calendar" size={14} />
           <span>Pendências baseadas na previsão de parto dos animais</span>
@@ -283,13 +227,13 @@ export default function ManejosPendentes({ animais = [], onAction }) {
                 <div style={{ fontSize: "14px", fontWeight: "700", color: "#111827" }}>
                   {config.label}
                 </div>
-                <div style={{ fontSize: "11px", color: "#6B7280" }}>
-                  {activeList.length} {activeList.length === 1 ? "animal" : "animais"}
-                </div>
+              <div style={{ fontSize: "11px", color: "#6B7280" }}>
+                {activeList.length} {activeList.length === 1 ? "animal" : "animais"}
               </div>
             </div>
+          </div>
             <button
-              onClick={() => setActive(null)}
+              onClick={() => onFilterChange?.(null)}
               style={styles.closeBtn}
             >
               <Icon name="chevronDown" size={16} />
@@ -314,7 +258,7 @@ export default function ManejosPendentes({ animais = [], onAction }) {
                 const numero = animal?.numero ?? "—";
                 const brinco = animal?.brinco ?? "—";
                 const isExpanded = expandedRow === id;
-                const urgencyColor = getUrgencyColor(item.diasPara);
+                const urgencyColor = getUrgencyColor(item.diasParaDpp);
 
                 return (
                   <div key={`${active}-${id}`} style={styles.rowContainer}>
@@ -352,7 +296,7 @@ export default function ManejosPendentes({ animais = [], onAction }) {
                         >
                           <Icon name="clock" size={12} />
                           <span style={{ fontWeight: "700" }}>
-                            {item.diasPara}d
+                            {item.diasParaDpp}d
                           </span>
                         </div>
                         <Icon
@@ -376,7 +320,7 @@ export default function ManejosPendentes({ animais = [], onAction }) {
                             <div>
                               <div style={styles.detailLabel}>Previsão</div>
                               <div style={styles.detailValue}>
-                                {formatDateBR(item.prevParto)}
+                                {formatDateBR(item.dpp)}
                               </div>
                             </div>
                           </div>
@@ -385,7 +329,7 @@ export default function ManejosPendentes({ animais = [], onAction }) {
                             <div>
                               <div style={styles.detailLabel}>Faltam</div>
                               <div style={styles.detailValue}>
-                                {item.diasPara} {item.diasPara === 1 ? "dia" : "dias"}
+                                {item.diasParaDpp} {item.diasParaDpp === 1 ? "dia" : "dias"}
                               </div>
                             </div>
                           </div>
@@ -485,6 +429,17 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     transition: "all 0.2s ease",
+  },
+  clearFilterBtn: {
+    marginLeft: "auto",
+    padding: "6px 10px",
+    borderRadius: "10px",
+    border: "1px solid #E5E7EB",
+    background: "#F9FAFB",
+    color: "#374151",
+    fontSize: "12px",
+    fontWeight: 700,
+    cursor: "pointer",
   },
   disclaimer: {
     display: "flex",

@@ -7,6 +7,8 @@ import { useFazenda } from "../../context/FazendaContext";
 import { kvGet, kvSet } from "../../offline/localDB";
 import FichaAnimal from "./FichaAnimal/FichaAnimal";
 import ManejosPendentes from "./ManejosPendentes";
+import ModalRegistrarSecagem from "./ModalRegistrarSecagem";
+import ModalRegistrarParto from "./ModalRegistrarParto";
 import "../../styles/tabelaModerna.css";
 
 let MEMO_PLANTEL = { data: null, lastAt: 0 };
@@ -95,6 +97,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const popoverRef = useRef(null);
   const triggerRefs = useRef({});
   const [popoverStyle, setPopoverStyle] = useState({ left: "50%", transform: "translateX(-50%)" });
+  const [filtroPendencia, setFiltroPendencia] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [filtros, setFiltros] = useState({
@@ -111,11 +114,15 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const LOTE_TABLE = "lotes";
   const PLANTEL_VIEW = "v_animais_plantel";
   const REPRO_VIEW = "v_repro_tabela";
+  const DIAS_PARA_SECAGEM = 60;
+  const DIAS_ALERTA_PARTO = 7;
 
   // ficha
   const [animalSelecionado, setAnimalSelecionado] = useState(null);
   const abrirFichaAnimal = (animal) => setAnimalSelecionado(animal);
   const fecharFichaAnimal = () => setAnimalSelecionado(null);
+  const [secagemSelecionada, setSecagemSelecionada] = useState(null);
+  const [partoSelecionado, setPartoSelecionado] = useState(null);
 
   /* =========================
      Loaders (mantidos)
@@ -507,6 +514,49 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   ========================= */
   const linhas = useMemo(() => (Array.isArray(animais) ? animais : []), [animais]);
 
+  const diffDays = useCallback((dateA, dateB) => {
+    if (!dateA || !dateB) return null;
+    const ms = dateB.getTime() - dateA.getTime();
+    return Math.floor(ms / (1000 * 60 * 60 * 24));
+  }, []);
+
+  const isWithin = useCallback((value, min, max) => {
+    if (!Number.isFinite(value)) return false;
+    return value >= min && value <= max;
+  }, []);
+
+  const { pendencias, pendenciaPorId, hasDpp } = useMemo(() => {
+    const base = { secagem: [], preparto: [], parto: [] };
+    const map = new Map();
+    let hasDppValue = false;
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    linhas.forEach((animal) => {
+      const dpp = parseDateFlexible(animal?.dpp);
+      if (!dpp) return;
+      hasDppValue = true;
+      const diasParaDpp = diffDays(hoje, dpp);
+      if (!Number.isFinite(diasParaDpp)) return;
+      const item = { animal, dpp, diasParaDpp };
+      const animalId = animal?.animal_id ?? animal?.id;
+      const key = animalId != null ? String(animalId) : null;
+
+      if (isWithin(diasParaDpp, 0, DIAS_ALERTA_PARTO)) {
+        base.parto.push(item);
+        if (key) map.set(key, "parto");
+      } else if (diasParaDpp > DIAS_ALERTA_PARTO && diasParaDpp <= DIAS_PARA_SECAGEM) {
+        base.secagem.push(item);
+        if (key) map.set(key, "secagem");
+      }
+    });
+
+    base.secagem.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
+    base.parto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
+
+    return { pendencias: base, pendenciaPorId: map, hasDpp: hasDppValue };
+  }, [linhas, diffDays, isWithin, DIAS_ALERTA_PARTO, DIAS_PARA_SECAGEM]);
+
   const situacoesProdutivas = useMemo(() => {
     const set = new Set();
     linhas.forEach((a) => set.add(resolveSituacaoProdutiva(a)));
@@ -682,9 +732,33 @@ export default function Plantel({ isOnline = navigator.onLine }) {
 
   const handleTogglePopover = useCallback((key) => { setOpenPopoverKey((prev) => (prev === key ? null : key)); }, []);
 
+  const abrirSecagem = useCallback((animal) => {
+    setSecagemSelecionada(animal);
+  }, []);
+
+  const abrirParto = useCallback((animal) => {
+    setPartoSelecionado(animal);
+  }, []);
+
+  const handleManejoAction = useCallback(({ tipo, animal }) => {
+    if (!animal) return;
+    if (tipo === "secagem") {
+      abrirSecagem(animal);
+      return;
+    }
+    if (tipo === "parto") {
+      abrirParto(animal);
+    }
+  }, [abrirParto, abrirSecagem]);
+
   const linhasFiltradas = useMemo(() => {
     const busca = filtros.animalBusca.trim().toLowerCase();
     return linhas.filter((a) => {
+      if (filtroPendencia) {
+        const id = a?.animal_id ?? a?.id;
+        const key = id != null ? String(id) : null;
+        if (!key || pendenciaPorId.get(key) !== filtroPendencia) return false;
+      }
       if (filtros.lote !== allValue) {
         if (filtros.lote === semLoteValue) {
           if (a?.[LOTE_FIELD] != null && a?.[LOTE_FIELD] !== "") return false;
@@ -720,7 +794,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       }
       return true;
     });
-  }, [linhas, filtros, allValue, semLoteValue, resolveSituacaoProdutiva, resolveStatusReprodutivo]);
+  }, [linhas, filtros, allValue, semLoteValue, resolveSituacaoProdutiva, resolveStatusReprodutivo, filtroPendencia, pendenciaPorId]);
 
   const linhasOrdenadas = useMemo(() => {
     if (!sortConfig.key || !sortConfig.direction) return linhasFiltradas;
@@ -896,6 +970,9 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       transition: "all 0.2s",
       whiteSpace: "nowrap",
     },
+    actionStack: { display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" },
+    actionBtnSecagem: { backgroundColor: "#2563eb" },
+    actionBtnParto: { backgroundColor: "#16a34a" },
     summaryRow: { backgroundColor: "#f8fafc", borderTop: "2px solid #e2e8f0" },
     summaryContent: { display: "flex", gap: "32px", padding: "16px", fontSize: "13px", color: "#475569", fontWeight: 500 },
     summaryHighlight: { color: "#0f172a", fontWeight: 700 },
@@ -929,7 +1006,13 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         {offlineAviso && <div style={{...styles.alert, backgroundColor: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe"}}>{offlineAviso}</div>}
 
         <section className="manejos-pendentes-wrapper" style={styles.manejosSection}>
-          <ManejosPendentes />
+          <ManejosPendentes
+            pendencias={pendencias}
+            activeKey={filtroPendencia}
+            onFilterChange={setFiltroPendencia}
+            onAction={handleManejoAction}
+            hasDpp={hasDpp}
+          />
         </section>
 
         {atualizando && hasAnimais && (
@@ -1059,6 +1142,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                   const rowId = a.id ?? a.numero ?? a.brinco ?? idx;
                   const isHover = hoveredRowId === rowId;
                   const isColHover = (key) => hoveredColKey === key;
+                  const pendenciaTipo = pendenciaPorId.get(String(a?.animal_id ?? a?.id)) || null;
 
                   return (
                     <tr 
@@ -1144,7 +1228,25 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                         style={{...styles.td, textAlign: "center", ...(isHover ? styles.trHover : {}), ...(isColHover("acoes") ? styles.colHover : {}), ...(isHover && isColHover("acoes") ? styles.cellHover : {})}}
                         onMouseEnter={() => handleCellEnter(rowId, "acoes")}
                       >
-                        <button onClick={() => abrirFichaAnimal(a)} style={styles.actionBtn}>Ficha</button>
+                        <div style={styles.actionStack}>
+                          <button onClick={() => abrirFichaAnimal(a)} style={styles.actionBtn}>Ficha</button>
+                          {pendenciaTipo === "secagem" && (
+                            <button
+                              onClick={() => abrirSecagem(a)}
+                              style={{ ...styles.actionBtn, ...styles.actionBtnSecagem }}
+                            >
+                              Registrar Secagem
+                            </button>
+                          )}
+                          {pendenciaTipo === "parto" && (
+                            <button
+                              onClick={() => abrirParto(a)}
+                              style={{ ...styles.actionBtn, ...styles.actionBtnParto }}
+                            >
+                              Registrar Parto
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1173,6 +1275,20 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       </div>
 
       {animalSelecionado && <FichaAnimal animal={animalSelecionado} onClose={fecharFichaAnimal} />}
+      {secagemSelecionada && (
+        <ModalRegistrarSecagem
+          animal={secagemSelecionada}
+          onClose={() => setSecagemSelecionada(null)}
+          onSave={() => setSecagemSelecionada(null)}
+        />
+      )}
+      {partoSelecionado && (
+        <ModalRegistrarParto
+          animal={partoSelecionado}
+          onClose={() => setPartoSelecionado(null)}
+          onSave={() => setPartoSelecionado(null)}
+        />
+      )}
     </section>
   );
 }
