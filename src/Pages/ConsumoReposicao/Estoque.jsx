@@ -451,7 +451,10 @@ export default function ConsumoReposicao() {
         .eq("fazenda_id", fazendaAtualId)
         .order("nome_comercial", { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        logSb("[estoque_produtos]", error);
+        throw error;
+      }
 
       const { data: lotesData, error: lotesError } = await supabase
         .from("estoque_lotes")
@@ -560,7 +563,11 @@ export default function ConsumoReposicao() {
       setProdutos(adaptados);
       setErro("");
     } catch (e) {
-      console.error("[estoque_produtos] error:", e);
+      if (e?.code || e?.details || e?.hint) {
+        logSb("[estoque_produtos]", e);
+      } else {
+        console.error("[estoque_produtos] error:", e);
+      }
       setErro(e?.message || "Erro ao carregar estoque");
     } finally {
       setCarregando(false);
@@ -636,10 +643,18 @@ export default function ConsumoReposicao() {
           .eq("id", prod.id)
           .eq("fazenda_id", fazendaAtualId);
 
-        if (error) throw error;
+        if (error) {
+          logSb("[estoque_produtos:delete]", error);
+          throw error;
+        }
 
         setProdutos((prev) => prev.filter((p) => p.id !== prod.id));
       } catch (e) {
+        if (e?.code || e?.details || e?.hint) {
+          logSb("[estoque_produtos:delete]", e);
+        } else {
+          console.error(e);
+        }
         setErro(e?.message || "Erro ao excluir produto");
       }
     },
@@ -738,6 +753,7 @@ export default function ConsumoReposicao() {
 
         const { data: auth } = await supabase.auth.getUser();
         const userId = auth?.user?.id || null;
+        row.user_id = userId;
         let produtoRow = null;
 
         if (idEdicao) {
