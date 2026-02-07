@@ -9,6 +9,10 @@ export default function RegistrarSecagem(props) {
   // - antiga:{ vaca, onFechar }
   const animalProp = props.animal ?? props.vaca ?? null;
   const onClose = props.onClose ?? props.onFechar ?? (() => {});
+  const fazendaIdProp = props.fazendaId ?? props.fazenda_id ?? null;
+  const iaIdProp = props.iaId ?? props.ia_id ?? null;
+  const assumidoCadastro = props.assumidoCadastro === true;
+  const animalIdProp = props.animalId ?? props.animal_id ?? null;
 
   // ✅ Blindagem: garante objeto e numero seguro
   const animalSafe = useMemo(
@@ -18,6 +22,7 @@ export default function RegistrarSecagem(props) {
 
   const numeroAnimal = animalSafe?.numero ?? animalSafe?.num ?? "—";
   const { fazendaAtualId } = useFazenda();
+  const fazendaId = fazendaIdProp ?? fazendaAtualId ?? null;
 
   const [dataSecagem, setDataSecagem] = useState("");
   const [planoTratamento, setPlanoTratamento] = useState(null); // ✅ NOVO
@@ -79,7 +84,7 @@ export default function RegistrarSecagem(props) {
   const salvar = async () => {
     setErro("");
 
-    const animalId = animalSafe?.id ?? animalSafe?.animal_id ?? null;
+    const animalId = animalIdProp ?? animalSafe?.id ?? animalSafe?.animal_id ?? null;
     if (!animalId) {
       setErro("Selecione uma vaca válida antes de salvar.");
       return;
@@ -91,7 +96,7 @@ export default function RegistrarSecagem(props) {
       return;
     }
 
-    if (!fazendaAtualId) {
+    if (!fazendaId) {
       setErro("Fazenda atual não encontrada.");
       return;
     }
@@ -108,7 +113,7 @@ export default function RegistrarSecagem(props) {
     }
 
     const payload = {
-      fazenda_id: fazendaAtualId,
+      fazenda_id: fazendaId,
       animal_id: animalId,
       tipo: "SECAGEM",
       data_evento: dataISO,
@@ -120,6 +125,16 @@ export default function RegistrarSecagem(props) {
         observacoes: observacoes || null,
       },
     };
+    if (iaIdProp) {
+      payload.meta.ia_base_id = iaIdProp;
+    }
+    if (assumidoCadastro) {
+      payload.meta.assumido = true;
+      payload.meta.motivo_assuncao = "cadastro_animal_sem_dg";
+      if (iaIdProp) {
+        payload.meta.ia_base_id = iaIdProp;
+      }
+    }
 
     const { error } = await supabase.from("repro_eventos").insert([payload]);
     if (error) {

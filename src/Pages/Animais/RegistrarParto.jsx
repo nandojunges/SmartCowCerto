@@ -7,6 +7,12 @@ export default function RegistrarParto(props) {
   // - antiga:{ vaca, onFechar }
   const animalProp = props.animal ?? props.vaca ?? null;
   const onClose = props.onClose ?? props.onFechar ?? (() => {});
+  const fazendaIdProp = props.fazendaId ?? props.fazenda_id ?? null;
+  const animalIdProp = props.animalId ?? props.animal_id ?? null;
+  const iaIdProp = props.iaId ?? props.ia_id ?? null;
+  const assumidoCadastro = props.assumidoCadastro === true;
+  const semSecagem = props.semSecagem === true;
+  const onRegistrarSecagemAntes = props.onRegistrarSecagemAntes;
 
   // ✅ Blindagem: garante objeto seguro
   const vacaSafe = useMemo(
@@ -25,6 +31,7 @@ export default function RegistrarParto(props) {
   const [observacoesMae, setObservacoesMae] = useState("");
   const [bezerros, setBezerros] = useState([]);
   const [erro, setErro] = useState("");
+  const [mostrarAvisoSemSecagem, setMostrarAvisoSemSecagem] = useState(semSecagem);
 
   function criarBezerroVazio(numero) {
     return {
@@ -60,6 +67,10 @@ export default function RegistrarParto(props) {
     window.addEventListener("keydown", keyHandler);
     return () => window.removeEventListener("keydown", keyHandler);
   }, [onClose]);
+
+  useEffect(() => {
+    setMostrarAvisoSemSecagem(semSecagem);
+  }, [semSecagem]);
 
   // ✅ Se abriu sem vaca, mensagem amigável
   useEffect(() => {
@@ -160,7 +171,21 @@ export default function RegistrarParto(props) {
       return;
     }
 
+    const meta = {};
+    if (iaIdProp) {
+      meta.ia_base_id = iaIdProp;
+    }
+    if (assumidoCadastro) {
+      meta.assumido = true;
+      meta.motivo_assuncao = "cadastro_animal_sem_dg";
+      if (iaIdProp) {
+        meta.ia_base_id = iaIdProp;
+      }
+    }
+
     const dadosParto = {
+      animal_id: animalIdProp ?? vacaSafe?.id ?? vacaSafe?.animal_id ?? null,
+      fazenda_id: fazendaIdProp ?? null,
       data: dataParto,
       hora: horaParto,
       facilidade: facilidade.value,
@@ -169,6 +194,7 @@ export default function RegistrarParto(props) {
       temperatura,
       numeroBezerros: bezerros.length,
       observacoes: observacoesMae,
+      ...(Object.keys(meta).length > 0 ? { meta } : {}),
     };
 
     if (!animais[indexMae].historico) animais[indexMae].historico = [];
@@ -384,6 +410,43 @@ export default function RegistrarParto(props) {
       color: "#065f46",
       marginTop: "1rem",
     },
+    avisoSemSecagem: {
+      background: "#fef3c7",
+      color: "#92400e",
+      border: "1px solid #fcd34d",
+      padding: "0.9rem",
+      borderRadius: "0.6rem",
+      marginBottom: "1rem",
+      fontSize: "0.9rem",
+      display: "flex",
+      flexDirection: "column",
+      gap: "0.75rem",
+    },
+    avisoSemSecagemAcoes: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "0.75rem",
+    },
+    avisoSemSecagemBtnSecagem: {
+      background: "#2563eb",
+      color: "#fff",
+      border: "none",
+      borderRadius: "0.45rem",
+      padding: "0.5rem 0.85rem",
+      fontSize: "0.85rem",
+      fontWeight: 600,
+      cursor: "pointer",
+    },
+    avisoSemSecagemBtnContinuar: {
+      background: "#fff",
+      color: "#92400e",
+      border: "1px solid #fcd34d",
+      borderRadius: "0.45rem",
+      padding: "0.5rem 0.85rem",
+      fontSize: "0.85rem",
+      fontWeight: 600,
+      cursor: "pointer",
+    },
   };
 
   const selectStyles = {
@@ -444,6 +507,27 @@ export default function RegistrarParto(props) {
         <div style={estilos.header}>🐄 Registrar Parto - Vaca {numeroVaca}</div>
 
         <div style={estilos.corpo}>
+          {mostrarAvisoSemSecagem && (
+            <div style={estilos.avisoSemSecagem}>
+              <div>Não encontramos secagem registrada para esta gestação. Deseja continuar?</div>
+              <div style={estilos.avisoSemSecagemAcoes}>
+                <button
+                  type="button"
+                  style={estilos.avisoSemSecagemBtnSecagem}
+                  onClick={() => onRegistrarSecagemAntes?.()}
+                >
+                  Registrar secagem antes
+                </button>
+                <button
+                  type="button"
+                  style={estilos.avisoSemSecagemBtnContinuar}
+                  onClick={() => setMostrarAvisoSemSecagem(false)}
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          )}
           {erro && <div style={estilos.erro}>⚠️ {erro}</div>}
 
           <div style={estilos.secao}>
