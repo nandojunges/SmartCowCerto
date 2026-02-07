@@ -1234,7 +1234,7 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
   const usosPorUnidadeFinal = f.reutilizavel ? toNum(f.usosPorUnidade) : null;
   const categoriaGrupo = normalizarCategoriaGrupo(f.categoria);
   const precisaRacaRepro = categoriaFinal === "Reprodução" && (f.subTipo === "Sêmen" || f.subTipo === "Embrião");
-  const racaReproFinal = precisaRacaRepro && f.racaRepro ? String(f.racaRepro).trim() : null;
+  const racaReproFinal = precisaRacaRepro ? String(f.racaRepro || "").trim() : null;
   const grupoEquivalenciaFinal = CATEGORIAS_GRUPO_EQ.has(categoriaGrupo)
     ? f.grupoEquivalencia && String(f.grupoEquivalencia).trim()
       ? String(f.grupoEquivalencia).trim()
