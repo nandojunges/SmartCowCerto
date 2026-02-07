@@ -7,6 +7,8 @@ import { useFazenda } from "../../context/FazendaContext";
 import { kvGet, kvSet } from "../../offline/localDB";
 import FichaAnimal from "./FichaAnimal/FichaAnimal";
 import ManejosPendentes from "./ManejosPendentes";
+import RegistrarSecagem from "./RegistrarSecagem";
+import RegistrarParto from "./RegistrarParto";
 
 let MEMO_PLANTEL = { data: null, lastAt: 0 };
 
@@ -1340,14 +1342,14 @@ export default function Plantel({ isOnline = navigator.onLine }) {
 
       {animalSelecionado && <FichaAnimal animal={animalSelecionado} onClose={fecharFichaAnimal} />}
       {secagemSelecionada && (
-        <ModalRegistrarSecagem
+        <RegistrarSecagem
           animal={secagemSelecionada}
           onClose={() => setSecagemSelecionada(null)}
           onSave={() => setSecagemSelecionada(null)}
         />
       )}
       {partoSelecionado && (
-        <ModalRegistrarParto
+        <RegistrarParto
           animal={partoSelecionado}
           onClose={() => setPartoSelecionado(null)}
           onSave={() => setPartoSelecionado(null)}
