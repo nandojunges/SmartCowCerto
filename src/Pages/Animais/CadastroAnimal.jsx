@@ -500,7 +500,7 @@ export default function CadastroAnimal() {
     const { data: animalData, error: animalError } = await supabase
       .from("animais")
       .insert(payloadAnimal)
-      .select("id")
+      .select()
       .single();
 
     if (animalError || !animalData) {
