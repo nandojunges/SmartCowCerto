@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import RegistrarParto from "./RegistrarParto";
 import RegistrarSecagem from "./RegistrarSecagem";
 import ModalParametrosRepro from "./ModalParametrosRepro";
+import { useFazenda } from "../../context/FazendaContext";
 
 const MAX_ROWS = 8;
 
@@ -76,11 +77,13 @@ export default function ManejosPendentes({
   animais = [],
   onParamsSaved,
 }) {
+  const { fazendaAtualId } = useFazenda();
   const [pendTabAtiva, setPendTabAtiva] = useState("secagem");
   const [modalSecagemOpen, setModalSecagemOpen] = useState(false);
   const [modalPartoOpen, setModalPartoOpen] = useState(false);
   const [openParamsModal, setOpenParamsModal] = useState(false);
-  const [animalSelecionado, setAnimalSelecionado] = useState(null);
+  const [secagemContext, setSecagemContext] = useState(null);
+  const [partoContext, setPartoContext] = useState(null);
   const [prePartoSelecionado, setPrePartoSelecionado] = useState(null);
   const [hoveredRowId, setHoveredRowId] = useState(null);
   const [hoveredColKey, setHoveredColKey] = useState(null);
@@ -109,17 +112,31 @@ export default function ManejosPendentes({
     return map;
   }, [animais]);
 
-  const handleAction = (tipo, animal) => {
+  const buildContext = (item, animal) => {
+    const animalId = animal?.animal_id ?? animal?.id ?? item?.animal_id ?? item?.id ?? null;
+    const iaId = item?.ia_id ?? animal?.ia_id ?? null;
+    const assumidoCadastro = item?.motivo === "ASSUMIDO_CADASTRO" || item?.sem_dg === true;
+    return {
+      animal,
+      animalId,
+      fazendaId: fazendaAtualId ?? null,
+      iaId,
+      assumidoCadastro,
+      semSecagem: item?.sem_secagem === true,
+    };
+  };
+
+  const handleAction = (tipo, animal, item) => {
     if (!animal) return;
 
     if (tipo === "secagem") {
-      setAnimalSelecionado(animal);
+      setSecagemContext(buildContext(item, animal));
       setModalSecagemOpen(true);
       return;
     }
 
     if (tipo === "parto") {
-      setAnimalSelecionado(animal);
+      setPartoContext(buildContext(item, animal));
       setModalPartoOpen(true);
       return;
     }
@@ -206,6 +223,8 @@ export default function ManejosPendentes({
                   const rowId = animalId ?? idx;
                   const isHover = hoveredRowId === rowId;
                   const isColHover = (key) => hoveredColKey === key;
+                  const showCadastroBadge = item?.motivo === "ASSUMIDO_CADASTRO" || item?.sem_dg === true;
+                  const showSemSecagemBadge = tipo === "parto" && item?.sem_secagem === true;
 
                   return (
                     <tr
@@ -237,6 +256,21 @@ export default function ManejosPendentes({
                               <span style={styles.dot}>•</span>
                               <span>Brinco {brinco}</span>
                             </div>
+                            {(showCadastroBadge || showSemSecagemBadge) && (
+                              <div style={styles.badgeRow}>
+                                {showCadastroBadge && (
+                                  <span
+                                    style={styles.badgeInfo}
+                                    title="Este animal foi cadastrado com IA histórica sem DG. O sistema permite seguir e marca como gestação assumida."
+                                  >
+                                    Histórico incompleto (cadastro)
+                                  </span>
+                                )}
+                                {showSemSecagemBadge && (
+                                  <span style={styles.badgeWarning}>⚠ sem secagem registrada</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -324,7 +358,7 @@ export default function ManejosPendentes({
                               ...(tipo === "secagem" ? styles.actionBtnSecagem : {}),
                               ...(tipo === "parto" ? styles.actionBtnParto : {}),
                             }}
-                            onClick={() => handleAction(tipo, animal)}
+                            onClick={() => handleAction(tipo, animal, item)}
                           >
                             {CONFIGS[tipo].action}
                           </button>
@@ -388,33 +422,48 @@ export default function ManejosPendentes({
       <div>{renderPendenciasTable(activeList, pendTabAtiva)}</div>
 
       {/* ✅ Só monta quando estiver aberto (não aparece ao entrar na aba) */}
-      {modalSecagemOpen && animalSelecionado && (
+      {modalSecagemOpen && secagemContext?.animal && (
         <RegistrarSecagem
           open={modalSecagemOpen}
           onClose={() => {
             setModalSecagemOpen(false);
-            setAnimalSelecionado(null);
+            setSecagemContext(null);
           }}
-          animal={animalSelecionado}
+          animal={secagemContext?.animal}
+          animalId={secagemContext?.animalId}
+          fazendaId={secagemContext?.fazendaId}
+          iaId={secagemContext?.iaId}
+          assumidoCadastro={secagemContext?.assumidoCadastro}
           onSaved={() => {
             setModalSecagemOpen(false);
-            setAnimalSelecionado(null);
+            setSecagemContext(null);
           }}
         />
       )}
 
       {/* ✅ Só monta quando estiver aberto */}
-      {modalPartoOpen && animalSelecionado && (
+      {modalPartoOpen && partoContext?.animal && (
         <RegistrarParto
           open={modalPartoOpen}
           onClose={() => {
             setModalPartoOpen(false);
-            setAnimalSelecionado(null);
+            setPartoContext(null);
           }}
-          animal={animalSelecionado}
+          animal={partoContext?.animal}
+          animalId={partoContext?.animalId}
+          fazendaId={partoContext?.fazendaId}
+          iaId={partoContext?.iaId}
+          assumidoCadastro={partoContext?.assumidoCadastro}
+          semSecagem={partoContext?.semSecagem}
+          onRegistrarSecagemAntes={() => {
+            if (!partoContext?.animal) return;
+            setModalPartoOpen(false);
+            setSecagemContext(partoContext);
+            setModalSecagemOpen(true);
+          }}
           onSaved={() => {
             setModalPartoOpen(false);
-            setAnimalSelecionado(null);
+            setPartoContext(null);
           }}
         />
       )}
@@ -593,4 +642,30 @@ const styles = {
   actionStack: { display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" },
   actionBtnSecagem: { backgroundColor: "#2563eb" },
   actionBtnParto: { backgroundColor: "#16a34a" },
+  badgeRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+    marginTop: "6px",
+  },
+  badgeInfo: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "2px 8px",
+    borderRadius: "999px",
+    background: "#fef3c7",
+    color: "#92400e",
+    fontSize: "11px",
+    fontWeight: 700,
+  },
+  badgeWarning: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "2px 8px",
+    borderRadius: "999px",
+    background: "#fee2e2",
+    color: "#b91c1c",
+    fontSize: "11px",
+    fontWeight: 700,
+  },
 };
