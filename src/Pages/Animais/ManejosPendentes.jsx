@@ -60,14 +60,6 @@ const idadeTexto = (nascimento) => {
   return `${anos}a ${rem}m`;
 };
 
-const startOfDay = (date) => {
-  if (!date) return null;
-  const dt = new Date(date);
-  if (Number.isNaN(dt.getTime())) return null;
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-};
-
 const fmtBR = (date) => {
   if (!date) return "—";
   const dt = new Date(date);
@@ -81,8 +73,7 @@ const fmtBR = (date) => {
 export default function ManejosPendentes({
   pendencias = { secagem: [], preparto: [], parto: [] },
   hasDpp = false,
-  fazendaId,
-  userId,
+  animais = [],
   onParamsSaved,
 }) {
   const [pendTabAtiva, setPendTabAtiva] = useState("secagem");
@@ -108,6 +99,14 @@ export default function ManejosPendentes({
 
   const tabs = useMemo(() => Object.keys(CONFIGS), []);
   const activeList = pendencias?.[pendTabAtiva] || [];
+  const mapaAnimais = useMemo(() => {
+    const map = new Map();
+    (animais || []).forEach((animal) => {
+      const id = animal?.animal_id ?? animal?.id;
+      if (id != null) map.set(String(id), animal);
+    });
+    return map;
+  }, [animais]);
 
   const handleAction = (tipo, animal) => {
     if (!animal) return;
@@ -189,25 +188,18 @@ export default function ManejosPendentes({
                 )}
 
                 {visibleRows.map((item, idx) => {
-                  const animal = item?.animal || item || {};
-                  const numero = animal?.numero ?? "—";
-                  const brinco = animal?.brinco ?? "—";
-                  const animalLabel = animal?.nome ?? numero;
-                  const del = animal?.del ?? "—";
-                  const dpp = item?.dpp ?? animal?.dpp ?? animal?.data_prevista_parto;
-                  const ultimaIa = item?.ultima_ia ?? animal?.ultima_ia;
-                  const dataPrevSecagem =
-                    item?.dataPrevSecagem ??
-                    (dpp
-                      ? (() => {
-                          const dt = startOfDay(dpp);
-                          if (!dt) return null;
-                          dt.setDate(dt.getDate() - 60);
-                          return dt;
-                        })()
-                      : null);
+                  const animalId = item?.animal_id ?? item?.animal?.animal_id ?? item?.id;
+                  const animal = mapaAnimais.get(String(animalId)) || item?.animal || item || {};
+                  const numero = animal?.numero ?? item?.numero ?? "—";
+                  const brinco = animal?.brinco ?? item?.brinco ?? "—";
+                  const nome = animal?.nome ?? item?.nome;
+                  const animalLabel = nome ? `${numero} / ${nome}` : numero ?? "—";
+                  const del = animal?.del ?? item?.del ?? "—";
+                  const ultimaIa = item?.ultima_ia;
+                  const prevParto = item?.prev_parto;
+                  const prevSecagem = item?.prev_secagem;
                   const idade = idadeTexto(animal?.nascimento);
-                  const rowId = animal?.id ?? animal?.animal_id ?? idx;
+                  const rowId = animalId ?? idx;
                   const isHover = hoveredRowId === rowId;
                   const isColHover = (key) => hoveredColKey === key;
 
@@ -289,7 +281,7 @@ export default function ManejosPendentes({
                           setHoveredColKey("prev_parto");
                         }}
                       >
-                        {fmtBR(dpp)}
+                        {fmtBR(prevParto)}
                       </td>
 
                       <td
@@ -304,7 +296,7 @@ export default function ManejosPendentes({
                           setHoveredColKey("prev_secagem");
                         }}
                       >
-                        {fmtBR(dataPrevSecagem)}
+                        {fmtBR(prevSecagem)}
                       </td>
 
                       <td
@@ -419,9 +411,8 @@ export default function ManejosPendentes({
       <ModalParametrosRepro
         open={openParamsModal}
         onClose={() => setOpenParamsModal(false)}
-        fazendaId={fazendaId}
-        userId={userId}
         onSaved={() => {
+          setOpenParamsModal(false);
           onParamsSaved?.();
         }}
       />
