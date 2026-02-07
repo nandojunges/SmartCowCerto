@@ -123,6 +123,13 @@ export default function ManejosPendentes({
       iaId,
       assumidoCadastro,
       semSecagem: item?.sem_secagem === true,
+      previsaoParto:
+        item?.dpp ??
+        item?.data_prevista_parto ??
+        item?.data_prev_parto ??
+        item?.prev_parto ??
+        item?.previsto_parto ??
+        null,
     };
   };
 
@@ -455,6 +462,7 @@ export default function ManejosPendentes({
           iaId={partoContext?.iaId}
           assumidoCadastro={partoContext?.assumidoCadastro}
           semSecagem={partoContext?.semSecagem}
+          previsaoParto={partoContext?.previsaoParto}
           onRegistrarSecagemAntes={() => {
             if (!partoContext?.animal) return;
             setModalPartoOpen(false);

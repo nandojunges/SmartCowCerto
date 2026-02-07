@@ -31,6 +31,10 @@ export default function RegistrarParto(props) {
   const [colostroBrix, setColostroBrix] = useState("");
   const [temperatura, setTemperatura] = useState("");
   const [observacoesMae, setObservacoesMae] = useState("");
+  const [posPartoSelecionados, setPosPartoSelecionados] = useState([]);
+  const [posPartoOpcoesExtras, setPosPartoOpcoesExtras] = useState([]);
+  const [mostrarNovaComplicacao, setMostrarNovaComplicacao] = useState(false);
+  const [novaComplicacao, setNovaComplicacao] = useState("");
   const [bezerros, setBezerros] = useState([]);
   const [erro, setErro] = useState("");
   const [mostrarAvisoSemSecagem, setMostrarAvisoSemSecagem] = useState(semSecagem);
@@ -41,6 +45,7 @@ export default function RegistrarParto(props) {
       numero,
       sexo: null,
       peso: "",
+      natimorto: false,
       vitalidade: null,
       colostragem: {
         recebeu: null,
@@ -104,6 +109,29 @@ export default function RegistrarParto(props) {
     ).padStart(2, "0")}`;
   };
 
+  const converterDataParaDate = (valor) => {
+    if (!valor) return null;
+    if (valor instanceof Date) {
+      const dt = new Date(valor);
+      if (Number.isNaN(dt.getTime())) return null;
+      dt.setHours(0, 0, 0, 0);
+      return dt;
+    }
+    const texto = String(valor || "").trim();
+    if (!texto) return null;
+    const iso = texto.includes("/") ? converterDataParaISO(texto) : texto;
+    const dt = new Date(iso);
+    if (Number.isNaN(dt.getTime())) return null;
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+  };
+
+  const formatarDataBR = (valor) => {
+    const dt = converterDataParaDate(valor);
+    if (!dt) return "";
+    return dt.toLocaleDateString("pt-BR");
+  };
+
   const adicionarBezerro = () => {
     setBezerros((prev) => [...prev, criarBezerroVazio(prev.length + 1)]);
   };
@@ -130,6 +158,28 @@ export default function RegistrarParto(props) {
       } else {
         novos[index] = { ...novos[index], [campo]: valor };
       }
+      return novos;
+    });
+  };
+
+  const atualizarNatimorto = (index, valor) => {
+    setBezerros((prev) => {
+      const novos = [...prev];
+      if (!novos[index]) return prev;
+      const natimorto = valor === true;
+      const colostragemLimpa = {
+        recebeu: null,
+        hora: "",
+        volume: "",
+      };
+      novos[index] = {
+        ...novos[index],
+        natimorto,
+        peso: natimorto ? "" : novos[index].peso,
+        sexo: natimorto ? null : novos[index].sexo,
+        vitalidade: natimorto ? null : novos[index].vitalidade,
+        colostragem: natimorto ? colostragemLimpa : novos[index].colostragem,
+      };
       return novos;
     });
   };
@@ -163,6 +213,7 @@ export default function RegistrarParto(props) {
 
     for (let i = 0; i < bezerros.length; i++) {
       const b = bezerros[i];
+      if (b?.natimorto) continue;
       if (!b?.sexo || !b?.vitalidade) {
         setErro(`Preencha sexo e vitalidade do bezerro ${i + 1}`);
         return false;
@@ -207,6 +258,7 @@ export default function RegistrarParto(props) {
       temperatura,
       numeroBezerros: bezerros.length,
       observacoes: observacoesMae,
+      posPartoEventos: posPartoSelecionados.map((item) => item.value),
       ...(Object.keys(meta).length > 0 ? { meta } : {}),
     };
 
@@ -228,7 +280,7 @@ export default function RegistrarParto(props) {
     ];
     let proximoNumero = todosNumeros.length > 0 ? Math.max(...todosNumeros) + 1 : 1;
 
-    const novosBezerros = bezerros.map((b) => {
+    const novosBezerros = bezerros.filter((b) => !b?.natimorto).map((b) => {
       const minutos = calcularTempoColostragem(horaParto, b.colostragem.hora);
       return {
         numero: proximoNumero++,
@@ -321,6 +373,18 @@ export default function RegistrarParto(props) {
         throw partoError;
       }
 
+      if (posPartoSelecionados.length > 0) {
+        const { error: posPartoError } = await supabase.from("pos_parto_eventos").insert([
+          {
+            parto_evento_id: partoData?.id,
+            itens: posPartoSelecionados.map((item) => item.value),
+          },
+        ]);
+        if (posPartoError) {
+          throw posPartoError;
+        }
+      }
+
       const { data: maxData, error: maxError } = await supabase
         .from("animais")
         .select("numero")
@@ -335,7 +399,7 @@ export default function RegistrarParto(props) {
 
       let proximoNumero = (Number(maxData?.numero) || 0) + 1;
 
-      const bezerrosPayload = bezerros.map((bezerro) => {
+      const bezerrosPayload = bezerros.filter((bezerro) => !bezerro?.natimorto).map((bezerro) => {
         const numero = proximoNumero++;
         const sexoValue =
           bezerro?.sexo?.value === "Macho" || bezerro?.sexo?.value === "Fêmea"
@@ -354,10 +418,11 @@ export default function RegistrarParto(props) {
         };
       });
 
-      const { error: bezerrosError } = await supabase.from("animais").insert(bezerrosPayload);
-
-      if (bezerrosError) {
-        throw bezerrosError;
+      if (bezerrosPayload.length > 0) {
+        const { error: bezerrosError } = await supabase.from("animais").insert(bezerrosPayload);
+        if (bezerrosError) {
+          throw bezerrosError;
+        }
       }
 
       window.dispatchEvent(new Event("animaisAtualizados"));
@@ -573,6 +638,70 @@ export default function RegistrarParto(props) {
       fontWeight: 600,
       cursor: "pointer",
     },
+    badgeColostro: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "0.35rem",
+      padding: "0.35rem 0.6rem",
+      borderRadius: "999px",
+      fontSize: "0.75rem",
+      fontWeight: 600,
+      marginTop: "0.4rem",
+    },
+    miniBox: {
+      marginTop: "0.6rem",
+      background: "#f9fafb",
+      border: "1px solid #e5e7eb",
+      borderRadius: "0.6rem",
+      padding: "0.6rem 0.8rem",
+      fontSize: "0.85rem",
+      color: "#374151",
+      display: "flex",
+      flexDirection: "column",
+      gap: "0.35rem",
+    },
+    avisoNatimorto: {
+      background: "#fef2f2",
+      border: "1px dashed #fca5a5",
+      color: "#991b1b",
+      padding: "0.6rem 0.75rem",
+      borderRadius: "0.6rem",
+      fontSize: "0.85rem",
+    },
+    linhaComplicacao: {
+      display: "flex",
+      alignItems: "center",
+      gap: "0.75rem",
+      flexWrap: "wrap",
+    },
+    inputCurto: {
+      flex: "1 1 240px",
+      padding: "0.55rem",
+      borderRadius: "0.5rem",
+      border: "1px solid #e5e7eb",
+      fontSize: "0.85rem",
+      fontFamily: "Poppins, sans-serif",
+    },
+    botaoSecundario: {
+      background: "#fff",
+      color: "#0f172a",
+      border: "1px solid #cbd5f0",
+      borderRadius: "0.5rem",
+      padding: "0.55rem 0.9rem",
+      fontSize: "0.85rem",
+      cursor: "pointer",
+      fontWeight: 500,
+    },
+    botaoConfirmar: {
+      background: "#10b981",
+      color: "#fff",
+      border: "none",
+      borderRadius: "0.5rem",
+      padding: "0.55rem 0.9rem",
+      fontSize: "0.85rem",
+      cursor: "pointer",
+      fontWeight: 600,
+    },
   };
 
   const selectStyles = {
@@ -624,6 +753,44 @@ export default function RegistrarParto(props) {
     { value: "Não", label: "Não" },
   ];
 
+  const opcoesComplicacoesBase = [
+    { value: "Retenção de placenta", label: "Retenção de placenta" },
+    { value: "Metrite", label: "Metrite" },
+    { value: "Hipocalcemia", label: "Hipocalcemia" },
+    { value: "Prolapso uterino", label: "Prolapso uterino" },
+    { value: "Hemorragia", label: "Hemorragia" },
+  ];
+
+  const opcoesComplicacoes = [...opcoesComplicacoesBase, ...posPartoOpcoesExtras];
+
+  const previsaoPartoRaw =
+    props.previsaoParto ??
+    vacaSafe?.previsaoParto ??
+    vacaSafe?.data_prevista_parto ??
+    vacaSafe?.data_prev_parto ??
+    vacaSafe?.prev_parto ??
+    vacaSafe?.previsto_parto ??
+    vacaSafe?.dpp ??
+    null;
+  const previsaoPartoDate = converterDataParaDate(previsaoPartoRaw);
+  const previsaoPartoTexto = previsaoPartoDate ? formatarDataBR(previsaoPartoDate) : "";
+  const dataPartoDate = converterDataParaDate(converterDataParaISO(dataParto));
+  const desvioDias =
+    previsaoPartoDate && dataPartoDate
+      ? Math.round((dataPartoDate.getTime() - previsaoPartoDate.getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+  const textoDesvio =
+    desvioDias === null
+      ? ""
+      : `${desvioDias > 0 ? `+${desvioDias}` : desvioDias} dias ${
+          desvioDias > 0 ? "(atrasou)" : desvioDias < 0 ? "(adiantou)" : "(no prazo)"
+        }`;
+  const colostroTexto = String(colostroBrix ?? "");
+  const colostroTrim = colostroTexto.trim();
+  const colostroValor =
+    colostroTrim === "" ? null : Number(colostroTrim.replace(",", "."));
+  const colostroValido = Number.isFinite(colostroValor);
+
   return (
     <div
       style={estilos.overlay}
@@ -672,6 +839,20 @@ export default function RegistrarParto(props) {
                   autoFocus
                   disabled={!vacaSafe}
                 />
+                {(previsaoPartoTexto || textoDesvio) && (
+                  <div style={estilos.miniBox}>
+                    {previsaoPartoTexto && (
+                      <div>
+                        <strong>Previsão:</strong> {previsaoPartoTexto}
+                      </div>
+                    )}
+                    {textoDesvio && (
+                      <div>
+                        <strong>Desvio:</strong> {textoDesvio}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div style={estilos.campo}>
@@ -722,6 +903,17 @@ export default function RegistrarParto(props) {
                   step="0.1"
                   disabled={!vacaSafe}
                 />
+                {colostroTrim !== "" && colostroValido && (
+                  <div
+                    style={{
+                      ...estilos.badgeColostro,
+                      background: colostroValor < 22 ? "#fee2e2" : "#d1fae5",
+                      color: colostroValor < 22 ? "#991b1b" : "#065f46",
+                    }}
+                  >
+                    {colostroValor < 22 ? "Colostro baixo (<22)" : "Colostro adequado (≥22)"}
+                  </div>
+                )}
               </div>
 
               <div style={estilos.campo}>
@@ -747,6 +939,90 @@ export default function RegistrarParto(props) {
                   disabled={!vacaSafe}
                 />
               </div>
+            </div>
+          </div>
+
+          <div style={estilos.secao}>
+            <div style={estilos.tituloSecao}>🩺 Complicações pós-parto (opcional)</div>
+            <div style={estilos.campo}>
+              <label style={estilos.label}>Complicações</label>
+              <Select
+                options={opcoesComplicacoes}
+                value={posPartoSelecionados}
+                onChange={(valores) => setPosPartoSelecionados(valores || [])}
+                styles={selectStyles}
+                placeholder="Selecione..."
+                isMulti
+                closeMenuOnSelect={false}
+                isDisabled={!vacaSafe}
+              />
+            </div>
+            <div style={estilos.linhaComplicacao}>
+              {!mostrarNovaComplicacao ? (
+                <button
+                  type="button"
+                  style={estilos.botaoSecundario}
+                  onClick={() => setMostrarNovaComplicacao(true)}
+                  disabled={!vacaSafe}
+                >
+                  ➕ Adicionar outra
+                </button>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    value={novaComplicacao}
+                    onChange={(e) => setNovaComplicacao(e.target.value)}
+                    style={estilos.inputCurto}
+                    placeholder="Ex: Deslocamento de abomaso"
+                    disabled={!vacaSafe}
+                  />
+                  <button
+                    type="button"
+                    style={estilos.botaoConfirmar}
+                    onClick={() => {
+                      const nome = novaComplicacao.trim();
+                      if (!nome) return;
+                      const jaExiste = opcoesComplicacoes.some(
+                        (item) => item.value.toLowerCase() === nome.toLowerCase()
+                      );
+                      if (!jaExiste) {
+                        const novaOpcao = { value: nome, label: nome };
+                        setPosPartoOpcoesExtras((prev) => [...prev, novaOpcao]);
+                        setPosPartoSelecionados((prev) => [...prev, novaOpcao]);
+                      } else {
+                        const opcaoExistente = opcoesComplicacoes.find(
+                          (item) => item.value.toLowerCase() === nome.toLowerCase()
+                        );
+                        if (opcaoExistente) {
+                          setPosPartoSelecionados((prev) => {
+                            const jaSelecionado = prev.some(
+                              (item) => item.value === opcaoExistente.value
+                            );
+                            return jaSelecionado ? prev : [...prev, opcaoExistente];
+                          });
+                        }
+                      }
+                      setNovaComplicacao("");
+                      setMostrarNovaComplicacao(false);
+                    }}
+                    disabled={!vacaSafe}
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    type="button"
+                    style={estilos.botaoSecundario}
+                    onClick={() => {
+                      setNovaComplicacao("");
+                      setMostrarNovaComplicacao(false);
+                    }}
+                    disabled={!vacaSafe}
+                  >
+                    Cancelar
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -777,6 +1053,29 @@ export default function RegistrarParto(props) {
                   </div>
 
                   <div style={estilos.grid}>
+                    <div style={estilos.campo}>
+                      <label style={estilos.label}>Natimorto</label>
+                      <Select
+                        options={opcoesSimNao}
+                        value={
+                          bezerro.natimorto
+                            ? opcoesSimNao.find((op) => op.value === "Sim")
+                            : opcoesSimNao.find((op) => op.value === "Não")
+                        }
+                        onChange={(v) => atualizarNatimorto(index, v?.value === "Sim")}
+                        styles={selectStyles}
+                        placeholder="Selecione..."
+                        isDisabled={!vacaSafe}
+                      />
+                      {bezerro.natimorto && (
+                        <div style={estilos.avisoNatimorto}>
+                          Não será criado animal no plantel para este bezerro.
+                        </div>
+                      )}
+                    </div>
+
+                    {!bezerro.natimorto && (
+                      <>
                     <div style={estilos.campo}>
                       <label style={estilos.label}>
                         Sexo<span style={estilos.obrigatorio}>*</span>
@@ -893,6 +1192,8 @@ export default function RegistrarParto(props) {
                         disabled={!vacaSafe}
                       />
                     </div>
+                      </>
+                    )}
                   </div>
                 </div>
               );
