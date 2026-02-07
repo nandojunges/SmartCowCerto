@@ -31,8 +31,8 @@ export default function RegistrarParto(props) {
   const [colostroBrix, setColostroBrix] = useState("");
   const [temperatura, setTemperatura] = useState("");
   const [observacoesMae, setObservacoesMae] = useState("");
-  const [posPartoSelecionados, setPosPartoSelecionados] = useState([]);
-  const [posPartoOpcoesExtras, setPosPartoOpcoesExtras] = useState([]);
+  const [complicacoesSelecionadas, setComplicacoesSelecionadas] = useState([]);
+  const [complicacoesCustom, setComplicacoesCustom] = useState([]);
   const [mostrarNovaComplicacao, setMostrarNovaComplicacao] = useState(false);
   const [novaComplicacao, setNovaComplicacao] = useState("");
   const [bezerros, setBezerros] = useState([]);
@@ -124,6 +124,15 @@ export default function RegistrarParto(props) {
     if (Number.isNaN(dt.getTime())) return null;
     dt.setHours(0, 0, 0, 0);
     return dt;
+  };
+
+  const formatarDateISO = (valor) => {
+    const dt = converterDataParaDate(valor);
+    if (!dt) return null;
+    const ano = dt.getFullYear();
+    const mes = String(dt.getMonth() + 1).padStart(2, "0");
+    const dia = String(dt.getDate()).padStart(2, "0");
+    return `${ano}-${mes}-${dia}`;
   };
 
   const formatarDataBR = (valor) => {
@@ -258,7 +267,7 @@ export default function RegistrarParto(props) {
       temperatura,
       numeroBezerros: bezerros.length,
       observacoes: observacoesMae,
-      posPartoEventos: posPartoSelecionados.map((item) => item.value),
+      posPartoEventos: complicacoesSelecionadas.map((item) => item.value),
       ...(Object.keys(meta).length > 0 ? { meta } : {}),
     };
 
@@ -373,11 +382,72 @@ export default function RegistrarParto(props) {
         throw partoError;
       }
 
-      if (posPartoSelecionados.length > 0) {
+      const previsaoPartoRaw =
+        vacaSafe?.data_prev_parto ??
+        vacaSafe?.previsao_parto ??
+        vacaSafe?.dataPrevParto ??
+        vacaSafe?.data_prevista_parto ??
+        vacaSafe?.previsaoParto ??
+        null;
+      const previsaoPartoISO = formatarDateISO(previsaoPartoRaw);
+      const previsaoPartoDate = converterDataParaDate(previsaoPartoRaw);
+      const dataPartoDate = converterDataParaDate(dataISO);
+      const desvioDiasParto =
+        previsaoPartoDate && dataPartoDate
+          ? Math.round(
+              (dataPartoDate.getTime() - previsaoPartoDate.getTime()) / (1000 * 60 * 60 * 24)
+            )
+          : null;
+
+      const bezerroPrincipal = bezerros.find((b) => !b?.natimorto) ?? bezerros[0] ?? null;
+      const statusBezerro = bezerroPrincipal && !bezerroPrincipal?.natimorto ? "Vivo" : "Natimorto";
+      const sexoBezerro =
+        statusBezerro === "Vivo" && bezerroPrincipal?.sexo?.value
+          ? bezerroPrincipal.sexo.value
+          : null;
+      const tipoParto = facilidade?.value === "Sem assistência" ? "Normal" : "Distócico";
+      const teveAuxilio = assistencia?.value ? assistencia.value !== "Não necessária" : false;
+
+      const colostroTextoAtual = String(colostroBrix ?? "").trim();
+      const colostroNumero =
+        colostroTextoAtual === "" ? null : Number(colostroTextoAtual.replace(",", "."));
+      const colostroValidoAtual = Number.isFinite(colostroNumero);
+      const colostroAdequadoAtual = colostroValidoAtual ? colostroNumero >= 22 : null;
+
+      const { error: reproPartoError } = await supabase.from("repro_partos").insert([
+        {
+          fazenda_id: resolvedFazendaId,
+          animal_id: animalId,
+          parto_evento_id: partoData?.id,
+          user_id: userId,
+          data_parto: dataISO,
+          previsao_parto: previsaoPartoISO,
+          desvio_dias: desvioDiasParto,
+          tipo_parto: tipoParto,
+          teve_auxilio: teveAuxilio,
+          status_bezerro: statusBezerro,
+          sexo_bezerro: sexoBezerro,
+          colostro_brix: colostroValidoAtual ? colostroNumero : null,
+          colostro_adequado: colostroAdequadoAtual,
+          extras: null,
+        },
+      ]);
+
+      if (reproPartoError) {
+        throw reproPartoError;
+      }
+
+      if (complicacoesSelecionadas.length > 0) {
+        const itensComplicacoes = complicacoesSelecionadas.map((item) => item.value);
         const { error: posPartoError } = await supabase.from("pos_parto_eventos").insert([
           {
+            fazenda_id: resolvedFazendaId,
+            animal_id: animalId,
             parto_evento_id: partoData?.id,
-            itens: posPartoSelecionados.map((item) => item.value),
+            data_evento: dataISO,
+            itens: itensComplicacoes,
+            observacao: null,
+            user_id: userId,
           },
         ]);
         if (posPartoError) {
@@ -385,43 +455,64 @@ export default function RegistrarParto(props) {
         }
       }
 
-      const { data: maxData, error: maxError } = await supabase
-        .from("animais")
-        .select("numero")
-        .eq("fazenda_id", resolvedFazendaId)
-        .order("numero", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const bezerrosVivos = bezerros.filter((bezerro) => !bezerro?.natimorto);
 
-      if (maxError) {
-        throw maxError;
-      }
+      let bezerrosPayload = [];
+      if (statusBezerro === "Vivo" && bezerrosVivos.length > 0) {
+        const { data: maxData, error: maxError } = await supabase
+          .from("animais")
+          .select("numero")
+          .eq("fazenda_id", resolvedFazendaId)
+          .order("numero", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      let proximoNumero = (Number(maxData?.numero) || 0) + 1;
+        if (maxError) {
+          throw maxError;
+        }
 
-      const bezerrosPayload = bezerros.filter((bezerro) => !bezerro?.natimorto).map((bezerro) => {
-        const numero = proximoNumero++;
-        const sexoValue =
-          bezerro?.sexo?.value === "Macho" || bezerro?.sexo?.value === "Fêmea"
-            ? bezerro.sexo.value
-            : null;
-        return {
-          fazenda_id: resolvedFazendaId,
-          user_id: userId,
-          numero,
-          brinco: `TEMP-${numero}`,
-          nascimento: dataISO,
-          sexo: sexoValue,
-          origem: "propriedade",
-          mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
-          pai_nome: null,
-        };
-      });
+        let proximoNumero = (Number(maxData?.numero) || 0) + 1;
 
-      if (bezerrosPayload.length > 0) {
-        const { error: bezerrosError } = await supabase.from("animais").insert(bezerrosPayload);
-        if (bezerrosError) {
-          throw bezerrosError;
+        bezerrosPayload = bezerrosVivos.map((bezerro) => {
+          const numero = proximoNumero++;
+          const sexoValue =
+            bezerro?.sexo?.value === "Macho" || bezerro?.sexo?.value === "Fêmea"
+              ? bezerro.sexo.value
+              : null;
+          const minutosColostro = calcularTempoColostragem(
+            horaParto,
+            bezerro.colostragem?.hora
+          );
+          const recebeuColostroValue = bezerro.colostragem?.recebeu?.value ?? null;
+          const tempoAteColostro =
+            recebeuColostroValue === "Sim" && minutosColostro !== null
+              ? minutosColostro <= 120
+                ? "<2h"
+                : ">2h"
+              : null;
+          return {
+            fazenda_id: resolvedFazendaId,
+            user_id: userId,
+            numero,
+            brinco: `TEMP-${numero}`,
+            nascimento: dataISO,
+            sexo: sexoValue,
+            origem: "propriedade",
+            mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
+            meta: {
+              parto_evento_id: partoData?.id ?? null,
+              peso_ao_nascer: bezerro.peso ? Number(bezerro.peso) : null,
+              recebeu_colostro: recebeuColostroValue,
+              tempo_ate_colostro: tempoAteColostro,
+            },
+          };
+        });
+
+        if (bezerrosPayload.length > 0) {
+          const { error: bezerrosError } = await supabase.from("animais").insert(bezerrosPayload);
+          if (bezerrosError) {
+            throw bezerrosError;
+          }
         }
       }
 
@@ -755,22 +846,26 @@ export default function RegistrarParto(props) {
 
   const opcoesComplicacoesBase = [
     { value: "Retenção de placenta", label: "Retenção de placenta" },
-    { value: "Metrite", label: "Metrite" },
-    { value: "Hipocalcemia", label: "Hipocalcemia" },
-    { value: "Prolapso uterino", label: "Prolapso uterino" },
-    { value: "Hemorragia", label: "Hemorragia" },
+    { value: "Hipocalcemia (febre do leite)", label: "Hipocalcemia (febre do leite)" },
+    { value: "Cetose", label: "Cetose" },
+    { value: "Torção uterina", label: "Torção uterina" },
+    { value: "Cesárea", label: "Cesárea" },
+    { value: "Aborto", label: "Aborto" },
+    { value: "Parto prematuro", label: "Parto prematuro" },
+    { value: "Indução de lactação", label: "Indução de lactação" },
   ];
 
-  const opcoesComplicacoes = [...opcoesComplicacoesBase, ...posPartoOpcoesExtras];
+  const opcoesComplicacoes = [
+    ...opcoesComplicacoesBase,
+    ...complicacoesCustom.map((nome) => ({ value: nome, label: nome })),
+  ];
 
   const previsaoPartoRaw =
-    props.previsaoParto ??
-    vacaSafe?.previsaoParto ??
-    vacaSafe?.data_prevista_parto ??
     vacaSafe?.data_prev_parto ??
-    vacaSafe?.prev_parto ??
-    vacaSafe?.previsto_parto ??
-    vacaSafe?.dpp ??
+    vacaSafe?.previsao_parto ??
+    vacaSafe?.dataPrevParto ??
+    vacaSafe?.data_prevista_parto ??
+    vacaSafe?.previsaoParto ??
     null;
   const previsaoPartoDate = converterDataParaDate(previsaoPartoRaw);
   const previsaoPartoTexto = previsaoPartoDate ? formatarDataBR(previsaoPartoDate) : "";
@@ -787,8 +882,7 @@ export default function RegistrarParto(props) {
         }`;
   const colostroTexto = String(colostroBrix ?? "");
   const colostroTrim = colostroTexto.trim();
-  const colostroValor =
-    colostroTrim === "" ? null : Number(colostroTrim.replace(",", "."));
+  const colostroValor = colostroTrim === "" ? null : Number(colostroTrim.replace(",", "."));
   const colostroValido = Number.isFinite(colostroValor);
 
   return (
@@ -948,8 +1042,8 @@ export default function RegistrarParto(props) {
               <label style={estilos.label}>Complicações</label>
               <Select
                 options={opcoesComplicacoes}
-                value={posPartoSelecionados}
-                onChange={(valores) => setPosPartoSelecionados(valores || [])}
+                value={complicacoesSelecionadas}
+                onChange={(valores) => setComplicacoesSelecionadas(valores || [])}
                 styles={selectStyles}
                 placeholder="Selecione..."
                 isMulti
@@ -988,14 +1082,14 @@ export default function RegistrarParto(props) {
                       );
                       if (!jaExiste) {
                         const novaOpcao = { value: nome, label: nome };
-                        setPosPartoOpcoesExtras((prev) => [...prev, novaOpcao]);
-                        setPosPartoSelecionados((prev) => [...prev, novaOpcao]);
+                        setComplicacoesCustom((prev) => [...prev, nome]);
+                        setComplicacoesSelecionadas((prev) => [...prev, novaOpcao]);
                       } else {
                         const opcaoExistente = opcoesComplicacoes.find(
                           (item) => item.value.toLowerCase() === nome.toLowerCase()
                         );
                         if (opcaoExistente) {
-                          setPosPartoSelecionados((prev) => {
+                          setComplicacoesSelecionadas((prev) => {
                             const jaSelecionado = prev.some(
                               (item) => item.value === opcaoExistente.value
                             );
