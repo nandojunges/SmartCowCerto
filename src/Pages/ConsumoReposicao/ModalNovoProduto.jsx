@@ -1160,8 +1160,10 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
   const usosPorUnidadeFinal = f.reutilizavel ? toNum(f.usosPorUnidade) : null;
   const categoriaGrupo = normalizarCategoriaGrupo(f.categoria);
   const exigeRacaRepro = categoriaFinal === "Reprodução" && (f.subTipo === "Sêmen" || f.subTipo === "Embrião");
-  const racaReproFinal = exigeRacaRepro ? String(f.racaReproNome || "").trim() : null;
-  const racaIdFinal = exigeRacaRepro ? String(f.racaReproId || "").trim() || null : null;
+  const racaReproLabel = f.racaReproNome?.label ?? f.racaReproNome;
+  const racaReproIdRaw = f.racaReproId?.value ?? f.racaReproId;
+  const racaReproFinal = exigeRacaRepro ? String(racaReproLabel || "").trim() || null : null;
+  const racaIdFinal = exigeRacaRepro ? String(racaReproIdRaw || "").trim() || null : null;
   const grupoEquivalenciaFinal = CATEGORIAS_GRUPO_EQ.has(categoriaGrupo)
     ? f.grupoEquivalencia && String(f.grupoEquivalencia).trim()
       ? String(f.grupoEquivalencia).trim()
