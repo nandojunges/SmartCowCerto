@@ -559,7 +559,10 @@ export default function RegistrarParto(props) {
         bezerrosPayload = bezerrosVivos.map((bezerro, index) => {
           const numero = proximoNumero++;
           const paiNomeInformado = obterPaiNomeInformado(bezerro);
-          return {
+          const paiNomeInformadoTrim = paiNomeInformado?.trim() ?? "";
+          const paiNomeBase = paiNome?.trim() ?? "";
+          const paiNomeFinal = paiNomeInformadoTrim || paiNomeBase;
+          const payload = {
             fazenda_id: resolvedFazendaId,
             user_id: userId,
             numero,
@@ -569,10 +572,11 @@ export default function RegistrarParto(props) {
             origem: "propriedade",
             mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
             mae_id: animalId,
-            pai_nome: paiNomeInformado?.trim()
-              ? paiNomeInformado.trim()
-              : paiNome,
           };
+          if (paiNomeFinal) {
+            payload.pai_nome = paiNomeFinal;
+          }
+          return payload;
         });
 
         if (bezerrosPayload.length > 0) {
@@ -585,6 +589,34 @@ export default function RegistrarParto(props) {
               .single();
             if (bezerrosError) {
               logSupabaseError(bezerrosError, "insert_animais");
+              if (bezerrosError.code === "23505") {
+                const { data: existente, error: existenteError } = await supabase
+                  .from("animais")
+                  .select("id,pai_nome")
+                  .eq("fazenda_id", resolvedFazendaId)
+                  .eq("numero", payload.numero)
+                  .maybeSingle();
+                if (existenteError) {
+                  logSupabaseError(existenteError, "select_animais_existente");
+                  throw existenteError;
+                }
+                if (existente) {
+                  const paiNomeAtual = existente?.pai_nome ?? "";
+                  const paiNomeNovo = payload?.pai_nome ?? "";
+                  if (!paiNomeAtual && paiNomeNovo) {
+                    const { error: updateError } = await supabase
+                      .from("animais")
+                      .update({ pai_nome: paiNomeNovo })
+                      .eq("id", existente.id);
+                    if (updateError) {
+                      logSupabaseError(updateError, "update_pai_nome");
+                      throw updateError;
+                    }
+                  }
+                  bezerrosCriados.push({ id: existente.id });
+                  continue;
+                }
+              }
               throw bezerrosError;
             }
             if (bezerroData) {
