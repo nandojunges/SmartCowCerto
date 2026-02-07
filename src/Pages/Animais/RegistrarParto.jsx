@@ -516,17 +516,6 @@ export default function RegistrarParto(props) {
             bezerro?.sexo?.value === "Macho" || bezerro?.sexo?.value === "Fêmea"
               ? bezerro.sexo.value
               : null;
-          const minutosColostro = calcularTempoColostragem(
-            horaParto,
-            bezerro.colostragem?.hora
-          );
-          const recebeuColostroValue = bezerro.colostragem?.recebeu?.value ?? null;
-          const tempoAteColostro =
-            recebeuColostroValue === "Sim" && minutosColostro !== null
-              ? minutosColostro <= 120
-                ? "<2h"
-                : ">2h"
-              : null;
           return {
             fazenda_id: resolvedFazendaId,
             user_id: userId,
@@ -536,12 +525,6 @@ export default function RegistrarParto(props) {
             sexo: sexoValue,
             origem: "propriedade",
             mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
-            meta: {
-              parto_evento_id: partoData?.id ?? null,
-              peso_ao_nascer: bezerro.peso ? Number(bezerro.peso) : null,
-              recebeu_colostro: recebeuColostroValue,
-              tempo_ate_colostro: tempoAteColostro,
-            },
           };
         });
 
@@ -551,7 +534,7 @@ export default function RegistrarParto(props) {
             const { data: bezerroData, error: bezerrosError } = await supabase
               .from("animais")
               .insert(payload)
-              .select("fazenda_id,user_id,numero,brinco,nascimento,sexo,origem,mae_nome,meta")
+              .select("fazenda_id,user_id,numero,brinco,nascimento,sexo,origem,mae_nome")
               .single();
             if (bezerrosError) {
               logSupabaseError(bezerrosError, "insert_animais");
@@ -851,16 +834,12 @@ export default function RegistrarParto(props) {
     control: (base, state) => ({
       ...base,
       borderRadius: "0.5rem",
-      borderWidth: "2px",
-      borderStyle: "solid",
-      borderColor: state.isFocused ? "#10b981" : "#e5e7eb",
+      border: state.isFocused ? "2px solid #10b981" : "2px solid #e5e7eb",
       boxShadow: "none",
       minHeight: "40px",
       fontSize: "0.9rem",
       "&:hover": {
-        borderWidth: "2px",
-        borderStyle: "solid",
-        borderColor: "#10b981",
+        border: "2px solid #10b981",
       },
     }),
     menu: (base) => ({
