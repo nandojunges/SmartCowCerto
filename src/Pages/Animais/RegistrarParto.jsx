@@ -540,6 +540,7 @@ export default function RegistrarParto(props) {
             sexo: sexosNormalizados[index],
             origem: "propriedade",
             mae_nome: numeroVaca ? `Mãe ${numeroVaca}` : null,
+            mae_id: animalId,
           };
         });
 
