@@ -94,8 +94,9 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const popoverRef = useRef(null);
   const triggerRefs = useRef({});
   const [popoverStyle, setPopoverStyle] = useState({ left: "50%", transform: "translateX(-50%)" });
-  const [pendenciasView, setPendenciasView] = useState(null);
+  const [pendenciasView, setPendenciasView] = useState({ secagem: [], preparto: [], parto: [] });
   const [pendenciaPorIdView, setPendenciaPorIdView] = useState(new Map());
+  const [hasDppView, setHasDppView] = useState(false);
 
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [filtros, setFiltros] = useState({
@@ -113,9 +114,6 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const PLANTEL_VIEW = "v_animais_plantel";
   const REPRO_VIEW = "v_repro_tabela";
   const PENDENCIAS_VIEW = "v_manejos_pendentes";
-  const DIAS_PARA_SECAGEM = 60;
-  const DIAS_INICIO_PREPARTO = 21;
-  const DIAS_ALERTA_PARTO = 7;
 
   // ficha
   const [animalSelecionado, setAnimalSelecionado] = useState(null);
@@ -543,6 +541,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       const base = { secagem: [], preparto: [], parto: [] };
       const map = new Map();
       const hoje = startOfDay(new Date());
+      let hasDppValue = false;
 
       (rows || []).forEach((row) => {
         const abaKey = normalizePendenciaAba(row?.aba ?? row?.tipo ?? row?.categoria);
@@ -558,6 +557,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
           row?.previsto_parto;
         const dppDate = startOfDay(parseDateFlexible(dppValue) || dppValue);
         const diasParaDpp = dppDate ? diffDays(hoje, dppDate) : null;
+        if (dppValue) hasDppValue = true;
 
         const item = {
           ...row,
@@ -580,15 +580,16 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       base.preparto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
       base.parto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
 
-      return { base, map };
+      return { base, map, hasDpp: hasDppValue };
     },
     [diffDays, normalizePendenciaAba, startOfDay]
   );
 
   const carregarPendencias = useCallback(async () => {
     if (!fazendaAtualId || !isOnline) {
-      setPendenciasView(null);
+      setPendenciasView({ secagem: [], preparto: [], parto: [] });
       setPendenciaPorIdView(new Map());
+      setHasDppView(false);
       return;
     }
 
@@ -600,104 +601,25 @@ export default function Plantel({ isOnline = navigator.onLine }) {
 
     if (error) {
       console.warn("Erro ao carregar pendências:", error);
-      setPendenciasView(null);
+      setPendenciasView({ secagem: [], preparto: [], parto: [] });
       setPendenciaPorIdView(new Map());
+      setHasDppView(false);
       return;
     }
 
-    const { base, map } = prepararPendenciasView(data);
+    const { base, map, hasDpp } = prepararPendenciasView(data);
     setPendenciasView(base);
     setPendenciaPorIdView(map);
+    setHasDppView(hasDpp);
   }, [PENDENCIAS_VIEW, fazendaAtualId, isOnline, prepararPendenciasView]);
 
   useEffect(() => {
     carregarPendencias();
   }, [carregarPendencias]);
 
-  const isWithin = useCallback((value, min, max) => {
-    if (!Number.isFinite(value)) return false;
-    return value >= min && value <= max;
-  }, []);
-
-  const fallbackPendencias = useMemo(() => {
-    const base = { secagem: [], preparto: [], parto: [] };
-    const map = new Map();
-    let hasDppValue = false;
-    const hoje = startOfDay(new Date());
-
-    linhas.forEach((animal) => {
-      const dppRaw = parseDateFlexible(animal?.dpp ?? animal?.data_prevista_parto);
-      const dpp = startOfDay(dppRaw);
-      if (!dpp) return;
-      hasDppValue = true;
-      const diasParaDpp = diffDays(hoje, dpp);
-      if (!Number.isFinite(diasParaDpp)) return;
-      const dataPrevSecagem = new Date(dpp);
-      dataPrevSecagem.setDate(dpp.getDate() - DIAS_PARA_SECAGEM);
-      const dataInicioPreParto = new Date(dpp);
-      dataInicioPreParto.setDate(dpp.getDate() - DIAS_INICIO_PREPARTO);
-      const item = { animal, dpp, diasParaDpp, dataPrevSecagem, dataInicioPreParto };
-      const animalId = animal?.animal_id ?? animal?.id;
-      const key = animalId != null ? String(animalId) : null;
-
-      if (isWithin(diasParaDpp, 0, DIAS_ALERTA_PARTO)) {
-        base.parto.push(item);
-        if (key) map.set(key, "parto");
-      } else if (diasParaDpp > DIAS_ALERTA_PARTO && diasParaDpp <= DIAS_INICIO_PREPARTO) {
-        base.preparto.push(item);
-        if (key) map.set(key, "preparto");
-      } else if (diasParaDpp > DIAS_INICIO_PREPARTO && diasParaDpp <= DIAS_PARA_SECAGEM) {
-        base.secagem.push(item);
-        if (key) map.set(key, "secagem");
-      }
-    });
-
-    base.secagem.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
-    base.preparto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
-    base.parto.sort((a, b) => (a.diasParaDpp ?? 0) - (b.diasParaDpp ?? 0));
-
-    if (import.meta.env?.DEV) {
-      const mockAnimal = {
-        id: "mock-casa",
-        numero: "999",
-        brinco: "Casa",
-        del: 120,
-      };
-      const mockDpp = startOfDay(new Date());
-      if (mockDpp) {
-        mockDpp.setDate(mockDpp.getDate() + 10);
-        const diasMock = diffDays(hoje, mockDpp);
-        const dataPrevSecagem = new Date(mockDpp);
-        dataPrevSecagem.setDate(mockDpp.getDate() - DIAS_PARA_SECAGEM);
-        const dataInicioPreParto = new Date(mockDpp);
-        dataInicioPreParto.setDate(mockDpp.getDate() - DIAS_INICIO_PREPARTO);
-        base.preparto.push({
-          animal: mockAnimal,
-          dpp: mockDpp,
-          diasParaDpp: diasMock,
-          dataPrevSecagem,
-          dataInicioPreParto,
-          ultima_ia: mockDpp,
-        });
-        map.set("mock-casa", "preparto");
-        hasDppValue = true;
-      }
-    }
-
-    return { pendencias: base, pendenciaPorId: map, hasDpp: hasDppValue };
-  }, [
-    linhas,
-    diffDays,
-    isWithin,
-    startOfDay,
-    DIAS_ALERTA_PARTO,
-    DIAS_INICIO_PREPARTO,
-    DIAS_PARA_SECAGEM,
-  ]);
-
-  const pendencias = pendenciasView ?? fallbackPendencias.pendencias;
-  const pendenciaPorId = pendenciasView ? pendenciaPorIdView : fallbackPendencias.pendenciaPorId;
-  const hasDpp = fallbackPendencias.hasDpp;
+  const pendencias = pendenciasView;
+  const pendenciaPorId = pendenciaPorIdView;
+  const hasDpp = hasDppView;
 
   const situacoesProdutivas = useMemo(() => {
     const set = new Set();
@@ -1152,8 +1074,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
             pendencias={pendencias}
             onAction={handleManejoAction}
             hasDpp={hasDpp}
-            fazendaId={fazendaAtualId}
-            userId={session?.user?.id}
+            animais={linhas}
             onParamsSaved={carregarPendencias}
           />
         </section>

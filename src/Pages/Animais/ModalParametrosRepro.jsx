@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
 
 const overlayStyle = {
   position: "fixed",
@@ -62,12 +63,13 @@ const DEFAULTS = {
   aviso_parto_dias: 7,
 };
 
-export default function ModalParametrosRepro({ open, onClose, fazendaId, userId, onSaved }) {
-  const [registroId, setRegistroId] = useState(null);
+export default function ModalParametrosRepro({ open, onClose, onSaved }) {
+  const { fazendaAtualId } = useFazenda();
   const [formValues, setFormValues] = useState(DEFAULTS);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [userId, setUserId] = useState(null);
 
   const alertStyles = useMemo(
     () => ({
@@ -99,7 +101,11 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
     let ativo = true;
 
     const carregar = async () => {
-      if (!fazendaId || !userId) {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const currentUserId = userData?.user?.id ?? null;
+      setUserId(currentUserId);
+
+      if (userError || !fazendaAtualId || !currentUserId) {
         if (ativo) {
           setErrorMsg("Selecione a fazenda e o usuário para editar os parâmetros reprodutivos.");
           setLoading(false);
@@ -110,8 +116,7 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
       const { data, error } = await supabase
         .from("config_repro_parametros")
         .select("*")
-        .eq("fazenda_id", fazendaId)
-        .eq("user_id", userId)
+        .eq("fazenda_id", fazendaAtualId)
         .maybeSingle();
 
       if (!ativo) return;
@@ -124,15 +129,13 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
 
       let registro = data;
       if (!registro) {
-        const { data: created, error: createError } = await supabase
+        const { error: createError } = await supabase
           .from("config_repro_parametros")
           .insert({
-            fazenda_id: fazendaId,
-            user_id: userId,
+            fazenda_id: fazendaAtualId,
+            user_id: currentUserId,
             ...DEFAULTS,
-          })
-          .select("*")
-          .single();
+          });
 
         if (!ativo) return;
 
@@ -142,10 +145,23 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
           return;
         }
 
-        registro = created;
+        const { data: createdRow, error: fetchError } = await supabase
+          .from("config_repro_parametros")
+          .select("*")
+          .eq("fazenda_id", fazendaAtualId)
+          .maybeSingle();
+
+        if (!ativo) return;
+
+        if (fetchError) {
+          setErrorMsg("Não foi possível carregar os parâmetros reprodutivos.");
+          setLoading(false);
+          return;
+        }
+
+        registro = createdRow;
       }
 
-      setRegistroId(registro?.id ?? null);
       setFormValues({
         gestacao_dias: Number(registro?.gestacao_dias ?? DEFAULTS.gestacao_dias),
         secagem_antecedencia_dias: Number(
@@ -165,7 +181,7 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
     return () => {
       ativo = false;
     };
-  }, [open, fazendaId, userId]);
+  }, [open, fazendaAtualId]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -223,7 +239,7 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
       return;
     }
 
-    if (!fazendaId || !userId) {
+    if (!fazendaAtualId || !userId) {
       setErrorMsg("Selecione a fazenda e o usuário para salvar os parâmetros.");
       return;
     }
@@ -231,7 +247,7 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
     setLoading(true);
 
     const payload = {
-      fazenda_id: fazendaId,
+      fazenda_id: fazendaAtualId,
       user_id: userId,
       gestacao_dias: gestacao,
       secagem_antecedencia_dias: secagem,
@@ -240,9 +256,9 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
       aviso_parto_dias: avisoParto,
     };
 
-    const response = registroId
-      ? await supabase.from("config_repro_parametros").update(payload).eq("id", registroId)
-      : await supabase.from("config_repro_parametros").insert(payload);
+    const response = await supabase
+      .from("config_repro_parametros")
+      .upsert(payload, { onConflict: "fazenda_id" });
 
     if (response.error) {
       setErrorMsg("Não foi possível salvar os parâmetros reprodutivos.");
@@ -253,6 +269,7 @@ export default function ModalParametrosRepro({ open, onClose, fazendaId, userId,
     setSuccessMsg("Parâmetros reprodutivos atualizados com sucesso!");
     setLoading(false);
     onSaved?.();
+    onClose?.();
   };
 
   return (
