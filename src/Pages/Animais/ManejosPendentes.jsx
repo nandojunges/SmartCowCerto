@@ -6,18 +6,55 @@ const CONFIGS = {
   secagem: {
     label: "Secagem",
     action: "Registrar Secagem",
-    buttonStyle: { background: "#eef6ff", color: "#1e40af", borderColor: "rgba(37, 99, 235, 0.35)" },
   },
   preparto: {
     label: "Pré-parto",
     action: "Marcar Pré-parto",
-    buttonStyle: { background: "#fff7ed", color: "#9a3412", borderColor: "rgba(154, 52, 18, 0.35)" },
   },
   parto: {
     label: "Parto",
     action: "Registrar Parto",
-    buttonStyle: { background: "#ecfdf3", color: "#166534", borderColor: "rgba(22, 163, 74, 0.35)" },
   },
+};
+
+const parseDateFlexible = (value) => {
+  if (!value) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+
+  let match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const y = +match[1];
+    const m = +match[2];
+    const d = +match[3];
+    const dt = new Date(y, m - 1, d);
+    return Number.isFinite(+dt) ? dt : null;
+  }
+
+  match = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    const d = +match[1];
+    const m = +match[2];
+    const y = +match[3];
+    const dt = new Date(y, m - 1, d);
+    return Number.isFinite(+dt) ? dt : null;
+  }
+
+  return null;
+};
+
+const idadeTexto = (nascimento) => {
+  const dt = parseDateFlexible(nascimento);
+  if (!dt) return "—";
+
+  const hoje = new Date();
+  let meses = (hoje.getFullYear() - dt.getFullYear()) * 12 + (hoje.getMonth() - dt.getMonth());
+  if (hoje.getDate() < dt.getDate()) meses -= 1;
+  if (meses < 0) meses = 0;
+
+  const anos = Math.floor(meses / 12);
+  const rem = meses % 12;
+  return `${anos}a ${rem}m`;
 };
 
 const startOfDay = (date) => {
@@ -26,12 +63,6 @@ const startOfDay = (date) => {
   if (Number.isNaN(dt.getTime())) return null;
   dt.setHours(0, 0, 0, 0);
   return dt;
-};
-
-const diffDays = (a, b) => {
-  if (!a || !b) return null;
-  const ms = b.getTime() - a.getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
 };
 
 const fmtBR = (date) => {
@@ -68,22 +99,13 @@ export default function ManejosPendentes({
   };
 
   const renderPendenciasTable = (rows, tipo) => {
-    if (!rows.length) {
-      return (
-        <div style={styles.emptyState}>
-          Nenhuma pendência para este período.
-        </div>
-      );
-    }
-
     const visibleRows = rows.slice(0, MAX_ROWS);
     const hiddenCount = rows.length - visibleRows.length;
-    const cfg = CONFIGS[tipo];
 
     return (
       <div className="st-table-container">
         <div className="st-table-wrap">
-          <table className="st-table st-table--darkhead">
+          <table className="st-table">
             <colgroup>
               <col style={{ width: "22%" }} />
               <col style={{ width: "8%" }} />
@@ -99,21 +121,23 @@ export default function ManejosPendentes({
                 <th className="st-th"><span className="st-th-label">Última IA</span></th>
                 <th className="st-th"><span className="st-th-label">Prev. Parto</span></th>
                 <th className="st-th"><span className="st-th-label">Prev. Secagem</span></th>
-                <th className="st-th st-td-right"><span className="st-th-label">Ações</span></th>
+                <th className="st-th st-td-center"><span className="st-th-label">Ações</span></th>
               </tr>
             </thead>
             <tbody>
+              {visibleRows.length === 0 && (
+                <tr className="st-empty">
+                  <td colSpan={6}>Nenhuma pendência para este período.</td>
+                </tr>
+              )}
               {visibleRows.map((item, idx) => {
                 const animal = item?.animal || item || {};
                 const numero = animal?.numero ?? "—";
                 const brinco = animal?.brinco ?? "—";
+                const animalLabel = animal?.nome ?? numero;
                 const del = animal?.del ?? "—";
                 const dpp = item?.dpp ?? animal?.dpp ?? animal?.data_prevista_parto;
                 const ultimaIa = item?.ultima_ia ?? animal?.ultima_ia;
-                const diasParaDpp =
-                  Number.isFinite(item?.diasParaDpp)
-                    ? item.diasParaDpp
-                    : diffDays(startOfDay(new Date()), startOfDay(dpp));
                 const dataPrevSecagem =
                   item?.dataPrevSecagem ??
                   (dpp
@@ -124,17 +148,20 @@ export default function ManejosPendentes({
                         return dt;
                       })()
                     : null);
+                const idade = idadeTexto(animal?.nascimento);
 
                 return (
                   <tr key={`${tipo}-${animal?.id ?? animal?.animal_id ?? idx}`} className="st-row">
                     <td className="st-col-animal">
-                      <div style={styles.animalCell}>
-                        <div style={styles.animalNum}>#{numero}</div>
-                        <div style={styles.animalInfo}>
-                          <span style={styles.animalTitle}>Brinco {brinco}</span>
-                          <span style={styles.animalSub}>
-                            {Number.isFinite(diasParaDpp) ? `${diasParaDpp} dias` : "—"}
-                          </span>
+                      <div className="st-animal">
+                        <span className="st-animal-num">{numero}</span>
+                        <div className="st-animal-main">
+                          <span className="st-animal-title">{animalLabel}</span>
+                          <div className="st-animal-sub">
+                            <span className="st-subitem">{idade}</span>
+                            <span className="st-dot">•</span>
+                            <span className="st-subitem">Brinco {brinco}</span>
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -144,18 +171,13 @@ export default function ManejosPendentes({
                     <td>{fmtBR(ultimaIa)}</td>
                     <td>{fmtBR(dpp)}</td>
                     <td>{fmtBR(dataPrevSecagem)}</td>
-                    <td className="st-td-right">
+                    <td className="st-td-center">
                       <button
                         type="button"
                         className="st-btn"
-                        style={{
-                          ...cfg.buttonStyle,
-                          borderWidth: "1px",
-                          borderStyle: "solid",
-                        }}
                         onClick={() => handleAction(tipo, animal)}
                       >
-                        {cfg.action}
+                        {CONFIGS[tipo].action}
                       </button>
                     </td>
                   </tr>
@@ -164,8 +186,8 @@ export default function ManejosPendentes({
             </tbody>
             {hiddenCount > 0 && (
               <tfoot>
-                <tr>
-                  <td colSpan={6} style={styles.moreRow}>
+                <tr className="st-empty">
+                  <td colSpan={6}>
                     +{hiddenCount} pendência{hiddenCount > 1 ? "s" : ""} ocultas
                   </td>
                 </tr>
@@ -204,12 +226,12 @@ export default function ManejosPendentes({
         })}
       </div>
 
-      <div style={styles.infoBar}>
-        <span style={styles.infoTitle}>Pendências baseadas na previsão de parto dos animais</span>
-        {!hasDpp && <span style={styles.infoMuted}>Nenhuma previsão de parto registrada.</span>}
+      <div>
+        <span>Pendências baseadas na previsão de parto dos animais</span>
+        {!hasDpp && <span> Nenhuma previsão de parto registrada.</span>}
       </div>
 
-      <div style={styles.tableBlock}>{renderPendenciasTable(activeList, pendTabAtiva)}</div>
+      <div>{renderPendenciasTable(activeList, pendTabAtiva)}</div>
     </div>
   );
 }
@@ -263,72 +285,5 @@ const styles = {
   pillBadgeActive: {
     background: "#1d4ed8",
     color: "#fff",
-  },
-  infoBar: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    padding: "8px 12px",
-    borderRadius: "10px",
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    fontSize: "12px",
-  },
-  infoTitle: {
-    fontWeight: 700,
-    color: "#1e293b",
-  },
-  infoMuted: {
-    color: "#64748b",
-  },
-  tableBlock: {
-    width: "100%",
-  },
-  emptyState: {
-    padding: "18px",
-    borderRadius: "12px",
-    border: "1px dashed #cbd5f5",
-    background: "#f8fafc",
-    textAlign: "center",
-    fontSize: "13px",
-    color: "#64748b",
-    fontWeight: 600,
-  },
-  animalCell: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-  },
-  animalNum: {
-    minWidth: "36px",
-    height: "32px",
-    borderRadius: "10px",
-    background: "#e0f2fe",
-    color: "#0c4a6e",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 800,
-    fontSize: "12px",
-  },
-  animalInfo: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-  },
-  animalTitle: {
-    fontSize: "12.5px",
-    fontWeight: 700,
-    color: "#0f172a",
-  },
-  animalSub: {
-    fontSize: "11px",
-    color: "#64748b",
-  },
-  moreRow: {
-    padding: "10px 14px",
-    fontSize: "12px",
-    color: "#64748b",
-    textAlign: "right",
   },
 };
