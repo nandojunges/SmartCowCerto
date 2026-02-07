@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
-import CreatableSelect from "react-select/creatable";
 import { X, Package, Pill, FlaskConical, Info, Box, Calendar, DollarSign, AlertCircle } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
@@ -213,36 +212,27 @@ const TAGS_TIPO_FARMACIA = [
   { termos: ["Soluções", "Fluidoterapia"], tags: ["SOLUTION"] },
 ];
 
-const RACAS_LEITE_FALLBACK = [
-  "Ayrshire",
-  "Caracu",
-  "Gir Leiteiro",
-  "Girolando",
-  "Guernsey",
-  "Holandês",
-  "Holandês Vermelho",
-  "Jersey",
-  "Jersolando",
-  "Montbéliarde",
-  "Normando",
-  "Pardo Suíço (Brown Swiss)",
-  "Simental (Fleckvieh leiteiro)",
-  "SRD",
-].map((raca) => ({
-  value: raca,
-  label: raca,
-}));
+const RACAS_LEITEIRAS = [
+  { value: "Holandês", label: "Holandês" },
+  { value: "Jersey", label: "Jersey" },
+  { value: "Girolando", label: "Girolando" },
+  { value: "Gir Leiteiro", label: "Gir Leiteiro" },
+  { value: "Pardo-Suíço", label: "Pardo-Suíço" },
+  { value: "Ayrshire", label: "Ayrshire" },
+  { value: "Guernsey", label: "Guernsey" },
+  { value: "Normando", label: "Normando" },
+  { value: "Simental Leiteiro", label: "Simental Leiteiro" },
+  { value: "Montbéliarde", label: "Montbéliarde" },
+  { value: "Caracu", label: "Caracu" },
+];
 
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
-  const { fazendaAtualId, session } = useFazenda();
+  const { fazendaAtualId } = useFazenda();
   const isEdit = !!initial?.id;
   const [form, setForm] = useState(() => toForm(initial));
   const [loteEditId, setLoteEditId] = useState(null);
   const [gruposEq, setGruposEq] = useState([]);
   const [carregandoGrupos, setCarregandoGrupos] = useState(false);
-  const [racasOptions, setRacasOptions] = useState(RACAS_LEITE_FALLBACK);
-  const [carregandoRacas, setCarregandoRacas] = useState(false);
-  const [tabelaRacasDisponivel, setTabelaRacasDisponivel] = useState(false);
 
   /* ===================== LOOKUPS ===================== */
   const categorias = useMemo(
@@ -327,71 +317,6 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   useEffect(() => {
     let ativo = true;
 
-    if (!open || !fazendaAtualId) return undefined;
-
-    const carregarRacas = async () => {
-      setCarregandoRacas(true);
-      const logRacasError = (error) => {
-        console.error("[racas] error", {
-          code: error?.code,
-          message: error?.message,
-          details: error?.details,
-          hint: error?.hint,
-        });
-      };
-
-      const buscarRacas = async (usarFiltroAtivo) => {
-        let query = supabase.from("racas").select("id, nome").eq("fazenda_id", fazendaAtualId);
-
-        if (usarFiltroAtivo) {
-          query = query.eq("ativo", true);
-        }
-
-        return query.order("nome", { ascending: true });
-      };
-
-      const { data: dataComAtivo, error: errorComAtivo } = await buscarRacas(true);
-
-      if (!ativo) return;
-
-      if (errorComAtivo) {
-        logRacasError(errorComAtivo);
-        const { data: dataSemAtivo, error: errorSemAtivo } = await buscarRacas(false);
-
-        if (!ativo) return;
-
-        if (errorSemAtivo) {
-          logRacasError(errorSemAtivo);
-          setTabelaRacasDisponivel(false);
-          setRacasOptions(RACAS_LEITE_FALLBACK);
-          setCarregandoRacas(false);
-          return;
-        }
-
-        setTabelaRacasDisponivel(true);
-        const listaSemAtivo = (dataSemAtivo || []).map((raca) => ({ value: raca.nome, label: raca.nome }));
-        setRacasOptions(construirRacasOptions(listaSemAtivo));
-        setCarregandoRacas(false);
-        return;
-      }
-
-      setTabelaRacasDisponivel(true);
-      const lista = (dataComAtivo || []).map((raca) => ({ value: raca.nome, label: raca.nome }));
-      setRacasOptions(construirRacasOptions(lista));
-
-      setCarregandoRacas(false);
-    };
-
-    carregarRacas();
-
-    return () => {
-      ativo = false;
-    };
-  }, [open, fazendaAtualId]);
-
-  useEffect(() => {
-    let ativo = true;
-
     if (!open || !initial?.id || !fazendaAtualId) return undefined;
 
     const buscarLote = async (orderBy) => {
@@ -446,7 +371,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const isAntibiotico = isFarmacia && form.subTipo === "Antibiótico";
   const mostraGrupoEquivalencia = isFarmacia || isReproducao || isCozinha || isHigiene;
   const categoriaGrupoEquivalencia = normalizarCategoriaGrupo(form.categoria);
-  const precisaRacaRepro = isReproducao && (form.subTipo === "Sêmen" || form.subTipo === "Embrião");
+  const exigeRacaRepro = isReproducao && (form.subTipo === "Sêmen" || form.subTipo === "Embrião");
 
   const gruposOptions = useMemo(() => {
     const listaBase = (gruposEq || []).filter((g) => (g.categoria || "") === categoriaGrupoEquivalencia);
@@ -533,8 +458,8 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
       return null;
     }
 
-    if (precisaRacaRepro && !form.racaRepro) {
-      alert("Selecione a raça do Sêmen/Embrião.");
+    if (exigeRacaRepro && !String(form.racaRepro || "").trim()) {
+      alert("Selecione a raça do sêmen/embrião.");
       return null;
     }
 
@@ -709,39 +634,17 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
               </div>
             )}
 
-            {precisaRacaRepro && (
+            {exigeRacaRepro && (
               <div style={{ marginTop: 14 }}>
                 <Field label="Raça (do Sêmen/Embrião) *">
-                  <CreatableSelect
-                    options={racasOptions}
-                    value={
-                      racasOptions.find((r) => r.value === form.racaRepro) ||
-                      (form.racaRepro ? { value: form.racaRepro, label: form.racaRepro } : null)
-                    }
+                  <Select
+                    options={RACAS_LEITEIRAS}
+                    value={RACAS_LEITEIRAS.find((r) => r.value === form.racaRepro) || null}
                     onChange={(opt) => setForm((f) => ({ ...f, racaRepro: opt?.value || "" }))}
-                    onCreateOption={(novoValor) => {
-                      const valor = String(novoValor || "").trim();
-                      if (!valor) return;
-                      setForm((f) => ({ ...f, racaRepro: valor }));
-                      setRacasOptions((prev) => {
-                        if (prev.some((item) => normalizarRacaKey(item.value) === normalizarRacaKey(valor))) return prev;
-                        return [...prev, { value: valor, label: valor }];
-                      });
-                      if (tabelaRacasDisponivel && fazendaAtualId) {
-                        supabase.from("racas").insert({
-                          fazenda_id: fazendaAtualId,
-                          user_id: session?.user?.id || null,
-                          nome: valor,
-                          ativo: true,
-                        });
-                      }
-                    }}
-                    isLoading={carregandoRacas}
                     styles={rsStyles}
-                    placeholder="Selecione ou digite..."
+                    placeholder="Selecione..."
                     menuPortalTarget={menuPortalTarget}
                   />
-                  <span style={fieldHint}>Se a raça não estiver na lista, digite e pressione Enter.</span>
                 </Field>
               </div>
             )}
@@ -1033,7 +936,10 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
             style={btnPrimary}
             onClick={() => {
               const out = validar();
-              if (out) onSaved?.(out);
+              if (out) {
+                console.log("[payload produto]", out);
+                onSaved?.(out);
+              }
             }}
           >
             {isEdit ? "Salvar Alterações" : "Cadastrar Produto"}
@@ -1094,24 +1000,6 @@ function toNum(v) {
   const s = String(v).replace(",", ".");
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
-}
-
-function normalizarRacaKey(valor) {
-  return String(valor || "").trim().toLowerCase();
-}
-
-function construirRacasOptions(racasBanco = []) {
-  const listaBanco = Array.isArray(racasBanco) ? racasBanco : [];
-  if (listaBanco.length === 0) return RACAS_LEITE_FALLBACK;
-
-  const combinadas = [...listaBanco, ...RACAS_LEITE_FALLBACK];
-  const vistos = new Set();
-  return combinadas.filter((item) => {
-    const chave = normalizarRacaKey(item.value);
-    if (!chave || vistos.has(chave)) return false;
-    vistos.add(chave);
-    return true;
-  });
 }
 
 function toForm(initial) {
@@ -1233,8 +1121,8 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
   const unidadeMedidaFinal = f.reutilizavel ? "uso" : String(f.unidadeMedida || "un").trim() || "un";
   const usosPorUnidadeFinal = f.reutilizavel ? toNum(f.usosPorUnidade) : null;
   const categoriaGrupo = normalizarCategoriaGrupo(f.categoria);
-  const precisaRacaRepro = categoriaFinal === "Reprodução" && (f.subTipo === "Sêmen" || f.subTipo === "Embrião");
-  const racaReproFinal = precisaRacaRepro ? String(f.racaRepro || "").trim() : null;
+  const exigeRacaRepro = categoriaFinal === "Reprodução" && (f.subTipo === "Sêmen" || f.subTipo === "Embrião");
+  const racaReproFinal = exigeRacaRepro ? String(f.racaRepro || "").trim() : null;
   const grupoEquivalenciaFinal = CATEGORIAS_GRUPO_EQ.has(categoriaGrupo)
     ? f.grupoEquivalencia && String(f.grupoEquivalencia).trim()
       ? String(f.grupoEquivalencia).trim()
