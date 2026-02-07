@@ -218,6 +218,17 @@ const RACAS_FALLBACK = ["Holandês", "Jersey", "Gir", "Girolando", "Angus", "Nel
   label: raca,
 }));
 
+const TOUROS_FALLBACK = [
+  { value: "Bluff", label: "Bluff" },
+  { value: "Impressor", label: "Impressor" },
+  { value: "Goldwyn", label: "Goldwyn" },
+  { value: "Shottle", label: "Shottle" },
+  { value: "Bolton", label: "Bolton" },
+  { value: "Supersire", label: "Supersire" },
+  { value: "Mogul", label: "Mogul" },
+  { value: "Doorman", label: "Doorman" },
+];
+
 export default function ModalNovoProduto({ open, onClose, onSaved, initial = null }) {
   const { fazendaAtualId, session } = useFazenda();
   const isEdit = !!initial?.id;
@@ -432,6 +443,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
   const mostraGrupoEquivalencia = isFarmacia || isReproducao || isCozinha || isHigiene;
   const categoriaGrupoEquivalencia = normalizarCategoriaGrupo(form.categoria);
   const precisaRacaRepro = isReproducao && (form.subTipo === "Sêmen" || form.subTipo === "Embrião");
+  const precisaTouro = isReproducao && form.subTipo === "Sêmen";
 
   const gruposOptions = useMemo(() => {
     const listaBase = (gruposEq || []).filter((g) => (g.categoria || "") === categoriaGrupoEquivalencia);
@@ -520,6 +532,11 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
 
     if (precisaRacaRepro && !form.racaRepro) {
       alert("Selecione a raça do sêmen/embrião.");
+      return null;
+    }
+
+    if (precisaTouro && !form.touroNome.trim()) {
+      alert("Selecione/informe o touro do sêmen.");
       return null;
     }
 
@@ -637,6 +654,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                       subTipo: "",
                       grupoEquivalencia: "",
                       racaRepro: "",
+                      touroNome: "",
                       formaCompra: "",
                       tipoEmbalagem: "",
                       qtdEmbalagens: "",
@@ -676,6 +694,7 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                         subTipo: v,
                         grupoEquivalencia: f.categoria === "Farmácia" ? "" : f.grupoEquivalencia,
                         racaRepro: v === "Sêmen" || v === "Embrião" ? f.racaRepro : "",
+                        touroNome: v === "Sêmen" ? f.touroNome : "",
                         ...(v !== "Antibiótico"
                           ? {
                               carenciaLeiteDias: "",
@@ -727,6 +746,31 @@ export default function ModalNovoProduto({ open, onClose, onSaved, initial = nul
                     menuPortalTarget={menuPortalTarget}
                   />
                   <span style={fieldHint}>Se a raça não estiver na lista, digite e pressione Enter.</span>
+                </Field>
+              </div>
+            )}
+
+            {precisaTouro && (
+              <div style={{ marginTop: 14 }}>
+                <Field label="Touro (identificação) *">
+                  <CreatableSelect
+                    options={TOUROS_FALLBACK}
+                    value={
+                      TOUROS_FALLBACK.find((touro) => touro.value === form.touroNome) ||
+                      (form.touroNome ? { value: form.touroNome, label: form.touroNome } : null)
+                    }
+                    onChange={(opt) => setForm((f) => ({ ...f, touroNome: opt?.value || "" }))}
+                    onCreateOption={(novoValor) => {
+                      const valor = String(novoValor || "").trim();
+                      if (!valor) return;
+                      setForm((f) => ({ ...f, touroNome: valor }));
+                    }}
+                    isSearchable
+                    styles={rsStyles}
+                    placeholder="Selecione ou digite..."
+                    menuPortalTarget={menuPortalTarget}
+                  />
+                  <span style={fieldHint}>Se não estiver na lista, digite e pressione Enter.</span>
                 </Field>
               </div>
             )}
@@ -1117,6 +1161,7 @@ function toForm(initial) {
 
     grupoEquivalencia: pick(d, "grupoEquivalencia", "grupo_equivalencia") ?? "",
     racaRepro: pick(d, "racaRepro", "raca_repro") ?? "",
+    touroNome: pick(d, "touroNome", "touro_nome") ?? "",
 
     // ativo (edição)
     ativo: pick(d, "ativo"),
@@ -1202,6 +1247,8 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
   const categoriaGrupo = normalizarCategoriaGrupo(f.categoria);
   const precisaRacaRepro = categoriaFinal === "Reprodução" && (f.subTipo === "Sêmen" || f.subTipo === "Embrião");
   const racaReproFinal = precisaRacaRepro && f.racaRepro ? String(f.racaRepro).trim() : null;
+  const precisaTouro = categoriaFinal === "Reprodução" && f.subTipo === "Sêmen";
+  const touroNomeFinal = precisaTouro && f.touroNome ? String(f.touroNome).trim() : null;
   const grupoEquivalenciaFinal = CATEGORIAS_GRUPO_EQ.has(categoriaGrupo)
     ? f.grupoEquivalencia && String(f.grupoEquivalencia).trim()
       ? String(f.grupoEquivalencia).trim()
@@ -1224,6 +1271,7 @@ function normalizeProdutoPayload(f, isEdit, loteEditId) {
     sem_carencia_leite: !!f.semCarenciaLeite,
     sem_carencia_carne: !!f.semCarenciaCarne,
     raca_repro: racaReproFinal,
+    touro_nome: touroNomeFinal,
     ativo: isEdit && f.ativo === false ? false : true,
     quantidade_total: quantidadeEntrada,
     total_calculado: quantidadeEntrada,
