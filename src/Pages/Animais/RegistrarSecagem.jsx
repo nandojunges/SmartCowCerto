@@ -1,5 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Select from "react-select";
+import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
 
 export default function RegistrarSecagem(props) {
   // ✅ Compatível com as duas assinaturas:
@@ -15,6 +17,7 @@ export default function RegistrarSecagem(props) {
   );
 
   const numeroAnimal = animalSafe?.numero ?? animalSafe?.num ?? "—";
+  const { fazendaAtualId } = useFazenda();
 
   const [dataSecagem, setDataSecagem] = useState("");
   const [planoTratamento, setPlanoTratamento] = useState(null); // ✅ NOVO
@@ -52,57 +55,80 @@ export default function RegistrarSecagem(props) {
     return [dia, mes, ano].filter(Boolean).join("/");
   };
 
-  const salvar = () => {
-    if (!animalSafe || animalSafe.numero === undefined || animalSafe.numero === null) {
+  const parseDataSecagem = (valor) => {
+    const match = String(valor || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return null;
+    const dia = Number(match[1]);
+    const mes = Number(match[2]);
+    const ano = Number(match[3]);
+    const date = new Date(ano, mes - 1, dia);
+    if (
+      Number.isNaN(date.getTime()) ||
+      date.getFullYear() !== ano ||
+      date.getMonth() !== mes - 1 ||
+      date.getDate() !== dia
+    ) {
+      return null;
+    }
+    const iso = `${String(ano).padStart(4, "0")}-${String(mes).padStart(2, "0")}-${String(
+      dia
+    ).padStart(2, "0")}`;
+    return iso;
+  };
+
+  const salvar = async () => {
+    setErro("");
+
+    const animalId = animalSafe?.id ?? animalSafe?.animal_id ?? null;
+    if (!animalId) {
       setErro("Selecione uma vaca válida antes de salvar.");
       return;
     }
 
-    // 🔧 Se quiser tornar “plano” e “responsável” obrigatórios, descomenta aqui:
-    // if (!planoTratamento || !responsavel) {
-    //   setErro("Selecione o plano de tratamento e o responsável.");
-    //   return;
-    // }
-
-    if (!dataSecagem || !metodo || !condicaoCorporal) {
-      setErro("Preencha todos os campos obrigatórios");
+    const dataISO = parseDataSecagem(dataSecagem);
+    if (!dataISO) {
+      setErro("Informe uma data válida no formato dd/mm/aaaa.");
       return;
     }
 
-    const animais = JSON.parse(localStorage.getItem("animais") || "[]");
-
-    const alvoNumero = String(animalSafe.numero);
-    const index = animais.findIndex((a) => String(a?.numero) === alvoNumero);
-
-    if (index === -1) {
-      setErro("Não encontrei essa vaca no armazenamento local (localStorage).");
+    if (!fazendaAtualId) {
+      setErro("Fazenda atual não encontrada.");
       return;
     }
 
-    const dadosSecagem = {
-      data: dataSecagem,
-      planoTratamento: planoTratamento?.value ?? null, // ✅ NOVO
-      responsavel: responsavel?.value ?? null, // ✅ NOVO
-      metodo: metodo.value,
-      condicaoCorporal: condicaoCorporal.value,
-      producaoAtual,
-      observacoes,
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) {
+      setErro("Não foi possível obter o usuário autenticado.");
+      return;
+    }
+    const userId = authData?.user?.id;
+    if (!userId) {
+      setErro("Sessão inválida (auth.uid vazio).");
+      return;
+    }
+
+    const payload = {
+      fazenda_id: fazendaAtualId,
+      animal_id: animalId,
+      tipo: "SECAGEM",
+      data_evento: dataISO,
+      user_id: userId,
+      meta: {
+        origem: "manejos_pendentes",
+        plano_tratamento: planoTratamento?.label || planoTratamento?.value || null,
+        responsavel: responsavel?.label || responsavel?.value || null,
+        observacoes: observacoes || null,
+      },
     };
 
-    if (!animais[index].historico) animais[index].historico = [];
-    animais[index].historico.push({
-      tipo: "secagem",
-      ...dadosSecagem,
-    });
-
-    animais[index].statusReprodutivo = "seca";
-    animais[index].dataSecagem = dataSecagem;
-
-    localStorage.setItem("animais", JSON.stringify(animais));
-    window.dispatchEvent(new Event("animaisAtualizados"));
+    const { error } = await supabase.from("repro_eventos").insert([payload]);
+    if (error) {
+      setErro("Erro ao salvar a secagem no Supabase.");
+      return;
+    }
 
     onClose?.();
-    props.onSaved?.(dadosSecagem);
+    props.onSaved?.();
   };
 
   const estilos = {
