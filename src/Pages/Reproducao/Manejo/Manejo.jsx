@@ -177,6 +177,8 @@ function sanitizeReproEventoPayload(payload) {
   } = payload;
 
   const {
+    bezerros_qtd: _metaBezerrosQtd,
+    sem_secagem: _metaSemSecagem,
     evidencia_ia: _metaEvidenciaIa,
     input_br: _metaInputBr,
     modo: _metaModo,
@@ -189,7 +191,14 @@ function sanitizeReproEventoPayload(payload) {
     ...cleanMeta
   } = meta && typeof meta === "object" ? meta : {};
 
-  cleanPayload.meta = cleanMeta || {};
+  const allowedMeta = {};
+  if (cleanMeta.origem) allowedMeta.origem = cleanMeta.origem;
+  if (cleanMeta.comentario) allowedMeta.comentario = cleanMeta.comentario;
+  if (cleanMeta.dg) allowedMeta.dg = cleanMeta.dg;
+  if (cleanMeta.ia_ref) allowedMeta.ia_ref = cleanMeta.ia_ref;
+  if (cleanMeta.tipoExame) allowedMeta.tipoExame = cleanMeta.tipoExame;
+
+  cleanPayload.meta = Object.keys(allowedMeta).length > 0 ? allowedMeta : {};
 
   return cleanPayload;
 }
