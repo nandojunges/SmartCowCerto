@@ -39,10 +39,16 @@ export default function RegistrarParto(props) {
   const [erro, setErro] = useState("");
   const [mostrarAvisoSemSecagem, setMostrarAvisoSemSecagem] = useState(semSecagem);
   const { fazendaAtualId } = useFazenda();
+  const resolvedFazendaId = fazendaIdProp ?? fazendaAtualId ?? vacaSafe?.fazenda_id ?? null;
 
   function criarBezerroVazio(numero) {
     return {
       numero,
+      numeroCadastro: "",
+      numeroAutomatico: false,
+      numeroSugerido: null,
+      numeroAutoCarregando: false,
+      brinco: "",
       sexo: null,
       peso: "",
       natimorto: false,
@@ -262,6 +268,115 @@ export default function RegistrarParto(props) {
     return minutos >= 0 ? minutos : null;
   };
 
+  const logSupabaseError = (error, contexto) => {
+    if (!error) return;
+    const code = error.code ?? "sem_code";
+    const message = error.message ?? "sem_mensagem";
+    const details = error.details ?? "sem_detalhes";
+    const hint = error.hint ?? "sem_hint";
+    const status = error.status ?? "sem_status";
+    console.error(
+      `Erro Supabase (${contexto}): code=${code} message=${message} details=${details} hint=${hint} status=${status}`
+    );
+  };
+
+  const parseNumeroBezerro = (valor) => {
+    const texto = String(valor ?? "").trim();
+    if (!texto) return null;
+    const numero = Number(texto);
+    if (!Number.isFinite(numero) || !Number.isInteger(numero) || numero <= 0) return null;
+    return numero;
+  };
+
+  const parseBrincoBezerro = (valor) => {
+    const texto = String(valor ?? "").trim();
+    return texto ? texto : null;
+  };
+
+  const obterIdentificacaoBezerro = (bezerro) => {
+    const numero = parseNumeroBezerro(bezerro?.numeroCadastro);
+    const brinco = parseBrincoBezerro(bezerro?.brinco);
+    return { numero, brinco };
+  };
+
+  const carregarNumeroAutomatico = async (index) => {
+    if (!resolvedFazendaId) {
+      setErro("Não foi possível identificar a fazenda para sugerir número do bezerro.");
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setErro("Sem conexão para sugerir número automático do bezerro.");
+      return;
+    }
+
+    setBezerros((prev) => {
+      const novos = [...prev];
+      if (!novos[index]) return prev;
+      novos[index] = {
+        ...novos[index],
+        numeroAutomatico: true,
+        numeroAutoCarregando: true,
+      };
+      return novos;
+    });
+
+    const { data, error } = await supabase
+      .from("animais")
+      .select("max(numero) as max")
+      .eq("fazenda_id", resolvedFazendaId)
+      .maybeSingle();
+
+    if (error) {
+      logSupabaseError(error, "buscar_numero_automatico_bezerro");
+      setErro("Erro ao buscar o próximo número automático do bezerro.");
+      setBezerros((prev) => {
+        const novos = [...prev];
+        if (!novos[index]) return prev;
+        novos[index] = {
+          ...novos[index],
+          numeroAutoCarregando: false,
+        };
+        return novos;
+      });
+      return;
+    }
+
+    const maxNumeroRaw = data?.max ?? 0;
+    const maxNumero = Number.isFinite(Number(maxNumeroRaw)) ? Number(maxNumeroRaw) : 0;
+    const numeroSugerido = maxNumero + 1;
+
+    setBezerros((prev) => {
+      const novos = [...prev];
+      if (!novos[index]) return prev;
+      novos[index] = {
+        ...novos[index],
+        numeroAutomatico: true,
+        numeroAutoCarregando: false,
+        numeroSugerido,
+        numeroCadastro: String(numeroSugerido),
+      };
+      return novos;
+    });
+  };
+
+  const alternarNumeroAutomatico = (index, ativar) => {
+    if (ativar) {
+      carregarNumeroAutomatico(index);
+      return;
+    }
+    setBezerros((prev) => {
+      const novos = [...prev];
+      if (!novos[index]) return prev;
+      novos[index] = {
+        ...novos[index],
+        numeroAutomatico: false,
+        numeroAutoCarregando: false,
+        numeroSugerido: null,
+      };
+      return novos;
+    });
+  };
+
   const getMensagemColostragem = (minutos) => {
     if (minutos === null) return null;
     if (minutos <= 120) return { tipo: "sucesso", texto: "✅ Excelente! Até 2h" };
@@ -343,25 +458,31 @@ export default function RegistrarParto(props) {
     const partosAtual = parseInt(animais[indexMae].numeroPartos || "0", 10);
     animais[indexMae].numeroPartos = String(Number.isFinite(partosAtual) ? partosAtual + 1 : 1);
 
-    const novosBezerros = bezerros.filter((b) => !b?.natimorto).map((b) => {
-      const minutos = calcularTempoColostragem(horaParto, b.colostragem.hora);
-      return {
-        numero: null,
-        mae: vacaSafe.numero ?? null,
-        sexo: b.sexo.value,
-        dataNascimento: dataParto,
-        horaNascimento: horaParto,
-        peso: b.peso,
-        vitalidade: b.vitalidade.value,
-        colostragem: {
-          recebeu: b.colostragem.recebeu?.value === "Sim",
-          hora: b.colostragem.hora,
-          volume: b.colostragem.volume,
-          tempoAposNascimento: minutos,
-        },
-        observacoes: b.observacoes,
-      };
-    });
+    const novosBezerros = bezerros
+      .filter((b) => !b?.natimorto)
+      .map((b) => {
+        const { numero, brinco } = obterIdentificacaoBezerro(b);
+        if (!numero && !brinco) return null;
+        const minutos = calcularTempoColostragem(horaParto, b.colostragem.hora);
+        return {
+          numero: numero ?? null,
+          brinco: brinco ?? null,
+          mae: vacaSafe.numero ?? null,
+          sexo: b.sexo.value,
+          dataNascimento: dataParto,
+          horaNascimento: horaParto,
+          peso: b.peso,
+          vitalidade: b.vitalidade.value,
+          colostragem: {
+            recebeu: b.colostragem.recebeu?.value === "Sim",
+            hora: b.colostragem.hora,
+            volume: b.colostragem.volume,
+            tempoAposNascimento: minutos,
+          },
+          observacoes: b.observacoes,
+        };
+      })
+      .filter(Boolean);
 
     localStorage.setItem("bezerros", JSON.stringify([...bezerrosExistentes, ...novosBezerros]));
     localStorage.setItem("animais", JSON.stringify(animais));
@@ -385,7 +506,6 @@ export default function RegistrarParto(props) {
       return;
     }
 
-    const resolvedFazendaId = fazendaIdProp ?? fazendaAtualId ?? vacaSafe?.fazenda_id ?? null;
     if (!resolvedFazendaId) {
       setErro("Não foi possível identificar a fazenda para registrar o parto.");
       return;
@@ -396,18 +516,6 @@ export default function RegistrarParto(props) {
       setErro("Não foi possível identificar a vaca para registrar o parto.");
       return;
     }
-
-    const logSupabaseError = (error, contexto) => {
-      if (!error) return;
-      const code = error.code ?? "sem_code";
-      const message = error.message ?? "sem_mensagem";
-      const details = error.details ?? "sem_detalhes";
-      const hint = error.hint ?? "sem_hint";
-      const status = error.status ?? "sem_status";
-      console.error(
-        `Erro Supabase (${contexto}): code=${code} message=${message} details=${details} hint=${hint} status=${status}`
-      );
-    };
 
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -578,6 +686,64 @@ export default function RegistrarParto(props) {
       }
 
       const bezerrosPayload = [];
+
+      for (let index = 0; index < bezerros.length; index++) {
+        const bezerro = bezerros[index];
+        if (bezerro?.natimorto) continue;
+
+        const { numero, brinco } = obterIdentificacaoBezerro(bezerro);
+        if (!numero && !brinco) continue;
+
+        if (numero) {
+          const { data: numeroExistente, error: numeroError } = await supabase
+            .from("animais")
+            .select("id")
+            .eq("fazenda_id", resolvedFazendaId)
+            .eq("numero", numero)
+            .limit(1)
+            .maybeSingle();
+
+          if (numeroError) {
+            logSupabaseError(numeroError, "validar_numero_bezerro");
+            setErro("Erro ao validar número do bezerro. Tente novamente.");
+            return;
+          }
+
+          if (numeroExistente) {
+            setErro(`O número ${numero} já existe no plantel. Informe outro número.`);
+            return;
+          }
+        }
+
+        const payloadBezerro = {
+          fazenda_id: resolvedFazendaId,
+          user_id: userId,
+          numero: numero ?? null,
+          brinco: brinco ?? null,
+          nascimento: dataISO,
+          sexo: mapSexo(bezerro?.sexo?.value),
+          origem: "propriedade",
+          mae_nome: vacaSafe?.nome ?? null,
+        };
+
+        const { data: bezerroData, error: bezerroError } = await supabase
+          .from("animais")
+          .insert([payloadBezerro])
+          .select("id, numero, brinco")
+          .maybeSingle();
+
+        if (bezerroError) {
+          logSupabaseError(bezerroError, "insert_animais_bezerro");
+          setErro("Erro ao criar o bezerro no plantel. Tente novamente.");
+          return;
+        }
+
+        bezerrosPayload.push({
+          id: bezerroData?.id ?? null,
+          numero: bezerroData?.numero ?? numero ?? null,
+          brinco: bezerroData?.brinco ?? brinco ?? null,
+        });
+      }
 
       window.dispatchEvent(new Event("animaisAtualizados"));
       onClose?.();
@@ -863,6 +1029,20 @@ export default function RegistrarParto(props) {
       padding: "0.55rem 0.9rem",
       fontSize: "0.85rem",
       cursor: "pointer",
+      fontWeight: 600,
+    },
+    checkboxRow: {
+      display: "flex",
+      alignItems: "center",
+      gap: "0.45rem",
+      marginTop: "0.4rem",
+      fontSize: "0.8rem",
+      color: "#4b5563",
+    },
+    infoNumeroAuto: {
+      marginTop: "0.35rem",
+      fontSize: "0.8rem",
+      color: "#059669",
       fontWeight: 600,
     },
   };
@@ -1245,6 +1425,53 @@ export default function RegistrarParto(props) {
 
                     {!bezerro.natimorto && (
                       <>
+                    <div style={estilos.campo}>
+                      <label style={estilos.label}>Número do bezerro</label>
+                      <input
+                        type="number"
+                        value={bezerro.numeroCadastro}
+                        onChange={(e) => {
+                          if (bezerro.numeroAutomatico) return;
+                          atualizarBezerro(index, "numeroCadastro", e.target.value);
+                        }}
+                        style={estilos.input}
+                        placeholder="Ex: 1201"
+                        readOnly={bezerro.numeroAutomatico}
+                        disabled={!vacaSafe}
+                      />
+                      <div style={estilos.checkboxRow}>
+                        <input
+                          type="checkbox"
+                          checked={bezerro.numeroAutomatico}
+                          onChange={(e) => alternarNumeroAutomatico(index, e.target.checked)}
+                          disabled={!vacaSafe}
+                        />
+                        <span>Usar número automático</span>
+                      </div>
+                      {bezerro.numeroAutoCarregando && (
+                        <div style={estilos.infoNumeroAuto}>Buscando número sugerido...</div>
+                      )}
+                      {!bezerro.numeroAutoCarregando &&
+                        bezerro.numeroAutomatico &&
+                        bezerro.numeroSugerido !== null && (
+                          <div style={estilos.infoNumeroAuto}>
+                            Sugerido: {bezerro.numeroSugerido}
+                          </div>
+                        )}
+                    </div>
+
+                    <div style={estilos.campo}>
+                      <label style={estilos.label}>Brinco</label>
+                      <input
+                        type="text"
+                        value={bezerro.brinco}
+                        onChange={(e) => atualizarBezerro(index, "brinco", e.target.value)}
+                        style={estilos.input}
+                        placeholder="Ex: BR-2025-001"
+                        disabled={!vacaSafe}
+                      />
+                    </div>
+
                     <div style={estilos.campo}>
                       <label style={estilos.label}>
                         Sexo<span style={estilos.obrigatorio}>*</span>
