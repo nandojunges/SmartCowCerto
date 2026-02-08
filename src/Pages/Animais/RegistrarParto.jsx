@@ -442,9 +442,7 @@ export default function RegistrarParto(props) {
 
       const metaParto = {
         origem: "manejos_pendentes",
-        input_br: dataParto,
         bezerros_qtd: bezerros.length,
-        modo: assumidoCadastro ? "historico" : "operacional",
         sem_secagem: semSecagem || false,
       };
 
