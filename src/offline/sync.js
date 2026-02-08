@@ -70,6 +70,9 @@ export async function syncPending() {
 
       if (item.action === "repro_eventos.insert") {
         const payload = item.payload || {};
+        if (!payload.meta || typeof payload.meta !== "object") {
+          payload.meta = {};
+        }
         const { error } = await supabase.from("repro_eventos").insert(payload);
         if (error) throw error;
         await markDone(item.id);

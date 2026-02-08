@@ -3,6 +3,24 @@ import { supabase } from "./supabaseClient";
 
 const TIPOS_REPRO = ["IA", "PARTO", "SECAGEM", "DG", "ABORTO"];
 
+function sanitizeMeta(meta) {
+  const base = meta && typeof meta === "object" ? meta : {};
+  const {
+    input_br: _inputBr,
+    modo: _modo,
+    diasDesdeIA: _diasDesdeIA,
+    bezerros_qtd: _bezerrosQtd,
+    sem_secagem: _semSecagem,
+    palhetas: _palhetas,
+    razao: _razao,
+    evidencia: _evidencia,
+    tipoSemen: _tipoSemen,
+    tipo_semen: _tipoSemenSnake,
+    ...cleanMeta
+  } = base;
+  return cleanMeta || {};
+}
+
 function normalizarDataEvento(valor) {
   if (!valor) return null;
   const texto = String(valor).trim();
@@ -62,8 +80,7 @@ export async function syncCadastroReproEventos({
       const data_evento = normalizarDataEvento(rawData);
       if (!data_evento) return null;
 
-      const meta =
-        e?.meta && typeof e.meta === "object" ? e.meta : {};
+      const meta = sanitizeMeta(e?.meta);
 
       const observacoes =
         typeof e?.observacoes === "string" ? e.observacoes : null;
