@@ -314,9 +314,11 @@ export default function RegistrarParto(props) {
 
     const { data, error } = await supabase
       .from("animais")
-      .select("max(numero) as max")
+      .select("numero")
       .eq("fazenda_id", resolvedFazendaId)
-      .maybeSingle();
+      .not("numero", "is", null)
+      .order("numero", { ascending: false })
+      .limit(1);
 
     if (error) {
       logSupabaseError(error, "buscar_numero_automatico_bezerro");
@@ -325,7 +327,7 @@ export default function RegistrarParto(props) {
       return;
     }
 
-    const maxNumeroRaw = data?.max ?? 0;
+    const maxNumeroRaw = data?.[0]?.numero ?? 0;
     const maxNumero = Number.isFinite(Number(maxNumeroRaw)) ? Number(maxNumeroRaw) : 0;
     setNumeroAutoCarregando(false);
     return maxNumero + 1;
