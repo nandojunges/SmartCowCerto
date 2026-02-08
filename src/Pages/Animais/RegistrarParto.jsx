@@ -1,6 +1,5 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import Select from "react-select";
-import { toast } from "react-toastify";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 
@@ -39,16 +38,12 @@ export default function RegistrarParto(props) {
   const [bezerros, setBezerros] = useState([]);
   const [erro, setErro] = useState("");
   const [mostrarAvisoSemSecagem, setMostrarAvisoSemSecagem] = useState(semSecagem);
-  const [numeroBaseBezerros, setNumeroBaseBezerros] = useState(null);
-  const [numeroAutoCarregando, setNumeroAutoCarregando] = useState(false);
   const { fazendaAtualId } = useFazenda();
   const resolvedFazendaId = fazendaIdProp ?? fazendaAtualId ?? vacaSafe?.fazenda_id ?? null;
-  const quantidadeBezerrosRef = useRef(0);
 
   function criarBezerroVazio(numero) {
     return {
       numero,
-      numeroCadastro: "",
       brinco: "",
       sexo: null,
       peso: "",
@@ -281,56 +276,14 @@ export default function RegistrarParto(props) {
     );
   };
 
-  const parseNumeroBezerro = (valor) => {
-    const texto = String(valor ?? "").trim();
-    if (!texto) return null;
-    const numero = Number(texto);
-    if (!Number.isFinite(numero) || !Number.isInteger(numero) || numero <= 0) return null;
-    return numero;
-  };
-
   const parseBrincoBezerro = (valor) => {
     const texto = String(valor ?? "").trim();
     return texto ? texto : null;
   };
 
   const obterIdentificacaoBezerro = (bezerro) => {
-    const numero = parseNumeroBezerro(bezerro?.numeroCadastro);
     const brinco = parseBrincoBezerro(bezerro?.brinco);
-    return { numero, brinco };
-  };
-
-  const buscarNumeroBaseBezerros = async () => {
-    if (!resolvedFazendaId) {
-      setErro("Não foi possível identificar a fazenda para sugerir número do bezerro.");
-      return;
-    }
-    if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      setErro("Sem conexão para sugerir número automático do bezerro.");
-      return;
-    }
-
-    setNumeroAutoCarregando(true);
-
-    const { data, error } = await supabase
-      .from("animais")
-      .select("numero")
-      .eq("fazenda_id", resolvedFazendaId)
-      .not("numero", "is", null)
-      .order("numero", { ascending: false })
-      .limit(1);
-
-    if (error) {
-      logSupabaseError(error, "buscar_numero_automatico_bezerro");
-      setErro("Erro ao buscar o próximo número automático do bezerro.");
-      setNumeroAutoCarregando(false);
-      return;
-    }
-
-    const maxNumeroRaw = data?.[0]?.numero ?? 0;
-    const maxNumero = Number.isFinite(Number(maxNumeroRaw)) ? Number(maxNumeroRaw) : 0;
-    setNumeroAutoCarregando(false);
-    return maxNumero + 1;
+    return { numero: null, brinco };
   };
 
   const getMensagemColostragem = (minutos) => {
@@ -354,11 +307,6 @@ export default function RegistrarParto(props) {
     for (let i = 0; i < bezerros.length; i++) {
       const b = bezerros[i];
       if (b?.natimorto) continue;
-      const numeroBezerro = parseNumeroBezerro(b?.numeroCadastro);
-      if (!numeroBezerro) {
-        setErro(`Número do bezerro ${i + 1} ainda não foi gerado.`);
-        return false;
-      }
       if (!b?.sexo || !b?.vitalidade) {
         setErro(`Preencha sexo e vitalidade do bezerro ${i + 1}`);
         return false;
@@ -367,32 +315,6 @@ export default function RegistrarParto(props) {
 
     return true;
   };
-
-  const aplicarSequenciaBezerros = (numeroBase, listaBezerros) =>
-    listaBezerros.map((bezerro, index) => ({
-      ...bezerro,
-      numeroCadastro: String(numeroBase + index),
-    }));
-
-  const carregarSequenciaBezerros = async (options = {}) => {
-    const { showToast = false } = options;
-    const numeroBase = await buscarNumeroBaseBezerros();
-    if (!numeroBase) return null;
-
-    setNumeroBaseBezerros(numeroBase);
-    setBezerros((prev) => aplicarSequenciaBezerros(numeroBase, prev));
-    if (showToast) {
-      toast.info("Número atualizado para manter sequência.");
-    }
-    return numeroBase;
-  };
-
-  useEffect(() => {
-    if (!vacaSafe || !resolvedFazendaId || bezerros.length === 0) return;
-    if (numeroBaseBezerros !== null && quantidadeBezerrosRef.current === bezerros.length) return;
-    quantidadeBezerrosRef.current = bezerros.length;
-    carregarSequenciaBezerros();
-  }, [bezerros.length, numeroBaseBezerros, resolvedFazendaId, vacaSafe]);
 
   const salvarLocalStorage = () => {
     const animais = JSON.parse(localStorage.getItem("animais") || "[]");
@@ -448,12 +370,12 @@ export default function RegistrarParto(props) {
     const novosBezerros = bezerros
       .filter((b) => !b?.natimorto)
       .map((b) => {
-        const { numero, brinco } = obterIdentificacaoBezerro(b);
-        if (!numero && !brinco) return null;
+        const { brinco } = obterIdentificacaoBezerro(b);
+        if (!brinco) return null;
         const minutos = calcularTempoColostragem(horaParto, b.colostragem.hora);
         return {
-          numero: numero ?? null,
-          brinco: brinco ?? null,
+          numero: null,
+          brinco,
           mae: vacaSafe.numero ?? null,
           sexo: b.sexo.value,
           dataNascimento: dataParto,
@@ -474,7 +396,9 @@ export default function RegistrarParto(props) {
     localStorage.setItem("bezerros", JSON.stringify([...bezerrosExistentes, ...novosBezerros]));
     localStorage.setItem("animais", JSON.stringify(animais));
     setErro("");
+    setMostrarAvisoSemSecagem(false);
     window.dispatchEvent(new Event("animaisAtualizados"));
+    props.onRefetchAnimais?.();
     onClose?.();
     props.onSaved?.(dadosParto);
   };
@@ -505,18 +429,6 @@ export default function RegistrarParto(props) {
     }
 
     try {
-      let bezerrosParaSalvar = bezerros;
-      const numeroBaseAtual = await buscarNumeroBaseBezerros();
-      if (numeroBaseAtual) {
-        const novosBezerros = aplicarSequenciaBezerros(numeroBaseAtual, bezerros);
-        bezerrosParaSalvar = novosBezerros;
-        if (numeroBaseBezerros !== numeroBaseAtual) {
-          setNumeroBaseBezerros(numeroBaseAtual);
-          setBezerros(novosBezerros);
-          toast.info("Número atualizado para manter sequência.");
-        }
-      }
-
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) {
         throw authError;
@@ -684,49 +596,12 @@ export default function RegistrarParto(props) {
         }
       }
 
-      const bezerrosPayload = [];
-
-      for (let index = 0; index < bezerrosParaSalvar.length; index++) {
-        const bezerro = bezerrosParaSalvar[index];
-        if (bezerro?.natimorto) continue;
-
-        const { numero, brinco } = obterIdentificacaoBezerro(bezerro);
-        if (!numero && !brinco) continue;
-
-        const payloadBezerro = {
-          fazenda_id: resolvedFazendaId,
-          user_id: userId,
-          numero: numero ?? null,
-          brinco: brinco ?? null,
-          nascimento: dataISO,
-          sexo: mapSexo(bezerro?.sexo?.value),
-          origem: "propriedade",
-          mae_nome: vacaSafe?.nome ?? null,
-        };
-
-        const { data: bezerroData, error: bezerroError } = await supabase
-          .from("animais")
-          .insert([payloadBezerro])
-          .select("id, numero, brinco")
-          .maybeSingle();
-
-        if (bezerroError) {
-          logSupabaseError(bezerroError, "insert_animais_bezerro");
-          setErro("Erro ao criar o bezerro no plantel. Tente novamente.");
-          return;
-        }
-
-        bezerrosPayload.push({
-          id: bezerroData?.id ?? null,
-          numero: bezerroData?.numero ?? numero ?? null,
-          brinco: bezerroData?.brinco ?? brinco ?? null,
-        });
-      }
-
       setErro("");
+      setMostrarAvisoSemSecagem(false);
       window.dispatchEvent(new Event("animaisAtualizados"));
+      props.onRefetchAnimais?.();
       onClose?.();
-      props.onSaved?.({ data: dataISO, bezerros: bezerrosPayload });
+      props.onSaved?.({ data: dataISO, bezerrosQtd: bezerros.length });
     } catch (error) {
       logSupabaseError(error, "salvar_parto");
       if (error) {
@@ -1017,12 +892,6 @@ export default function RegistrarParto(props) {
       marginTop: "0.4rem",
       fontSize: "0.8rem",
       color: "#4b5563",
-    },
-    infoNumeroAuto: {
-      marginTop: "0.35rem",
-      fontSize: "0.8rem",
-      color: "#059669",
-      fontWeight: 600,
     },
   };
 
@@ -1405,18 +1274,14 @@ export default function RegistrarParto(props) {
                     {!bezerro.natimorto && (
                       <>
                     <div style={estilos.campo}>
-                      <label style={estilos.label}>Número do bezerro (automático)</label>
+                      <label style={estilos.label}>Número do bezerro</label>
                       <input
-                        type="number"
-                        value={bezerro.numeroCadastro}
+                        type="text"
+                        value="Gerado automaticamente após salvar"
                         style={estilos.input}
-                        placeholder={numeroAutoCarregando ? "Carregando..." : "Automático"}
                         readOnly
-                        disabled={!vacaSafe}
+                        disabled
                       />
-                      {numeroAutoCarregando && (
-                        <div style={estilos.infoNumeroAuto}>Buscando número sugerido...</div>
-                      )}
                     </div>
 
                     <div style={estilos.campo}>
