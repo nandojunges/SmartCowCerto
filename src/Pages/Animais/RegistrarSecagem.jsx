@@ -83,17 +83,6 @@ export default function RegistrarSecagem(props) {
     return Math.round(ms / (1000 * 60 * 60 * 24));
   };
 
-  const addDays = (isoDate, dias) => {
-    if (!isoDate || !Number.isFinite(dias)) return null;
-    const base = new Date(`${isoDate}T00:00:00`);
-    if (Number.isNaN(base.getTime())) return null;
-    base.setDate(base.getDate() + dias);
-    const yyyy = base.getFullYear();
-    const mm = String(base.getMonth() + 1).padStart(2, "0");
-    const dd = String(base.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
   const formatarDataPartoPrevisto = (valor) => {
     if (!valor) return "";
     if (typeof valor === "string" && /^\d{2}\/\d{2}\/\d{4}$/.test(valor)) return valor;
@@ -127,49 +116,28 @@ export default function RegistrarSecagem(props) {
   useEffect(() => {
     const direto = obterPartoPrevistoDoAnimal(animalSafe);
     setDataPartoPrevisto(direto || "");
-    setUltimoIaEventoId(null);
+    setUltimoIaEventoId(animalSafe?.ultima_ia_evento_id ?? null);
   }, [animalSafe]);
 
   useEffect(() => {
     let ativo = true;
     const buscarPartoPrevisto = async () => {
-      if (!animalSafe || dataPartoPrevisto) return;
-
       const animalId = animalIdProp ?? animalSafe?.id ?? animalSafe?.animal_id ?? null;
       if (!animalId || !fazendaId) return;
 
-      const { data: ultimaIa, error: iaError } = await supabase
-        .from("repro_eventos")
-        .select("id, data_evento")
-        .eq("tipo", "IA")
+      const { data: previsao, error: previsaoError } = await supabase
+        .from("v_repro_previsoes")
+        .select("parto_previsto, ultima_ia_evento_id")
+        .eq("fazenda_id", fazendaId)
         .eq("animal_id", animalId)
-        .eq("fazenda_id", fazendaId)
-        .order("data_evento", { ascending: false })
-        .limit(1)
         .maybeSingle();
 
-      if (iaError || !ativo) return;
+      if (previsaoError || !ativo) return;
 
-      if (ultimaIa?.id) setUltimoIaEventoId(ultimaIa.id);
+      if (previsao?.ultima_ia_evento_id) setUltimoIaEventoId(previsao.ultima_ia_evento_id);
+      if (!previsao?.parto_previsto) return;
 
-      const iaISO = ultimaIa?.data_evento ? String(ultimaIa.data_evento).slice(0, 10) : null;
-      if (!iaISO) return;
-
-      const { data: config, error: configError } = await supabase
-        .from("config_repro_parametros")
-        .select("gestacao_dias")
-        .eq("fazenda_id", fazendaId)
-        .maybeSingle();
-
-      if (configError || !ativo) return;
-
-      const gestacaoDias = Number(config?.gestacao_dias);
-      if (!Number.isFinite(gestacaoDias)) return;
-
-      const partoISO = addDays(iaISO, gestacaoDias);
-      if (!partoISO) return;
-
-      const formatado = isoToDDMMYYYY(partoISO);
+      const formatado = isoToDDMMYYYY(previsao.parto_previsto);
       if (ativo) setDataPartoPrevisto(formatado);
     };
 
@@ -177,7 +145,7 @@ export default function RegistrarSecagem(props) {
     return () => {
       ativo = false;
     };
-  }, [animalIdProp, animalSafe, dataPartoPrevisto, fazendaId]);
+  }, [animalIdProp, animalSafe, fazendaId]);
 
   useEffect(() => {
     if (!animalSafe) setErro("Nenhuma vaca selecionada para registrar secagem.");

@@ -539,7 +539,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   }, []);
 
   const prepararPendenciasView = useCallback(
-    (rows) => {
+    (rows, previsoesMap) => {
       const base = { secagem: [], preparto: [], parto: [] };
       const map = new Map();
       const hoje = startOfDay(new Date());
@@ -551,7 +551,9 @@ export default function Plantel({ isOnline = navigator.onLine }) {
 
         const animal = row?.animal ?? row;
         const animalId = row?.animal_id ?? animal?.animal_id ?? row?.id ?? animal?.id;
+        const previsao = previsoesMap?.get(String(animalId));
         const dppValue =
+          previsao?.parto_previsto ??
           row?.dpp ??
           row?.data_prevista_parto ??
           row?.data_prev_parto ??
@@ -565,13 +567,26 @@ export default function Plantel({ isOnline = navigator.onLine }) {
           ...row,
           animal,
           dpp: dppValue,
+          prev_parto: dppValue,
           diasParaDpp,
           dataPrevSecagem:
+            previsao?.prev_secagem ??
             row?.data_prev_secagem ??
             row?.data_prevista_secagem ??
             row?.prev_secagem ??
             row?.previsto_secagem,
-          ultima_ia: row?.ultima_ia ?? row?.ultima_inseminacao ?? row?.ultima_inseminacao_data,
+          prev_secagem:
+            previsao?.prev_secagem ??
+            row?.data_prev_secagem ??
+            row?.data_prevista_secagem ??
+            row?.prev_secagem ??
+            row?.previsto_secagem,
+          prev_preparto: previsao?.prev_preparto ?? row?.prev_preparto,
+          ultima_ia:
+            previsao?.ultima_ia_data ??
+            row?.ultima_ia ??
+            row?.ultima_inseminacao ??
+            row?.ultima_inseminacao_data,
         };
 
         base[abaKey].push(item);
@@ -595,21 +610,36 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       return;
     }
 
-    const { data, error } = await supabase
-      .from(PENDENCIAS_VIEW)
-      .select("*")
-      .eq("fazenda_id", fazendaAtualId)
-      .in("aba", ["SECAGEM", "PREPARTO", "PARTO"]);
+    const [pendenciasRes, previsoesRes] = await Promise.all([
+      supabase
+        .from(PENDENCIAS_VIEW)
+        .select("*")
+        .eq("fazenda_id", fazendaAtualId)
+        .in("aba", ["SECAGEM", "PREPARTO", "PARTO"]),
+      supabase
+        .from("v_repro_previsoes")
+        .select("animal_id, ultima_ia_data, ultima_ia_evento_id, parto_previsto, prev_secagem, prev_preparto")
+        .eq("fazenda_id", fazendaAtualId),
+    ]);
 
-    if (error) {
-      console.warn("Erro ao carregar pendências:", error);
+    if (pendenciasRes.error) {
+      console.warn("Erro ao carregar pendências:", pendenciasRes.error);
       setPendenciasView({ secagem: [], preparto: [], parto: [] });
       setPendenciaPorIdView(new Map());
       setHasDppView(false);
       return;
     }
 
-    const { base, map, hasDpp } = prepararPendenciasView(data);
+    if (previsoesRes.error) {
+      console.warn("Erro ao carregar previsões reprodutivas:", previsoesRes.error);
+    }
+
+    const previsoesMap = new Map();
+    (previsoesRes.data || []).forEach((row) => {
+      if (row?.animal_id != null) previsoesMap.set(String(row.animal_id), row);
+    });
+
+    const { base, map, hasDpp } = prepararPendenciasView(pendenciasRes.data, previsoesMap);
     setPendenciasView(base);
     setPendenciaPorIdView(map);
     setHasDppView(hasDpp);

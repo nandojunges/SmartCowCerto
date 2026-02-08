@@ -353,4 +353,28 @@ create policy fazenda_acessos_insert on public.fazenda_acessos for insert with c
 create policy fazenda_acessos_update on public.fazenda_acessos for update using (public.tem_acesso_fazenda(fazenda_id)) with check (public.tem_acesso_fazenda(fazenda_id));
 create policy fazenda_acessos_delete on public.fazenda_acessos for delete using (public.tem_acesso_fazenda(fazenda_id));
 
+-- 9) view de previsoes reprodutivas (IA + parametros)
+create or replace view public.v_repro_previsoes as
+with ultima_ia as (
+  select distinct on (re.fazenda_id, re.animal_id)
+    re.fazenda_id,
+    re.animal_id,
+    re.id as ultima_ia_evento_id,
+    re.data_evento::date as ultima_ia_data
+  from public.repro_eventos re
+  where re.tipo = 'IA'
+  order by re.fazenda_id, re.animal_id, re.data_evento desc, re.id desc
+)
+select
+  ultima_ia.fazenda_id,
+  ultima_ia.animal_id,
+  ultima_ia.ultima_ia_data,
+  ultima_ia.ultima_ia_evento_id,
+  (ultima_ia.ultima_ia_data + (param.gestacao_dias::int))::date as parto_previsto,
+  (ultima_ia.ultima_ia_data + (param.gestacao_dias::int) - (param.secagem_antecedencia_dias::int))::date as prev_secagem,
+  (ultima_ia.ultima_ia_data + (param.gestacao_dias::int) - (param.preparto_antecedencia_dias::int))::date as prev_preparto
+from ultima_ia
+join public.config_repro_parametros param
+  on param.fazenda_id = ultima_ia.fazenda_id;
+
 commit;
