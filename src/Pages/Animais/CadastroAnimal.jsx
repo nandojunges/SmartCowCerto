@@ -562,6 +562,8 @@ export default function CadastroAnimal() {
         ? payload.meta
         : { origem: "ficha_complementar" };
     const {
+      bezerros_qtd: _bezerrosQtd,
+      sem_secagem: _semSecagem,
       input_br: _inputBr,
       modo: _modo,
       diasDesdeIA: _diasDesdeIA,
@@ -572,6 +574,9 @@ export default function CadastroAnimal() {
       tipo_semen: _tipoSemenSnake,
       ...meta
     } = metaBase;
+    const metaSafe = ["PARTO", "SECAGEM"].includes(tipo)
+      ? (metaBase?.origem ? { origem: metaBase.origem } : {})
+      : meta;
 
     // offline: fila e retorna um id fake para o componente "prender" a linha (evita duplicar na UI)
     if (!navigator.onLine) {
@@ -584,7 +589,7 @@ export default function CadastroAnimal() {
         data_evento: dataISO,
         user_id: userId,
         observacoes: null,
-        meta,
+        meta: metaSafe,
       });
       return offlineEventId;
     }
@@ -596,7 +601,7 @@ export default function CadastroAnimal() {
         .update({
           tipo,
           data_evento: dataISO,
-          meta,
+          meta: metaSafe,
         })
         .eq("id", payload.evento_id)
         .eq("fazenda_id", fazendaAtualId)
@@ -621,7 +626,7 @@ export default function CadastroAnimal() {
           data_evento: dataISO,
           user_id: userId,
           observacoes: null,
-          meta,
+          meta: metaSafe,
         },
       ])
       .select("id")

@@ -2,6 +2,7 @@
 import { supabase } from "./supabaseClient";
 
 const TIPOS_REPRO = ["IA", "PARTO", "SECAGEM", "DG", "ABORTO"];
+const ALLOWED_META_KEYS = new Set(["origem", "comentario", "dg", "ia_ref", "tipoExame"]);
 
 function normalizarDataEvento(valor) {
   if (!valor) return null;
@@ -26,6 +27,20 @@ async function getAuthUserId() {
   const { data, error } = await supabase.auth.getUser();
   if (error) return null;
   return data?.user?.id || null;
+}
+
+function sanitizeMeta(meta) {
+  if (!meta || typeof meta !== "object") return {};
+
+  const sanitized = {};
+  for (const [key, value] of Object.entries(meta)) {
+    if (!ALLOWED_META_KEYS.has(key)) continue;
+    if (value === null || value === undefined) continue;
+    if (typeof value === "string" && value.trim() === "") continue;
+    sanitized[key] = value;
+  }
+
+  return Object.keys(sanitized).length > 0 ? sanitized : {};
 }
 
 /**
@@ -62,8 +77,7 @@ export async function syncCadastroReproEventos({
       const data_evento = normalizarDataEvento(rawData);
       if (!data_evento) return null;
 
-      const meta =
-        e?.meta && typeof e.meta === "object" ? e.meta : {};
+      const meta = sanitizeMeta(e?.meta);
 
       const observacoes =
         typeof e?.observacoes === "string" ? e.observacoes : null;
