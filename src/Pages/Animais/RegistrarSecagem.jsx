@@ -11,7 +11,6 @@ export default function RegistrarSecagem(props) {
   const onClose = props.onClose ?? props.onFechar ?? (() => {});
   const fazendaIdProp = props.fazendaId ?? props.fazenda_id ?? null;
   const iaIdProp = props.iaId ?? props.ia_id ?? null;
-  const assumidoCadastro = props.assumidoCadastro === true;
   const animalIdProp = props.animalId ?? props.animal_id ?? null;
 
   // ✅ Blindagem: garante objeto
@@ -26,14 +25,15 @@ export default function RegistrarSecagem(props) {
 
   // ===================== CAMPOS (somente o que você definiu) =====================
   const [dataSecagem, setDataSecagem] = useState("");
-  const [dataPartoPrevisto, setDataPartoPrevisto] = useState(""); // dd/mm/aaaa (auto/seleção)
-  const [periodoSecoDias, setPeriodoSecoDias] = useState(null); // calculado
+  const [dataPartoPrevisto, setDataPartoPrevisto] = useState(""); // dd/mm/aaaa (auto)
+  const [periodoPrevistoDias, setPeriodoPrevistoDias] = useState(null); // visual
 
   const [producaoAtual, setProducaoAtual] = useState(""); // litros/dia
   const [mastiteTem, setMastiteTem] = useState(null); // Sim/Não
   const [tratamentoSecagem, setTratamentoSecagem] = useState(null); // Nenhum / Selante / Antibiótico / Antibiótico+Selante
   const [condicaoCorporal, setCondicaoCorporal] = useState(null); // ECC 1–5
 
+  const [ultimoIaEventoId, setUltimoIaEventoId] = useState(null);
   const [erro, setErro] = useState("");
 
   // ===================== Helpers de data =====================
@@ -83,6 +83,17 @@ export default function RegistrarSecagem(props) {
     return Math.round(ms / (1000 * 60 * 60 * 24));
   };
 
+  const addDays = (isoDate, dias) => {
+    if (!isoDate || !Number.isFinite(dias)) return null;
+    const base = new Date(`${isoDate}T00:00:00`);
+    if (Number.isNaN(base.getTime())) return null;
+    base.setDate(base.getDate() + dias);
+    const yyyy = base.getFullYear();
+    const mm = String(base.getMonth() + 1).padStart(2, "0");
+    const dd = String(base.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   const formatarDataPartoPrevisto = (valor) => {
     if (!valor) return "";
     if (typeof valor === "string" && /^\d{2}\/\d{2}\/\d{4}$/.test(valor)) return valor;
@@ -114,34 +125,52 @@ export default function RegistrarSecagem(props) {
   }, [onClose]);
 
   useEffect(() => {
+    const direto = obterPartoPrevistoDoAnimal(animalSafe);
+    setDataPartoPrevisto(direto || "");
+    setUltimoIaEventoId(null);
+  }, [animalSafe]);
+
+  useEffect(() => {
     let ativo = true;
     const buscarPartoPrevisto = async () => {
       if (!animalSafe || dataPartoPrevisto) return;
 
-      const direto = obterPartoPrevistoDoAnimal(animalSafe);
-      if (direto) {
-        if (ativo) setDataPartoPrevisto(direto);
-        return;
-      }
-
       const animalId = animalIdProp ?? animalSafe?.id ?? animalSafe?.animal_id ?? null;
       if (!animalId || !fazendaId) return;
 
-      const { data, error } = await supabase
-        .from("animais")
-        .select("data_parto_previsto, parto_previsto, previsao_parto")
-        .eq("id", animalId)
+      const { data: ultimaIa, error: iaError } = await supabase
+        .from("repro_eventos")
+        .select("id, data_evento")
+        .eq("tipo", "IA")
+        .eq("animal_id", animalId)
+        .eq("fazenda_id", fazendaId)
+        .order("data_evento", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (iaError || !ativo) return;
+
+      if (ultimaIa?.id) setUltimoIaEventoId(ultimaIa.id);
+
+      const iaISO = ultimaIa?.data_evento ? String(ultimaIa.data_evento).slice(0, 10) : null;
+      if (!iaISO) return;
+
+      const { data: config, error: configError } = await supabase
+        .from("config_repro_parametros")
+        .select("gestacao_dias")
         .eq("fazenda_id", fazendaId)
         .maybeSingle();
 
-      if (error || !ativo) return;
+      if (configError || !ativo) return;
 
-      const valor =
-        data?.data_parto_previsto ?? data?.parto_previsto ?? data?.previsao_parto ?? null;
-      const formatado = formatarDataPartoPrevisto(valor);
-      if (formatado && ativo) {
-        setDataPartoPrevisto(formatado);
-      }
+      const gestacaoDias = Number(config?.gestacao_dias);
+      if (!Number.isFinite(gestacaoDias)) return;
+
+      const partoISO = addDays(iaISO, gestacaoDias);
+      if (!partoISO) return;
+
+      const formatado = isoToDDMMYYYY(partoISO);
+      if (ativo) setDataPartoPrevisto(formatado);
     };
 
     buscarPartoPrevisto();
@@ -160,16 +189,16 @@ export default function RegistrarSecagem(props) {
     const secISO = parseDDMMYYYY_toISO(dataSecagem);
     const ppISO = parseDDMMYYYY_toISO(dataPartoPrevisto);
     if (secISO && ppISO) {
-      setPeriodoSecoDias(diffDias(secISO, ppISO));
+      setPeriodoPrevistoDias(diffDias(secISO, ppISO));
     } else {
-      setPeriodoSecoDias(null);
+      setPeriodoPrevistoDias(null);
     }
   }, [dataSecagem, dataPartoPrevisto]);
 
   // ===================== Select options =====================
   const opcoesMastite = [
-    { value: "SIM", label: "Sim" },
-    { value: "NAO", label: "Não" },
+    { value: true, label: "Sim" },
+    { value: false, label: "Não" },
   ];
 
   const opcoesTratamento = [
@@ -210,10 +239,10 @@ export default function RegistrarSecagem(props) {
     const dataSecISO = parseDDMMYYYY_toISO(dataSecagem);
     if (!dataSecISO) return setErro("Informe a Data da Secagem no formato dd/mm/aaaa.");
 
-    // Parto previsto é “auto/seleção”: aceita vazio, mas se preencher, valida.
+    // Parto previsto é “auto”: aceita vazio, mas se preencher, valida.
     const partoPrevISO = dataPartoPrevisto ? parseDDMMYYYY_toISO(dataPartoPrevisto) : null;
     if (dataPartoPrevisto && !partoPrevISO) {
-      return setErro("Informe a Data Prevista do Parto no formato dd/mm/aaaa (ou deixe em branco).");
+      return setErro("Data prevista do parto inválida. Tente novamente.");
     }
 
     if (!fazendaId) return setErro("Fazenda atual não encontrada.");
@@ -223,38 +252,47 @@ export default function RegistrarSecagem(props) {
     const userId = authData?.user?.id;
     if (!userId) return setErro("Sessão inválida (auth.uid vazio).");
 
-    const periodo = partoPrevISO ? diffDias(dataSecISO, partoPrevISO) : null;
+    const eventoPaiId = iaIdProp ?? ultimoIaEventoId ?? null;
 
-    const payload = {
+    const payloadEvento = {
       fazenda_id: fazendaId,
       animal_id: animalId,
       tipo: "SECAGEM",
       data_evento: dataSecISO,
       user_id: userId,
-      meta: {
-        origem: "manejos_pendentes",
-
-        // ✅ somente campos definidos
-        data_parto_previsto: partoPrevISO,
-        periodo_seco_dias: typeof periodo === "number" ? periodo : null,
-        producao_atual_litros_dia:
-          producaoAtual !== "" && !Number.isNaN(Number(producaoAtual)) ? Number(producaoAtual) : null,
-        mastite: mastiteTem?.value ?? null,
-        tratamento_secagem: tratamentoSecagem?.value ?? null,
-        ecc: condicaoCorporal?.value ?? null,
-      },
+      observacoes: null,
+      meta: null,
+      evento_pai_id: eventoPaiId,
     };
 
-    if (iaIdProp) payload.meta.ia_base_id = iaIdProp;
+    const { data: eventoData, error: eventoError } = await supabase
+      .from("repro_eventos")
+      .insert([payloadEvento])
+      .select("id")
+      .single();
 
-    if (assumidoCadastro) {
-      payload.meta.assumido = true;
-      payload.meta.motivo_assuncao = "cadastro_animal_sem_dg";
-      if (iaIdProp) payload.meta.ia_base_id = iaIdProp;
+    if (eventoError || !eventoData?.id) {
+      return setErro("Erro ao salvar o evento de secagem.");
     }
 
-    const { error } = await supabase.from("repro_eventos").insert([payload]);
-    if (error) return setErro("Erro ao salvar a secagem no Supabase.");
+    const payloadSecagem = {
+      fazenda_id: fazendaId,
+      animal_id: animalId,
+      evento_id: eventoData.id,
+      data_parto_previsto: partoPrevISO,
+      producao_leite_l_dia:
+        producaoAtual !== "" && !Number.isNaN(Number(producaoAtual)) ? Number(producaoAtual) : null,
+      mastite: mastiteTem?.value ?? null,
+      tratamento_secagem: tratamentoSecagem?.value ?? null,
+      ecc: condicaoCorporal?.value ? Number(condicaoCorporal.value) : null,
+      user_id: userId,
+    };
+
+    const { error: secagemError } = await supabase.from("secagens").insert([payloadSecagem]);
+    if (secagemError) {
+      await supabase.from("repro_eventos").delete().eq("id", eventoData.id);
+      return setErro("Erro ao salvar os detalhes da secagem.");
+    }
 
     onClose?.();
     props.onSaved?.();
@@ -362,7 +400,7 @@ export default function RegistrarSecagem(props) {
         <div style={estilos.corpo}>
           {erro && <div style={estilos.erro}>⚠️ {erro}</div>}
 
-          {/* Data secagem + parto previsto (para período seco) */}
+          {/* Data secagem + parto previsto (visual) */}
           <div style={estilos.linha2}>
             <div style={estilos.campo}>
               <label style={estilos.label}>
@@ -383,22 +421,22 @@ export default function RegistrarSecagem(props) {
               <label style={estilos.label}>Data Prevista do Parto</label>
               <input
                 type="text"
-                value={dataPartoPrevisto}
-                onChange={(e) => setDataPartoPrevisto(formatarData(e.target.value))}
-                style={estilos.input}
-                placeholder="dd/mm/aaaa (opcional)"
+                value={dataPartoPrevisto || "—"}
+                readOnly
+                style={estilos.readonlyBox}
+                placeholder="—"
                 disabled={!animalSafe}
               />
             </div>
           </div>
 
           <div style={estilos.campo}>
-            <label style={estilos.label}>Período Seco (dias)</label>
+            <label style={estilos.label}>Dias (previsto)</label>
             <div style={estilos.readonlyBox}>
-              {typeof periodoSecoDias === "number" ? periodoSecoDias : "—"}
+              {typeof periodoPrevistoDias === "number" ? periodoPrevistoDias : "—"}
             </div>
             <div style={estilos.hint}>
-              Se você preencher a data prevista do parto, o sistema calcula automaticamente.
+              Calculado automaticamente pela diferença entre a data da secagem e a previsão de parto.
             </div>
           </div>
 
@@ -432,7 +470,7 @@ export default function RegistrarSecagem(props) {
             </div>
 
             <div style={estilos.campo}>
-              <label style={estilos.label}>Tipo de tratamento de secagem</label>
+              <label style={estilos.label}>Tratamento de secagem</label>
               <Select
                 options={opcoesTratamento}
                 value={tratamentoSecagem}
