@@ -1230,7 +1230,11 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                             <div style={styles.animalSub}>
                               <span>{idade}</span>
                               <span style={styles.dot}>•</span>
-                              <span>Brinco {a.brinco || "—"}</span>
+                              <span>
+                                {a.brinco && !String(a.brinco).toUpperCase().startsWith("TEMP")
+                                  ? `Brinco ${a.brinco}`
+                                  : "—"}
+                              </span>
           </div>
         </div>
                         </div>
