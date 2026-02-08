@@ -11,6 +11,7 @@ export default function Reproducao() {
   const { fazendaAtualId } = useFazenda();
 
   const [registros, setRegistros] = useState([]);
+  const [previsoesMap, setPrevisoesMap] = useState(new Map());
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
   const [animalSelecionado, setAnimalSelecionado] = useState(null);
@@ -262,35 +263,6 @@ export default function Reproducao() {
     return "—";
   };
 
-  const formatarDataUtc = (data) => {
-    if (!(data instanceof Date)) return "—";
-    const y = data.getUTCFullYear();
-    const m = String(data.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(data.getUTCDate()).padStart(2, "0");
-    return `${d}/${m}/${y}`;
-  };
-
-  const parseYmdAsUtcDate = (valor) => {
-    if (!valor) return null;
-    if (valor instanceof Date) {
-      return new Date(Date.UTC(valor.getFullYear(), valor.getMonth(), valor.getDate()));
-    }
-    if (typeof valor === "string") {
-      const iso = valor.slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
-      const [y, m, d] = iso.split("-").map(Number);
-      return new Date(Date.UTC(y, m - 1, d));
-    }
-    return null;
-  };
-
-  const calcularPartoPrevisto = (ultimaIa) => {
-    const base = parseYmdAsUtcDate(ultimaIa);
-    if (!base) return "—";
-    const previsto = new Date(base.getTime() + 280 * 86400000);
-    return formatarDataUtc(previsto);
-  };
-
   const obterValor = (registro, campos, fallback = "—") => {
     for (const campo of campos) {
       const valor = registro?.[campo];
@@ -325,9 +297,25 @@ export default function Reproducao() {
 
       if (error) throw error;
       setRegistros(Array.isArray(data) ? data : []);
+
+      const { data: previsoesData, error: previsoesError } = await supabase
+        .from("v_repro_previsoes")
+        .select("animal_id, parto_previsto, prev_secagem, prev_preparto, ultima_ia_data")
+        .eq("fazenda_id", fazendaAtualId);
+      if (previsoesError) {
+        console.warn("Erro ao carregar previsões reprodutivas:", previsoesError);
+        setPrevisoesMap(new Map());
+      } else {
+        const map = new Map();
+        (previsoesData || []).forEach((row) => {
+          if (row?.animal_id != null) map.set(String(row.animal_id), row);
+        });
+        setPrevisoesMap(map);
+      }
     } catch (err) {
       setErro(err?.message || "Erro ao carregar reprodução.");
       setRegistros([]);
+      setPrevisoesMap(new Map());
     } finally {
       setCarregando(false);
     }
@@ -448,12 +436,13 @@ export default function Reproducao() {
         ]),
       del: obterValor(r, ["del"]),
       ultimaIA: obterValor(r, ["ultima_ia"]),
+      partoPrevisto: previsoesMap.get(String(getAnimalId(r)))?.parto_previsto ?? obterValor(r, ["parto_previsto"]),
       ias: obterValor(r, ["numero_ias_lactacao", "numero_ias"], 0),
       ultimoParto: obterValor(r, ["ultimo_parto"]),
       ultimaSecagem: obterValor(r, ["ultima_secagem"]),
       situacaoProd: obterValor(r, ["situacao_produtiva"]),
     }));
-  }, [registros, aplicacoesAtivasMap]);
+  }, [registros, aplicacoesAtivasMap, previsoesMap]);
 
   const getStatusBadgeStyle = (status) => {
     const s = String(status).toLowerCase();
@@ -555,7 +544,7 @@ export default function Reproducao() {
 
                   <td style={styles.td}>{formatarData(linha.ultimaIA)}</td>
 
-                  <td style={styles.td}>{calcularPartoPrevisto(linha.ultimaIA)}</td>
+                  <td style={styles.td}>{formatarData(linha.partoPrevisto)}</td>
 
                   {/* ✅ IAs (sem “/lact”) */}
                   <td style={{ ...styles.td, textAlign: "center", ...styles.num }}>
