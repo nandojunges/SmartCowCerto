@@ -552,13 +552,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         const animal = row?.animal ?? row;
         const animalId = row?.animal_id ?? animal?.animal_id ?? row?.id ?? animal?.id;
         const previsao = previsoesMap?.get(String(animalId));
-        const dppValue =
-          previsao?.parto_previsto ??
-          row?.dpp ??
-          row?.data_prevista_parto ??
-          row?.data_prev_parto ??
-          row?.prev_parto ??
-          row?.previsto_parto;
+        const dppValue = previsao?.parto_previsto ?? null;
         const dppDate = startOfDay(parseDateFlexible(dppValue) || dppValue);
         const diasParaDpp = dppDate ? diffDays(hoje, dppDate) : null;
         if (dppValue) hasDppValue = true;
@@ -569,19 +563,10 @@ export default function Plantel({ isOnline = navigator.onLine }) {
           dpp: dppValue,
           prev_parto: dppValue,
           diasParaDpp,
-          dataPrevSecagem:
-            previsao?.prev_secagem ??
-            row?.data_prev_secagem ??
-            row?.data_prevista_secagem ??
-            row?.prev_secagem ??
-            row?.previsto_secagem,
+          dataPrevSecagem: previsao?.prev_secagem ?? null,
           prev_secagem:
-            previsao?.prev_secagem ??
-            row?.data_prev_secagem ??
-            row?.data_prevista_secagem ??
-            row?.prev_secagem ??
-            row?.previsto_secagem,
-          prev_preparto: previsao?.prev_preparto ?? row?.prev_preparto,
+            previsao?.prev_secagem ?? null,
+          prev_preparto: previsao?.prev_preparto ?? null,
           ultima_ia:
             previsao?.ultima_ia_data ??
             row?.ultima_ia ??

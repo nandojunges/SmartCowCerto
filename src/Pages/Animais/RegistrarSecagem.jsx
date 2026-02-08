@@ -80,17 +80,6 @@ export default function RegistrarSecagem(props) {
     return match ? match[1] : null;
   };
 
-  const addDaysISO = (iso, days) => {
-    if (!iso || !Number.isFinite(days)) return null;
-    const base = new Date(`${iso}T00:00:00`);
-    if (Number.isNaN(base.getTime())) return null;
-    base.setDate(base.getDate() + days);
-    const yyyy = base.getFullYear();
-    const mm = String(base.getMonth() + 1).padStart(2, "0");
-    const dd = String(base.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
   const diffDias = (isoA, isoB) => {
     // isoA -> isoB
     const a = new Date(`${isoA}T00:00:00`);
@@ -125,44 +114,22 @@ export default function RegistrarSecagem(props) {
       const animalId = animalIdProp ?? animalSafe?.id ?? animalSafe?.animal_id ?? null;
       if (!animalId || !fazendaId) return;
 
-      const { data: iaEvento, error: iaError } = await supabase
-        .from("repro_eventos")
-        .select("id, data_evento")
+      const { data: previsao, error: previsaoError } = await supabase
+        .from("v_repro_previsoes")
+        .select("parto_previsto, ultima_ia_evento_id")
         .eq("fazenda_id", fazendaId)
         .eq("animal_id", animalId)
-        .eq("tipo", "IA")
-        .order("data_evento", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const { data: parametros, error: parametrosError } = await supabase
-        .from("config_manejo_repro")
-        .select("gestacao_dias")
-        .eq("fazenda_id", fazendaId)
         .maybeSingle();
 
       if (!ativo) return;
-      if (iaError) {
-        console.error(
-          "Erro ao buscar última IA:",
-          iaError.message,
-          iaError.details
-        );
-      }
-      if (parametrosError) {
-        console.error(
-          "Erro ao buscar parâmetros reprodutivos:",
-          parametrosError.message,
-          parametrosError.details
-        );
+      if (previsaoError) {
+        console.error("SECAGEM ERRO", previsaoError);
       }
 
-      const iaId = iaEvento?.id ?? null;
+      const iaId = previsao?.ultima_ia_evento_id ?? null;
       if (iaId) setUltimoIaEventoId(iaId);
 
-      const gestacaoDias = Number(parametros?.gestacao_dias ?? 280);
-      const iaISO = normalizeISODate(iaEvento?.data_evento);
-      const partoISO = iaISO && Number.isFinite(gestacaoDias) ? addDaysISO(iaISO, gestacaoDias) : null;
+      const partoISO = normalizeISODate(previsao?.parto_previsto);
       const formatado = formatarDataPartoPrevisto(partoISO);
       setDataPartoPrevisto(formatado || "");
     };
@@ -246,7 +213,7 @@ export default function RegistrarSecagem(props) {
     const userId = authData?.user?.id;
     if (!userId) return setErro("Sessão inválida (auth.uid vazio).");
 
-    const eventoPaiId = iaIdProp ?? ultimoIaEventoId ?? null;
+    const eventoPaiId = ultimoIaEventoId ?? iaIdProp ?? null;
 
     const payloadEvento = {
       fazenda_id: fazendaId,
@@ -266,11 +233,7 @@ export default function RegistrarSecagem(props) {
       .single();
 
     if (eventoError || !eventoData?.id) {
-      console.error(
-        "Erro ao salvar o evento de secagem:",
-        eventoError?.message,
-        eventoError?.details
-      );
+      console.error("SECAGEM ERRO", eventoError);
       return setErro("Erro ao salvar o evento de secagem.");
     }
 
@@ -289,11 +252,7 @@ export default function RegistrarSecagem(props) {
 
     const { error: secagemError } = await supabase.from("secagens").insert([payloadSecagem]);
     if (secagemError) {
-      console.error(
-        "Erro ao salvar os detalhes da secagem:",
-        secagemError.message,
-        secagemError.details
-      );
+      console.error("SECAGEM ERRO", secagemError);
       await supabase.from("repro_eventos").delete().eq("id", eventoData.id);
       return setErro("Erro ao salvar os detalhes da secagem.");
     }
