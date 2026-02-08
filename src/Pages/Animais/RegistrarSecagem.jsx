@@ -222,7 +222,7 @@ export default function RegistrarSecagem(props) {
       data_evento: dataSecISO,
       user_id: userId,
       observacoes: null,
-      meta: null,
+      meta: {},
       evento_pai_id: eventoPaiId,
     };
 
