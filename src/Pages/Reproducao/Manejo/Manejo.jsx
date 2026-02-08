@@ -170,11 +170,26 @@ function parseEtapasSnapshot(value) {
 function sanitizeReproEventoPayload(payload) {
   if (!payload || typeof payload !== "object") return payload;
 
-  const { evidencia_ia: _evidenciaIa, ...cleanPayload } = payload;
-  if (cleanPayload.meta && typeof cleanPayload.meta === "object") {
-    const { evidencia_ia: _metaEvidenciaIa, ...cleanMeta } = cleanPayload.meta;
-    cleanPayload.meta = cleanMeta;
-  }
+  const {
+    evidencia_ia: _evidenciaIa,
+    meta,
+    ...cleanPayload
+  } = payload;
+
+  const {
+    evidencia_ia: _metaEvidenciaIa,
+    input_br: _metaInputBr,
+    modo: _metaModo,
+    diasDesdeIA: _metaDiasDesdeIA,
+    palhetas: _metaPalhetas,
+    razao: _metaRazao,
+    evidencia: _metaEvidencia,
+    tipoSemen: _metaTipoSemen,
+    tipo_semen: _metaTipoSemenSnake,
+    ...cleanMeta
+  } = meta && typeof meta === "object" ? meta : {};
+
+  cleanPayload.meta = cleanMeta || {};
 
   return cleanPayload;
 }
@@ -768,13 +783,16 @@ export default function VisaoGeral({
     evidencia: iaAlvo?.evidencia || null,
   });
 
-  const buildDGMeta = (draft, iaAlvo) => ({
-    dg: draft?.dg || "",
-    tipoExame: draft?.extras?.tipoExame || "",
-    diasDesdeIA: draft?.extras?.diasDesdeIA ?? null,
-    comentario: draft?.extras?.comentario || "",
-    ia_ref: iaAlvo?.id ? { id: iaAlvo.id, data: iaAlvo.data_evento } : null,
-  });
+  const buildDGMeta = (draft, iaAlvo) => {
+    const next = {
+      dg: draft?.dg || "",
+      tipoExame: draft?.extras?.tipoExame || "",
+      comentario: draft?.extras?.comentario || "",
+      ia_ref: iaAlvo?.id ? { id: iaAlvo.id, data: iaAlvo.data_evento } : null,
+    };
+    const hasValue = Object.values(next).some((value) => value !== "" && value !== null && value !== undefined);
+    return hasValue ? next : {};
+  };
 
   const buildAplicacaoOption = (aplicacao) => {
     const labelBase = aplicacao?.protocolo_id
@@ -831,7 +849,7 @@ export default function VisaoGeral({
           tipo_semen: payload?.extras?.tipoSemen || null,
           palhetas: payload?.extras?.palhetas ?? null,
           observacoes: payload.obs || null,
-          meta: payload?.extras || null,
+          meta: {},
         };
 
         if (hasBulkSelection) {

@@ -410,11 +410,7 @@ export default function CadastroAnimal() {
           data_evento: iso,
           user_id: userId,
           observacoes: null,
-          meta: {
-            origem: "cadastro_animal",
-            modo: "historico",
-            input_br: item,
-          },
+          meta: tipo === "SECAGEM" ? {} : { origem: "cadastro_animal" },
         });
       });
     };
@@ -561,10 +557,21 @@ export default function CadastroAnimal() {
       payload?.data_evento || (payload?.data ? dataBRParaISO(payload.data) : null);
     if (!dataISO) return null;
 
-    const meta =
+    const metaBase =
       payload?.meta && typeof payload.meta === "object"
         ? payload.meta
-        : { origem: "ficha_complementar", modo: "historico" };
+        : { origem: "ficha_complementar" };
+    const {
+      input_br: _inputBr,
+      modo: _modo,
+      diasDesdeIA: _diasDesdeIA,
+      palhetas: _palhetas,
+      razao: _razao,
+      evidencia: _evidencia,
+      tipoSemen: _tipoSemen,
+      tipo_semen: _tipoSemenSnake,
+      ...meta
+    } = metaBase;
 
     // offline: fila e retorna um id fake para o componente "prender" a linha (evita duplicar na UI)
     if (!navigator.onLine) {

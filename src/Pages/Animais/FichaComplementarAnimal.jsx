@@ -133,7 +133,6 @@ export default function FichaComplementarAnimal({
         data_evento: iso,
         meta: {
           origem: "ficha_complementar",
-          modo: "historico",
           trigger: origem, // "blur" | "debounce"
           input: valorBr,
           index,
