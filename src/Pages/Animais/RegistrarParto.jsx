@@ -442,8 +442,6 @@ export default function RegistrarParto(props) {
 
       const metaParto = {
         origem: "manejos_pendentes",
-        bezerros_qtd: bezerros.length,
-        sem_secagem: semSecagem || false,
       };
 
       const { data: iaData, error: iaError } = await supabase
