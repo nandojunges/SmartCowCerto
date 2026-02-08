@@ -219,7 +219,11 @@ export default function ManejosPendentes({
                   const animalId = item?.animal_id ?? item?.animal?.animal_id ?? item?.id;
                   const animal = mapaAnimais.get(String(animalId)) || item?.animal || item || {};
                   const numero = animal?.numero ?? item?.numero ?? "—";
-                  const brinco = animal?.brinco ?? item?.brinco ?? "—";
+                  const brincoRaw = animal?.brinco ?? item?.brinco ?? null;
+                  const brinco =
+                    brincoRaw && !String(brincoRaw).toUpperCase().startsWith("TEMP")
+                      ? brincoRaw
+                      : null;
                   const nome = animal?.nome ?? item?.nome;
                   const animalLabel = nome ? `${numero} / ${nome}` : numero ?? "—";
                   const del = animal?.del ?? item?.del ?? "—";
@@ -261,7 +265,7 @@ export default function ManejosPendentes({
                             <div style={styles.animalSub}>
                               <span>{idade}</span>
                               <span style={styles.dot}>•</span>
-                              <span>Brinco {brinco}</span>
+                              <span>{brinco ? `Brinco ${brinco}` : "—"}</span>
                             </div>
                             {(showCadastroBadge || showSemSecagemBadge) && (
                               <div style={styles.badgeRow}>
