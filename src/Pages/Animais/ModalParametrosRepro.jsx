@@ -114,7 +114,7 @@ export default function ModalParametrosRepro({ open, onClose, onSaved }) {
       }
 
       const { data, error } = await supabase
-        .from("config_repro_parametros")
+        .from("config_manejo_repro")
         .select("*")
         .eq("fazenda_id", fazendaAtualId)
         .maybeSingle();
@@ -130,7 +130,7 @@ export default function ModalParametrosRepro({ open, onClose, onSaved }) {
       let registro = data;
       if (!registro) {
         const { error: createError } = await supabase
-          .from("config_repro_parametros")
+          .from("config_manejo_repro")
           .insert({
             fazenda_id: fazendaAtualId,
             user_id: currentUserId,
@@ -146,7 +146,7 @@ export default function ModalParametrosRepro({ open, onClose, onSaved }) {
         }
 
         const { data: createdRow, error: fetchError } = await supabase
-          .from("config_repro_parametros")
+          .from("config_manejo_repro")
           .select("*")
           .eq("fazenda_id", fazendaAtualId)
           .maybeSingle();
@@ -257,8 +257,8 @@ export default function ModalParametrosRepro({ open, onClose, onSaved }) {
     };
 
     const response = await supabase
-      .from("config_repro_parametros")
-      .upsert(payload, { onConflict: "fazenda_id" });
+      .from("config_manejo_repro")
+      .upsert(payload, { onConflict: "user_id,fazenda_id" });
 
     if (response.error) {
       setErrorMsg("Não foi possível salvar os parâmetros reprodutivos.");
