@@ -436,7 +436,7 @@ export default function Reproducao() {
         ]),
       del: obterValor(r, ["del"]),
       ultimaIA: obterValor(r, ["ultima_ia"]),
-      partoPrevisto: previsoesMap.get(String(getAnimalId(r)))?.parto_previsto ?? obterValor(r, ["parto_previsto"]),
+      partoPrevisto: previsoesMap.get(String(getAnimalId(r)))?.parto_previsto ?? null,
       ias: obterValor(r, ["numero_ias_lactacao", "numero_ias"], 0),
       ultimoParto: obterValor(r, ["ultimo_parto"]),
       ultimaSecagem: obterValor(r, ["ultima_secagem"]),
