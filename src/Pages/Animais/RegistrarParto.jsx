@@ -473,8 +473,8 @@ export default function RegistrarParto(props) {
 
     localStorage.setItem("bezerros", JSON.stringify([...bezerrosExistentes, ...novosBezerros]));
     localStorage.setItem("animais", JSON.stringify(animais));
+    setErro("");
     window.dispatchEvent(new Event("animaisAtualizados"));
-
     onClose?.();
     props.onSaved?.(dadosParto);
   };
@@ -693,27 +693,6 @@ export default function RegistrarParto(props) {
         const { numero, brinco } = obterIdentificacaoBezerro(bezerro);
         if (!numero && !brinco) continue;
 
-        if (numero) {
-          const { data: numeroExistente, error: numeroError } = await supabase
-            .from("animais")
-            .select("id")
-            .eq("fazenda_id", resolvedFazendaId)
-            .eq("numero", numero)
-            .limit(1)
-            .maybeSingle();
-
-          if (numeroError) {
-            logSupabaseError(numeroError, "validar_numero_bezerro");
-            setErro("Erro ao validar número do bezerro. Tente novamente.");
-            return;
-          }
-
-          if (numeroExistente) {
-            setErro(`O número ${numero} já existe no plantel. Informe outro número.`);
-            return;
-          }
-        }
-
         const payloadBezerro = {
           fazenda_id: resolvedFazendaId,
           user_id: userId,
@@ -744,6 +723,7 @@ export default function RegistrarParto(props) {
         });
       }
 
+      setErro("");
       window.dispatchEvent(new Event("animaisAtualizados"));
       onClose?.();
       props.onSaved?.({ data: dataISO, bezerros: bezerrosPayload });
