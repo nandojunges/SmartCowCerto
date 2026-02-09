@@ -1,5 +1,6 @@
 // src/pages/Saude/ModalTratamentoPadrao.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Select from "react-select";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
@@ -40,24 +41,29 @@ const SHADOWS = {
 const overlayStyles = {
   position: "fixed",
   inset: 0,
-  background: "rgba(15, 23, 42, 0.75)", // Mais escuro para foco no modal
-  backdropFilter: "blur(4px)",         // Efeito glass moderno
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  zIndex: 9999,
-  padding: "16px",
+  zIndex: 20000,
+  background: "rgba(0, 0, 0, 0.70)",
+  backdropFilter: "blur(2px)",
   animation: "fadeIn 0.2s ease-out",
 };
 
+const wrapperStyles = {
+  width: "100%",
+  height: "100%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "22px",
+  boxSizing: "border-box",
+};
+
 const cardStyles = {
-  width: "min(1200px, 95vw)",
-  maxHeight: "90vh",
+  width: "min(1200px, 96vw)",
+  height: "min(88vh, 980px)",
   background: COLORS.bg.primary,
-  borderRadius: "20px",
-  border: `1px solid ${COLORS.border}`,
-  boxShadow: SHADOWS.xl,
+  borderRadius: "18px",
   overflow: "hidden",
+  boxShadow: "0 30px 80px rgba(0,0,0,0.45)",
   display: "flex",
   flexDirection: "column",
 };
@@ -376,7 +382,7 @@ function Alert({ type = "error", children }) {
 }
 
 /* ===================== COMPONENTE PRINCIPAL ===================== */
-export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoesDoencas }) {
+export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoesDoencas, initialDoenca, initialNome }) {
   const { fazendaAtualId } = useFazenda();
   const [salvando, setSalvando] = useState(false);
   const [carregandoProdutos, setCarregandoProdutos] = useState(false);
@@ -424,9 +430,7 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
 
       const { data, error } = await supabase
         .from("estoque_produtos")
-        .select(
-          "id, nome_comercial, categoria, unidade, tipo_farmacia, carencia_leite_dias, carencia_carne_dias, sem_carencia_leite, sem_carencia_carne"
-        )
+        .select("*")
         .eq("fazenda_id", fazendaAtualId)
         .order("nome_comercial", { ascending: true });
 
@@ -446,6 +450,7 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
         .map((p) => {
           const nomeProd = String(p.nome_comercial || "").trim();
           if (!nomeProd) return null;
+          const unidade = p.unidade_medida ?? p.unidade ?? p.unidade_compra ?? p.unidade_uso ?? "";
 
           return {
             value: p.id,
@@ -454,7 +459,7 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
               id: p.id,
               nome: nomeProd,
               categoria: p.categoria,
-              unidade_padrao: p.unidade || null,
+              unidade_padrao: unidade || null,
               carencia_leite_dias: p.sem_carencia_leite ? 0 : p.carencia_leite_dias,
               carencia_carne_dias: p.sem_carencia_carne ? 0 : p.carencia_carne_dias,
             },
@@ -473,12 +478,14 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
 
   useEffect(() => {
     if (!open) return;
+    const initialOption = doencaOptions.find((opt) => opt.value === initialDoenca || opt.label === initialDoenca)
+      ?? (initialDoenca ? { value: initialDoenca, label: initialDoenca } : null);
     setErro("");
-    setNome("");
-    setDoencaSel(null);
+    setNome(initialNome ?? "");
+    setDoencaSel(initialOption);
     setItens([itemVazio()]);
     carregarProdutos();
-  }, [open, carregarProdutos]);
+  }, [open, carregarProdutos, doencaOptions, initialDoenca, initialNome]);
 
   useEffect(() => {
     if (!open) return;
@@ -774,7 +781,7 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
     );
   };
 
-  return (
+  const content = (
     <div style={overlayStyles} onMouseDown={onClose}>
       <style>{`
         @keyframes fadeIn {
@@ -787,71 +794,72 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
         }
       `}</style>
       
-      <div style={cardStyles} onMouseDown={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div style={headerStyles}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{
-              width: 44,
-              height: 44,
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.15)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 22,
-            }}>
-              🏥
-            </div>
-            <div>
-              <div style={{ 
-                fontWeight: 800, 
-                fontSize: 18,
-                letterSpacing: "-0.02em",
+      <div style={wrapperStyles}>
+        <div style={cardStyles} onMouseDown={(e) => e.stopPropagation()}>
+          {/* Header */}
+          <div style={headerStyles}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 22,
               }}>
-                Cadastrar Tratamento Padrão
+                🏥
               </div>
-              <div style={{ 
-                fontSize: 13, 
-                opacity: 0.85,
-                marginTop: 2,
-                fontWeight: 400,
-              }}>
-                Crie protocolos reutilizáveis para tratamentos veterinários
+              <div>
+                <div style={{ 
+                  fontWeight: 800, 
+                  fontSize: 18,
+                  letterSpacing: "-0.02em",
+                }}>
+                  Cadastrar Tratamento Padrão
+                </div>
+                <div style={{ 
+                  fontSize: 13, 
+                  opacity: 0.85,
+                  marginTop: 2,
+                  fontWeight: 400,
+                }}>
+                  Crie protocolos reutilizáveis para tratamentos veterinários
+                </div>
               </div>
             </div>
+
+            <button 
+              onClick={onClose}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.2)",
+                background: "rgba(255,255,255,0.1)",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = "rgba(255,255,255,0.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = "rgba(255,255,255,0.1)";
+              }}
+            >
+              ✕ Fechar
+            </button>
           </div>
 
-          <button 
-            onClick={onClose}
-            style={{
-              padding: "10px 18px",
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.2)",
-              background: "rgba(255,255,255,0.1)",
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.background = "rgba(255,255,255,0.2)";
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.background = "rgba(255,255,255,0.1)";
-            }}
-          >
-            ✕ Fechar
-          </button>
-        </div>
-
-        {/* Body */}
-        <div style={bodyStyles}>
-          {erro && <Alert type="error">{erro}</Alert>}
+          {/* Body */}
+          <div style={bodyStyles}>
+            {erro && <Alert type="error">{erro}</Alert>}
 
           {/* Seção: Informações Básicas */}
           <SectionCard 
@@ -1042,8 +1050,11 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
               </button>
             </div>
           </div>
+          </div>
         </div>
       </div>
     </div>
   );
+
+  return createPortal(content, document.body);
 }

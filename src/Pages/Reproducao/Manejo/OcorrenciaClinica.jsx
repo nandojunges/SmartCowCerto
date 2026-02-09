@@ -355,8 +355,22 @@ const OCORRENCIAS = [
   "Pneumonia","Diarreia","Pododermatite/Lamíte","Anestro","Cisto folicular","Outro",
 ];
 
-export default function OcorrenciaClinica({ animal, onSubmit }) {
+export default function OcorrenciaClinica({
+  animal,
+  onSubmit,
+  showNovoProt: showNovoProtProp,
+  onShowNovoProtChange,
+}) {
   const { fazendaAtualId } = useFazenda();
+  const [localShowNovoProt, setLocalShowNovoProt] = useState(false);
+  const isShowNovoProtControlled = typeof showNovoProtProp === "boolean";
+  const showNovoProt = isShowNovoProtControlled ? showNovoProtProp : localShowNovoProt;
+  const setShowNovoProt = (value) => {
+    if (!isShowNovoProtControlled) {
+      setLocalShowNovoProt(value);
+    }
+    onShowNovoProtChange?.(value);
+  };
   const [oc, setOc] = useState("Metrite");
   const [obs, setObs] = useState("");
   const [produtos, setProdutos] = useState([]);
@@ -367,7 +381,6 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
   const [baixarEstoque, setBaixarEstoque] = useState(true);
   const [protocolosSaude, setProtocolosSaude] = useState([]);
   const [protocoloSelId, setProtocoloSelId] = useState("");
-  const [showNovoProt, setShowNovoProt] = useState(false);
   const [carregandoProt, setCarregandoProt] = useState(false);
 
   // Fetch produtos (mantido igual)
