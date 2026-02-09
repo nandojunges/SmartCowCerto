@@ -2,11 +2,11 @@
   "name": "SmartCow",
   "short_name": "SmartCow",
   "description": "Gestão leiteira SmartCow",
-  "start_url": "/",
+  "start_url": "/inicio",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#1b5e20",
+  "theme_color": "#0f172a",
   "icons": [
     {
       "src": "/icons/icon-192.png",
