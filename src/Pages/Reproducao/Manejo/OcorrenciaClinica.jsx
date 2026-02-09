@@ -188,6 +188,7 @@ const CardTratamento = ({ item, index, produtos, produtoOptions, onUpdate, onRem
           )}
         </div>
         <button
+          type="button"
           onClick={onRemove}
           style={{
             display: "flex", alignItems: "center", gap: "6px",
@@ -365,9 +366,9 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
   const [agendar, setAgendar] = useState(true);
   const [baixarEstoque, setBaixarEstoque] = useState(true);
   const [protocolosSaude, setProtocolosSaude] = useState([]);
-  const [protocoloSel, setProtocoloSel] = useState(null);
-  const [showNovoProtocolo, setShowNovoProtocolo] = useState(false);
-  const [carregandoProtocolos, setCarregandoProtocolos] = useState(false);
+  const [protocoloSelId, setProtocoloSelId] = useState("");
+  const [showNovoProt, setShowNovoProt] = useState(false);
+  const [carregandoProt, setCarregandoProt] = useState(false);
 
   // Fetch produtos (mantido igual)
   useEffect(() => {
@@ -423,6 +424,11 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
     }));
   }, [protocolosSaude]);
 
+  const protocoloSelecionado = useMemo(
+    () => (protocolosSaude || []).find((p) => String(p.id) === String(protocoloSelId)) || null,
+    [protocolosSaude, protocoloSelId]
+  );
+
   const novaLinha = () => ({
     id: crypto.randomUUID(),
     produtoId: "", produtoNome: "", _optLabel: "",
@@ -438,26 +444,26 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
 
   const aplicarProtocolo = useCallback((protocolo) => {
     if (!protocolo) return;
-    const hoje = new Date();
     const itensProto = Array.isArray(protocolo.itens) ? protocolo.itens : [];
     const novos = itensProto.map((it) => {
       const dia = Number(it.dia) || 0;
-      const inicio = toBRDate(addDays(hoje, dia));
-      const produtoNome = it.produto_nome || "";
-      const produtoId = it.produto_id || (produtoNome ? `name:${produtoNome}` : "");
+      const base = parseBR(todayBR()) ?? new Date();
+      const inicio = toBRDate(addDays(base, dia));
+      const produtoNome = it.produto_nome ?? "";
+      const produtoId = it.produto_id ?? `name:${it.produto_nome ?? ""}`;
       return {
         id: crypto.randomUUID(),
         produtoId,
         produtoNome,
         _optLabel: produtoNome,
-        dose: it.quantidade ?? "",
-        unidade: it.unidade || "",
-        via: it.via || "",
+        dose: String(it.quantidade ?? it.dose ?? ""),
+        unidade: it.unidade ?? "",
+        via: it.via ?? "",
         inicioData: inicio,
         inicioHora: "08:00",
-        repeticoes: 1,
-        intervaloHoras: 24,
-        obs: it.obs || "",
+        repeticoes: "1",
+        intervaloHoras: "24",
+        obs: it.obs ?? "",
       };
     });
     setItems(novos);
@@ -467,28 +473,29 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
   const carregarProtocolos = useCallback(async (selecionarRecente = false) => {
     if (!fazendaAtualId) {
       setProtocolosSaude([]);
-      setProtocoloSel(null);
+      setProtocoloSelId("");
       return;
     }
-    setCarregandoProtocolos(true);
+    setCarregandoProt(true);
     try {
       const { data, error } = await supabase
         .from("saude_protocolos")
         .select("*")
         .eq("fazenda_id", fazendaAtualId)
+        .eq("ativo", true)
         .order("created_at", { ascending: false });
 
       if (!error && Array.isArray(data)) {
         setProtocolosSaude(data);
         if (selecionarRecente && data.length > 0) {
-          setProtocoloSel(data[0]);
+          setProtocoloSelId(String(data[0].id));
           aplicarProtocolo(data[0]);
         }
       } else {
         setProtocolosSaude([]);
       }
     } finally {
-      setCarregandoProtocolos(false);
+      setCarregandoProt(false);
     }
   }, [fazendaAtualId, aplicarProtocolo]);
 
@@ -498,7 +505,7 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
 
   const handleProtocoloChange = (opt) => {
     const selecionado = opt?.meta || null;
-    setProtocoloSel(selecionado);
+    setProtocoloSelId(selecionado?.id ? String(selecionado.id) : "");
     if (selecionado) aplicarProtocolo(selecionado);
   };
 
@@ -563,11 +570,19 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
       tratamentos,
       criarAgenda: !!(showTrat && agendar),
       baixarEstoque: !!(showTrat && baixarEstoque),
+      ...(protocoloSelId ? { protocolo_saude_id: protocoloSelId } : {}),
     });
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <form
+      id="form-CLINICA"
+      onSubmit={(e) => {
+        e.preventDefault();
+        salvar();
+      }}
+      style={{ display: "flex", flexDirection: "column", gap: "24px" }}
+    >
       
       {/* SEÇÃO 1: OCORRÊNCIA */}
       <div style={{
@@ -603,9 +618,9 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
         </div>
       </div>
 
-      {/* SEÇÃO 2: TRATAMENTOS */}
+      {/* SEÇÃO 2: PROTOCOLO TERAPÊUTICO */}
       <div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "12px", alignItems: "end", marginBottom: "12px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "12px", alignItems: "end" }}>
           <div>
             <InputGroup
               label="Protocolo terapêutico (opcional)"
@@ -618,12 +633,12 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
                   menuPortal: (b) => ({ ...b, zIndex: 9999 }),
                 }}
                 options={protocoloOptions}
-                value={protocoloSel ? { value: protocoloSel.id, label: `${protocoloSel.nome || "Protocolo"}${protocoloSel.doenca ? ` (${protocoloSel.doenca})` : ""}`, meta: protocoloSel } : null}
+                value={protocoloSelecionado ? { value: protocoloSelecionado.id, label: `${protocoloSelecionado.nome || "Protocolo"}${protocoloSelecionado.doenca ? ` (${protocoloSelecionado.doenca})` : ""}`, meta: protocoloSelecionado } : null}
                 onChange={handleProtocoloChange}
-                placeholder={carregandoProtocolos ? "Carregando protocolos..." : "Selecione um protocolo"}
+                placeholder={carregandoProt ? "Carregando protocolos..." : "Selecione um protocolo"}
                 isClearable
-                isLoading={carregandoProtocolos}
-                noOptionsMessage={() => carregandoProtocolos ? "Carregando..." : "Nenhum protocolo cadastrado"}
+                isLoading={carregandoProt}
+                noOptionsMessage={() => (carregandoProt ? "Carregando..." : "Nenhum protocolo cadastrado")}
                 menuPortalTarget={document.body}
               />
             </InputGroup>
@@ -631,7 +646,8 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
 
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button
-              onClick={() => setShowNovoProtocolo(true)}
+              type="button"
+              onClick={() => setShowNovoProt(true)}
               style={{
                 padding: "10px 14px",
                 fontSize: "12px",
@@ -648,26 +664,34 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* SEÇÃO 3: TRATAMENTOS */}
+      <div>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
           <h3 style={{ margin: 0, fontSize: "12px", fontWeight: 800, color: theme.colors.slate[600], textTransform: "uppercase", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: "8px" }}>
             <Icons.pill /> Protocolo de Tratamento
           </h3>
           <div style={{ display: "flex", gap: "8px" }}>
+            {!showTrat && items.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowTrat(true)}
+                style={{ padding: "8px 16px", fontSize: "13px", fontWeight: 600, color: theme.colors.slate[600], background: "transparent", border: `1px solid ${theme.colors.slate[200]}`, borderRadius: theme.radius.md, cursor: "pointer" }}
+              >
+                Mostrar Tratamentos
+              </button>
+            )}
             {showTrat && items.length > 0 && (
               <button
+                type="button"
                 onClick={() => setShowTrat(false)}
                 style={{ padding: "8px 16px", fontSize: "13px", fontWeight: 600, color: theme.colors.slate[600], background: "transparent", border: `1px solid ${theme.colors.slate[200]}`, borderRadius: theme.radius.md, cursor: "pointer" }}
               >
                 Ocultar Tratamentos
               </button>
             )}
-            <button
-              onClick={add}
-              style={{ display: "flex", alignItems: "center", gap: "6px", padding: "10px 20px", fontSize: "13px", fontWeight: 700, color: "#fff", background: theme.colors.primary[600], border: "none", borderRadius: theme.radius.md, cursor: "pointer", boxShadow: `0 4px 12px ${theme.colors.primary[600]}40` }}
-            >
-              <Icons.plus /> Adicionar Medicamento
-            </button>
           </div>
         </div>
 
@@ -688,11 +712,27 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
           </div>
         )}
 
-        {showTrat && items.length === 0 && (
+        {items.length === 0 && (
           <div style={{ padding: "40px", textAlign: "center", background: theme.colors.slate[50], borderRadius: theme.radius.xl, border: `2px dashed ${theme.colors.slate[200]}`, color: theme.colors.slate[400] }}>
             <div style={{ fontSize: "32px", marginBottom: "8px" }}>💊</div>
             <div style={{ fontSize: "14px", fontWeight: 600 }}>Nenhum tratamento adicionado</div>
-            <div style={{ fontSize: "13px", marginTop: "4px" }}>Clique em "Adicionar Medicamento" para iniciar o protocolo terapêutico</div>
+            <div style={{ fontSize: "13px", marginTop: "4px" }}>Você pode preencher automaticamente com um protocolo ou adicionar manualmente.</div>
+            <button
+              type="button"
+              onClick={add}
+              style={{
+                marginTop: "10px",
+                background: "transparent",
+                border: "none",
+                color: theme.colors.primary[700],
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
+            >
+              Adicionar tratamento manual
+            </button>
           </div>
         )}
       </div>
@@ -710,26 +750,15 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
         </div>
       )}
 
-      {/* BOTÃO SALVAR */}
-      <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "8px" }}>
-        <button
-          onClick={salvar}
-          style={{ display: "flex", alignItems: "center", gap: "8px", padding: "14px 32px", fontSize: "15px", fontWeight: 700, color: "#fff", background: theme.colors.primary[600], border: "none", borderRadius: theme.radius.lg, cursor: "pointer", boxShadow: `0 4px 12px ${theme.colors.primary[600]}40` }}
-        >
-          <Icons.check />
-          Registrar Ocorrência Clínica
-        </button>
-      </div>
-
       <ModalTratamentoPadrao
-        open={showNovoProtocolo}
-        onClose={() => setShowNovoProtocolo(false)}
+        open={showNovoProt}
+        onClose={() => setShowNovoProt(false)}
         onSaved={() => {
-          setShowNovoProtocolo(false);
+          setShowNovoProt(false);
           carregarProtocolos(true);
         }}
         sugestoesDoencas={OCORRENCIAS.map((o) => ({ value: o, label: o }))}
       />
-    </div>
+    </form>
   );
 }
