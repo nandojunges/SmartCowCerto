@@ -22,6 +22,19 @@ const theme = {
   radius: { sm: "4px", md: "6px", lg: "8px" },
 };
 
+const TIPO_ENUM_VALIDO = new Set(["IA", "DG", "PARTO", "SECAGEM", "PROTOCOLO"]);
+
+const TIPO_POR_ACAO = {
+  inseminacao: "IA",
+  ia: "IA",
+  dg: "DG",
+  diagnostico: "DG",
+  parto: "PARTO",
+  secagem: "SECAGEM",
+  protocolo: "PROTOCOLO",
+  criar_protocolo: "PROTOCOLO",
+};
+
 // Ícones com stroke mais fino (1.5px) e menor tamanho - mais elegantes
 const Icons = {
   close: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
@@ -204,6 +217,7 @@ function sanitizeReproEventoPayload(payload) {
 }
 
 async function insertReproEvento(payload) {
+  console.log("[repro_eventos] payload(tipo)", payload?.tipo, payload);
   const sanitizedPayload = sanitizeReproEventoPayload(payload);
   const { data, error } = await supabase.from("repro_eventos").insert([sanitizedPayload]).select("*").maybeSingle();
   if (error) throw error;
@@ -728,6 +742,8 @@ export default function VisaoGeral({
   };
 
   const insertReproEventos = async (payloads) => {
+    const payload = payloads;
+    console.log("[repro_eventos] payload(tipo)", payload?.tipo, payload);
     const sanitizedPayloads = payloads.map((item) => sanitizeReproEventoPayload(item));
     const { error } = await supabase.from("repro_eventos").insert(sanitizedPayloads);
     if (error) throw error;
@@ -849,7 +865,7 @@ export default function VisaoGeral({
         const exigeVinculo = Boolean(razaoEvento && RAZOES_VINCULO_AUTOMATICO.has(razaoEvento));
         const baseEvento = {
           fazenda_id: fazendaAtualId,
-          tipo: "IA",
+          tipo: payload?.tipoEvento,
           data_evento: dataEvento,
           user_id: userId,
           inseminador_id: payload.inseminadorId || null,
@@ -1091,6 +1107,13 @@ export default function VisaoGeral({
       return;
     }
 
+    const acaoAtiva = typeof selectedType === "string" ? selectedType.toLowerCase() : selectedType;
+    const tipoEvento = TIPO_POR_ACAO[acaoAtiva] || acaoAtiva;
+    if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
+      console.error("Tipo inválido p/ repro_eventos.tipo", { acaoAtiva, tipoEvento });
+      throw new Error(`Tipo inválido: "${tipoEvento}". Use IA/DG/PARTO/SECAGEM/PROTOCOLO.`);
+    }
+
     if (selectedType === "IA") {
       if (!draftIA) {
         setErroSalvar("Preencha os dados da inseminação antes de salvar.");
@@ -1132,6 +1155,7 @@ export default function VisaoGeral({
 
       await handleSubmit({
         kind: "IA",
+        tipoEvento,
         data: draftIA.data,
         inseminadorId: draftIA.inseminadorId,
         touroId: draftIA.touroId,
@@ -1208,7 +1232,7 @@ export default function VisaoGeral({
             targets.map(({ animalId: resolvedAnimalId, iaAlvo }) => ({
               fazenda_id: fazendaAtualId,
               animal_id: resolvedAnimalId,
-              tipo: "DG",
+              tipo: tipoEvento,
               data_evento: dataEvento,
               user_id: userId,
               meta: buildDGMeta(draftDG, iaAlvo),
@@ -1237,7 +1261,7 @@ export default function VisaoGeral({
           await insertReproEvento({
             fazenda_id: fazendaAtualId,
             animal_id: animalId,
-            tipo: "DG",
+            tipo: tipoEvento,
             data_evento: dataEvento,
             user_id: userId,
             meta: buildDGMeta(draftDG, iaAlvo),
