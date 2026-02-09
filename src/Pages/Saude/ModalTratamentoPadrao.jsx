@@ -15,7 +15,7 @@ const overlayStyle = {
 
 const modalStyle = {
   background: "#fff",
-  width: "min(520px, 92vw)",
+  width: "min(760px, 95vw)",
   borderRadius: 16,
   boxShadow: "0 16px 40px rgba(15,23,42,0.35)",
   overflow: "hidden",
@@ -55,133 +55,48 @@ const inputStyle = {
   fontFamily: "inherit",
 };
 
-const DEFAULTS = {
-  gestacao_dias: 280,
-  secagem_antecedencia_dias: 60,
-  preparto_antecedencia_dias: 21,
-  aviso_secagem_dias: 7,
-  aviso_parto_dias: 7,
+const sectionTitleStyle = {
+  margin: "0 0 8px",
+  fontSize: "0.85rem",
+  fontWeight: 700,
+  color: "#475569",
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
 };
 
-export default function ModalParametrosRepro({ open, onClose, onSaved }) {
+const emptyItem = () => ({
+  id: crypto.randomUUID(),
+  dia: "0",
+  produto_nome: "",
+  quantidade: "",
+  unidade: "",
+  via: "",
+  obs: "",
+  carencia_leite_dias: "",
+  carencia_carne_dias: "",
+});
+
+export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoesDoencas = [] }) {
   const { fazendaAtualId } = useFazenda();
-  const [formValues, setFormValues] = useState(DEFAULTS);
+  const [nome, setNome] = useState("");
+  const [doenca, setDoenca] = useState("");
+  const [itens, setItens] = useState([emptyItem()]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
-  const [userId, setUserId] = useState(null);
 
-  const alertStyles = useMemo(
-    () => ({
-      base: {
-        padding: "10px 12px",
-        borderRadius: "10px",
-        fontSize: "13px",
-        fontWeight: 600,
-      },
-      error: {
-        backgroundColor: "#fee2e2",
-        color: "#991b1b",
-        border: "1px solid #fecaca",
-      },
-      success: {
-        backgroundColor: "#dcfce7",
-        color: "#166534",
-        border: "1px solid #bbf7d0",
-      },
-    }),
-    []
+  const doencasLista = useMemo(
+    () => (Array.isArray(sugestoesDoencas) ? sugestoesDoencas.map((opt) => opt?.label || opt?.value).filter(Boolean) : []),
+    [sugestoesDoencas]
   );
 
   useEffect(() => {
     if (!open) return;
+    setNome("");
+    setDoenca("");
+    setItens([emptyItem()]);
     setErrorMsg("");
-    setSuccessMsg("");
-    setLoading(true);
-    let ativo = true;
-
-    const carregar = async () => {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      const currentUserId = userData?.user?.id ?? null;
-      setUserId(currentUserId);
-
-      if (userError || !fazendaAtualId || !currentUserId) {
-        if (ativo) {
-          setErrorMsg("Selecione a fazenda e o usuário para editar os parâmetros reprodutivos.");
-          setLoading(false);
-        }
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("config_repro_parametros")
-        .select("*")
-        .eq("fazenda_id", fazendaAtualId)
-        .maybeSingle();
-
-      if (!ativo) return;
-
-      if (error) {
-        setErrorMsg("Não foi possível carregar os parâmetros reprodutivos.");
-        setLoading(false);
-        return;
-      }
-
-      let registro = data;
-      if (!registro) {
-        const { error: createError } = await supabase
-          .from("config_repro_parametros")
-          .insert({
-            fazenda_id: fazendaAtualId,
-            user_id: currentUserId,
-            ...DEFAULTS,
-          });
-
-        if (!ativo) return;
-
-        if (createError) {
-          setErrorMsg("Não foi possível criar os parâmetros reprodutivos.");
-          setLoading(false);
-          return;
-        }
-
-        const { data: createdRow, error: fetchError } = await supabase
-          .from("config_repro_parametros")
-          .select("*")
-          .eq("fazenda_id", fazendaAtualId)
-          .maybeSingle();
-
-        if (!ativo) return;
-
-        if (fetchError) {
-          setErrorMsg("Não foi possível carregar os parâmetros reprodutivos.");
-          setLoading(false);
-          return;
-        }
-
-        registro = createdRow;
-      }
-
-      setFormValues({
-        gestacao_dias: Number(registro?.gestacao_dias ?? DEFAULTS.gestacao_dias),
-        secagem_antecedencia_dias: Number(
-          registro?.secagem_antecedencia_dias ?? DEFAULTS.secagem_antecedencia_dias
-        ),
-        preparto_antecedencia_dias: Number(
-          registro?.preparto_antecedencia_dias ?? DEFAULTS.preparto_antecedencia_dias
-        ),
-        aviso_secagem_dias: Number(registro?.aviso_secagem_dias ?? DEFAULTS.aviso_secagem_dias),
-        aviso_parto_dias: Number(registro?.aviso_parto_dias ?? DEFAULTS.aviso_parto_dias),
-      });
-      setLoading(false);
-    };
-
-    carregar();
-
-    return () => {
-      ativo = false;
-    };
-  }, [open, fazendaAtualId]);
+    setLoading(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -194,194 +109,243 @@ export default function ModalParametrosRepro({ open, onClose, onSaved }) {
 
   if (!open) return null;
 
-  const updateField = (field) => (event) => {
-    setFormValues((prev) => ({
-      ...prev,
-      [field]: event.target.value,
-    }));
+  const atualizarItem = (id, patch) => {
+    setItens((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
-  const parseField = (value) => {
-    if (value === "" || value === null || value === undefined) return NaN;
+  const removerItem = (id) => {
+    setItens((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const adicionarItem = () => {
+    setItens((prev) => [...prev, emptyItem()]);
+  };
+
+  const parseNumero = (value) => {
     const num = Number(value);
-    if (!Number.isFinite(num)) return NaN;
-    return Math.trunc(num);
+    return Number.isFinite(num) ? num : null;
   };
 
-  const handleSave = async () => {
-    setErrorMsg("");
-    setSuccessMsg("");
-
-    const gestacao = parseField(formValues.gestacao_dias);
-    const secagem = parseField(formValues.secagem_antecedencia_dias);
-    const preparto = parseField(formValues.preparto_antecedencia_dias);
-    const avisoSecagem = parseField(formValues.aviso_secagem_dias);
-    const avisoParto = parseField(formValues.aviso_parto_dias);
-
-    if (![gestacao, secagem, preparto, avisoSecagem, avisoParto].every(Number.isFinite)) {
-      setErrorMsg("Preencha todos os campos com números inteiros.");
+  const handleSalvar = async () => {
+    if (!fazendaAtualId) {
+      setErrorMsg("Selecione uma fazenda para salvar o protocolo.");
       return;
     }
-    if ([gestacao, secagem, preparto, avisoSecagem, avisoParto].some((v) => v < 0)) {
-      setErrorMsg("Os valores devem ser inteiros iguais ou maiores que zero.");
-      return;
-    }
-    if (gestacao < 200) {
-      setErrorMsg("A gestação deve ser de pelo menos 200 dias.");
-      return;
-    }
-    if (secagem > gestacao) {
-      setErrorMsg("A antecedência da secagem não pode ser maior que os dias de gestação.");
-      return;
-    }
-    if (preparto > gestacao) {
-      setErrorMsg("A antecedência do pré-parto não pode ser maior que os dias de gestação.");
-      return;
-    }
-
-    if (!fazendaAtualId || !userId) {
-      setErrorMsg("Selecione a fazenda e o usuário para salvar os parâmetros.");
+    if (!nome.trim()) {
+      setErrorMsg("Informe o nome do protocolo.");
       return;
     }
 
     setLoading(true);
+    setErrorMsg("");
 
-    const payload = {
-      fazenda_id: fazendaAtualId,
-      user_id: userId,
-      gestacao_dias: gestacao,
-      secagem_antecedencia_dias: secagem,
-      preparto_antecedencia_dias: preparto,
-      aviso_secagem_dias: avisoSecagem,
-      aviso_parto_dias: avisoParto,
-    };
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const legacyAuthUser = typeof supabase.auth.user === "function" ? supabase.auth.user() : null;
+      const userId = userData?.user?.id || legacyAuthUser?.id || null;
 
-    const response = await supabase
-      .from("config_repro_parametros")
-      .upsert(payload, { onConflict: "fazenda_id" });
+      const itensPayload = itens.map((item) => ({
+        dia: parseNumero(item.dia) ?? 0,
+        produto_id: null,
+        produto_nome: item.produto_nome?.trim() || "",
+        quantidade: parseNumero(item.quantidade) ?? null,
+        unidade: item.unidade?.trim() || "",
+        via: item.via?.trim() || "",
+        obs: item.obs?.trim() || "",
+        carencia_leite_dias: parseNumero(item.carencia_leite_dias) ?? 0,
+        carencia_carne_dias: parseNumero(item.carencia_carne_dias) ?? 0,
+      }));
 
-    if (response.error) {
-      setErrorMsg("Não foi possível salvar os parâmetros reprodutivos.");
+      const dias = itensPayload.map((item) => Number(item.dia) || 0);
+      const ultimoDia = dias.length ? Math.max(...dias) : 0;
+      const carenciaLeiteMax = itensPayload.reduce((acc, item) => Math.max(acc, Number(item.carencia_leite_dias) || 0), 0);
+      const carenciaCarneMax = itensPayload.reduce((acc, item) => Math.max(acc, Number(item.carencia_carne_dias) || 0), 0);
+
+      const row = {
+        fazenda_id: fazendaAtualId,
+        user_id: userId,
+        nome: nome.trim(),
+        doenca: doenca.trim() || null,
+        itens: itensPayload,
+        ativo: true,
+        duracao_dias: ultimoDia,
+        ultimo_dia: ultimoDia,
+        carencia_leite_dias_max: carenciaLeiteMax,
+        carencia_carne_dias_max: carenciaCarneMax,
+      };
+
+      const { error } = await supabase.from("saude_protocolos").insert([row]);
+      if (error) throw error;
+
+      onSaved?.();
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("Não foi possível salvar o protocolo. Tente novamente.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setSuccessMsg("Parâmetros reprodutivos atualizados com sucesso!");
-    setLoading(false);
-    onSaved?.();
-    onClose?.();
   };
 
   return (
-    <div style={overlayStyle} onMouseDown={onClose}>
-      <div style={modalStyle} onMouseDown={(event) => event.stopPropagation()}>
+    <div style={overlayStyle} onClick={(e) => e.target === e.currentTarget && onClose?.()}>
+      <div style={modalStyle}>
         <div style={headerStyle}>
-          <span>Parâmetros reprodutivos</span>
-          <button type="button" onClick={onClose} style={closeButtonStyle}>
+          <div>Novo protocolo terapêutico</div>
+          <button type="button" style={closeButtonStyle} onClick={onClose}>
             Fechar
           </button>
         </div>
 
-        <div style={{ padding: 20, display: "grid", gap: 12 }}>
-          {errorMsg && <div style={{ ...alertStyles.base, ...alertStyles.error }}>{errorMsg}</div>}
-          {successMsg && <div style={{ ...alertStyles.base, ...alertStyles.success }}>{successMsg}</div>}
+        <div style={{ padding: "18px 20px", display: "grid", gap: 16, maxHeight: "75vh", overflowY: "auto" }}>
+          <div>
+            <div style={sectionTitleStyle}>Informações gerais</div>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Nome *</label>
+                <input style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Metrite pós-parto" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Doença/condição</label>
+                <input
+                  style={inputStyle}
+                  value={doenca}
+                  onChange={(e) => setDoenca(e.target.value)}
+                  placeholder="Ex.: Metrite"
+                  list="lista-doencas"
+                />
+                <datalist id="lista-doencas">
+                  {doencasLista.map((item) => (
+                    <option key={item} value={item} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+          </div>
 
-          <label style={{ display: "grid", gap: 6, fontSize: 13, fontWeight: 600 }}>
-            Gestação (dias)
-            <input
-              type="number"
-              min={0}
-              value={formValues.gestacao_dias}
-              onChange={updateField("gestacao_dias")}
-              style={inputStyle}
-            />
-            <span style={{ fontSize: 12, color: "#64748b" }}>
-              Referência para cálculo da data prevista de parto.
-            </span>
-          </label>
+          <div>
+            <div style={sectionTitleStyle}>Itens do protocolo</div>
+            <div style={{ display: "grid", gap: 12 }}>
+              {itens.map((item, index) => (
+                <div
+                  key={item.id}
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 12,
+                    padding: 12,
+                    background: "#f8fafc",
+                    display: "grid",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <strong style={{ color: "#0f172a" }}>Item #{index + 1}</strong>
+                    {itens.length > 1 ? (
+                      <button type="button" style={closeButtonStyle} onClick={() => removerItem(item.id)}>
+                        Remover
+                      </button>
+                    ) : null}
+                  </div>
 
-          <label style={{ display: "grid", gap: 6, fontSize: 13, fontWeight: 600 }}>
-            Secagem (dias antes do parto)
-            <input
-              type="number"
-              min={0}
-              value={formValues.secagem_antecedencia_dias}
-              onChange={updateField("secagem_antecedencia_dias")}
-              style={inputStyle}
-            />
-            <span style={{ fontSize: 12, color: "#64748b" }}>
-              Define a antecedência da secagem em relação ao parto.
-            </span>
-          </label>
+                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "90px 1fr 120px 120px" }}>
+                    <input
+                      style={inputStyle}
+                      value={item.dia}
+                      onChange={(e) => atualizarItem(item.id, { dia: e.target.value })}
+                      placeholder="Dia"
+                    />
+                    <input
+                      style={inputStyle}
+                      value={item.produto_nome}
+                      onChange={(e) => atualizarItem(item.id, { produto_nome: e.target.value })}
+                      placeholder="Produto/medicamento"
+                    />
+                    <input
+                      style={inputStyle}
+                      value={item.quantidade}
+                      onChange={(e) => atualizarItem(item.id, { quantidade: e.target.value })}
+                      placeholder="Qtd"
+                    />
+                    <input
+                      style={inputStyle}
+                      value={item.unidade}
+                      onChange={(e) => atualizarItem(item.id, { unidade: e.target.value })}
+                      placeholder="Unidade"
+                    />
+                  </div>
 
-          <label style={{ display: "grid", gap: 6, fontSize: 13, fontWeight: 600 }}>
-            Pré-parto (dias antes do parto)
-            <input
-              type="number"
-              min={0}
-              value={formValues.preparto_antecedencia_dias}
-              onChange={updateField("preparto_antecedencia_dias")}
-              style={inputStyle}
-            />
-            <span style={{ fontSize: 12, color: "#64748b" }}>
-              Controla quando o animal entra em pré-parto.
-            </span>
-          </label>
+                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "120px 1fr 140px 140px" }}>
+                    <input
+                      style={inputStyle}
+                      value={item.via}
+                      onChange={(e) => atualizarItem(item.id, { via: e.target.value })}
+                      placeholder="Via"
+                    />
+                    <input
+                      style={inputStyle}
+                      value={item.obs}
+                      onChange={(e) => atualizarItem(item.id, { obs: e.target.value })}
+                      placeholder="Observações"
+                    />
+                    <input
+                      style={inputStyle}
+                      value={item.carencia_leite_dias}
+                      onChange={(e) => atualizarItem(item.id, { carencia_leite_dias: e.target.value })}
+                      placeholder="Carência leite (d)"
+                    />
+                    <input
+                      style={inputStyle}
+                      value={item.carencia_carne_dias}
+                      onChange={(e) => atualizarItem(item.id, { carencia_carne_dias: e.target.value })}
+                      placeholder="Carência carne (d)"
+                    />
+                  </div>
+                </div>
+              ))}
 
-          <label style={{ display: "grid", gap: 6, fontSize: 13, fontWeight: 600 }}>
-            Aviso de secagem (dias antes)
-            <input
-              type="number"
-              min={0}
-              value={formValues.aviso_secagem_dias}
-              onChange={updateField("aviso_secagem_dias")}
-              style={inputStyle}
-            />
-            <span style={{ fontSize: 12, color: "#64748b" }}>
-              Dias antes da data prevista de secagem para iniciar o aviso.
-            </span>
-          </label>
+              <button
+                type="button"
+                onClick={adicionarItem}
+                style={{
+                  border: "1px dashed #94a3b8",
+                  background: "transparent",
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  cursor: "pointer",
+                }}
+              >
+                + Adicionar item
+              </button>
+            </div>
+          </div>
 
-          <label style={{ display: "grid", gap: 6, fontSize: 13, fontWeight: 600 }}>
-            Aviso de parto (dias antes)
-            <input
-              type="number"
-              min={0}
-              value={formValues.aviso_parto_dias}
-              onChange={updateField("aviso_parto_dias")}
-              style={inputStyle}
-            />
-            <span style={{ fontSize: 12, color: "#64748b" }}>
-              Dias antes da data prevista de parto para iniciar o aviso.
-            </span>
-          </label>
+          {errorMsg ? (
+            <div style={{ padding: "10px 12px", borderRadius: 10, background: "#fee2e2", color: "#991b1b", fontSize: 13, fontWeight: 600 }}>
+              {errorMsg}
+            </div>
+          ) : null}
         </div>
 
-        <div
-          style={{
-            padding: "16px 20px",
-            borderTop: "1px solid #e5e7eb",
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 12,
-          }}
-        >
-          <button type="button" onClick={onClose} style={closeButtonStyle}>
+        <div style={{ padding: "16px 20px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button type="button" style={closeButtonStyle} onClick={onClose}>
             Cancelar
           </button>
           <button
             type="button"
-            onClick={handleSave}
+            onClick={handleSalvar}
             disabled={loading}
             style={{
-              ...closeButtonStyle,
-              background: "#2563eb",
-              borderColor: "#2563eb",
+              background: loading ? "#94a3b8" : "#2563eb",
               color: "#fff",
-              opacity: loading ? 0.7 : 1,
+              border: "none",
+              padding: "10px 16px",
+              borderRadius: 10,
+              fontWeight: 700,
+              cursor: loading ? "not-allowed" : "pointer",
             }}
           >
-            {loading ? "Salvando..." : "Salvar"}
+            {loading ? "Salvando..." : "Salvar protocolo"}
           </button>
         </div>
       </div>
