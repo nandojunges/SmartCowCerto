@@ -1,6 +1,5 @@
 // src/Pages/Ajustes/CentroOperacoes/LogsAuditoria.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { supabase } from "../../../lib/supabaseClient";
 import { useFazenda } from "../../../context/FazendaContext";
@@ -178,17 +177,6 @@ const styles = {
   },
 };
 
-const resolveModuloPath = (modulo) => {
-  const mod = String(modulo || "").toLowerCase();
-  if (mod.includes("repro")) return "/reproducao";
-  if (mod.includes("leite")) return "/leite";
-  if (mod.includes("saude")) return "/saude";
-  if (mod.includes("finance")) return "/financeiro";
-  if (mod.includes("consumo") || mod.includes("estoque")) return "/consumo";
-  if (mod.includes("animal")) return "/animais";
-  return null;
-};
-
 const formatDateTime = (value) => {
   if (!value) return "—";
   const date = new Date(value);
@@ -203,75 +191,81 @@ const buildResumo = (log) => {
   const resumo = String(log?.resumo || "").trim();
   if (resumo) return resumo;
   const acao = log?.acao ? String(log.acao) : "Ação";
-  const modulo = log?.modulo ? ` – ${log.modulo}` : "";
-  const animal = log?.animal_numero ? ` – animal ${log.animal_numero}` : "";
-  return `${acao}${modulo}${animal}`;
+  const entidade = log?.entidade ? String(log.entidade) : "entidade";
+  const animal = log?.animal_numero ? `animal ${log.animal_numero}` : "animal";
+  return `${acao} – ${entidade} – ${animal}`;
 };
 
 export default function LogsAuditoria({ showHeader = true }) {
-  const { fazendaAtualId } = useFazenda();
-  const navigate = useNavigate();
+  const { fazendaAtualId, fazendaSelecionada } = useFazenda();
+  const fazendaId = fazendaSelecionada?.id ?? fazendaSelecionada ?? fazendaAtualId ?? null;
   const [logs, setLogs] = useState([]);
-  const [limite, setLimite] = useState(BASE_LIMIT);
-  const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState("");
+  const [limit, setLimit] = useState(BASE_LIMIT);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [hoveredRowId, setHoveredRowId] = useState(null);
   const [modalLog, setModalLog] = useState(null);
   const [cancelLog, setCancelLog] = useState(null);
   const [cancelMotivo, setCancelMotivo] = useState("");
-  const [cancelamentos, setCancelamentos] = useState({});
 
   useEffect(() => {
-    const carregar = async () => {
-      if (!fazendaAtualId) return;
-      setCarregando(true);
-      setErro("");
-      const { data, error } = await supabase
-        .from("audit_log")
-        .select(
-          [
-            "id",
-            "created_at",
-            "modulo",
-            "entidade",
-            "acao",
-            "registro_id",
-            "animal_id",
-            "animal_numero",
-            "resumo",
-            "actor_nome",
-            "actor_email",
-            "cancelavel",
-            "cancelado_em",
-            "diff",
-            "meta",
-          ].join(",")
-        )
-        .eq("fazenda_id", fazendaAtualId)
-        .order("created_at", { ascending: false })
-        .limit(limite);
-
-      if (error) {
-        console.error(error);
-        setErro("Erro ao carregar logs de atividade.");
-        setLogs([]);
-      } else {
-        setLogs(Array.isArray(data) ? data : []);
-      }
-      setCarregando(false);
-    };
-
-    carregar();
-  }, [fazendaAtualId, limite]);
-
-  useEffect(() => {
-    if (!modalLog) return undefined;
+    if (!modalLog && !cancelLog) return undefined;
     const onKeyDown = (event) => {
-      if (event.key === "Escape") setModalLog(null);
+      if (event.key === "Escape") {
+        setModalLog(null);
+        setCancelLog(null);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [modalLog]);
+  }, [modalLog, cancelLog]);
+
+  const fetchLogs = async () => {
+    if (!fazendaId) {
+      setLogs([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    const { data, error: fetchError } = await supabase
+      .from("audit_log")
+      .select(
+        [
+          "id",
+          "created_at",
+          "modulo",
+          "entidade",
+          "acao",
+          "registro_id",
+          "animal_id",
+          "animal_numero",
+          "resumo",
+          "actor_nome",
+          "actor_email",
+          "cancelavel",
+          "cancelado_em",
+        ].join(",")
+      )
+      .eq("fazenda_id", fazendaId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (fetchError) {
+      console.error(fetchError);
+      setError(fetchError.message);
+      toast.error(fetchError.message);
+      setLogs([]);
+    } else {
+      setLogs(Array.isArray(data) ? data : []);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fazendaId, limit]);
 
   const resumoMap = useMemo(() => {
     const map = new Map();
@@ -281,37 +275,43 @@ export default function LogsAuditoria({ showHeader = true }) {
     return map;
   }, [logs]);
 
-  const handleEditar = (log) => {
-    if (!log?.animal_numero) {
-      toast.info("Abrir edição em breve");
-      return;
-    }
-    const moduloPath = resolveModuloPath(log?.modulo) ?? "/animais";
-    if (!moduloPath) {
-      toast.info("Abrir edição em breve");
-      return;
-    }
-    navigate(`${moduloPath}?animal=${encodeURIComponent(log.animal_numero)}`);
+  const handleEditar = () => {
+    toast.info("Edição via atalho será implementada");
   };
 
-  const handleCancelar = () => {
+  const handleCancelar = async () => {
     if (!cancelLog) return;
-    setCancelamentos((prev) => ({ ...prev, [cancelLog.id]: cancelMotivo }));
-    toast.info("Cancelamento será implementado via RPC");
+    if (!cancelMotivo.trim()) {
+      toast.error("Informe o motivo do cancelamento.");
+      return;
+    }
+    const { error: cancelError } = await supabase.rpc("rpc_cancelar_repro_evento", {
+      p_evento_id: cancelLog.registro_id,
+      p_motivo: cancelMotivo.trim(),
+    });
+    if (cancelError) {
+      console.error(cancelError);
+      toast.error(cancelError.message);
+      return;
+    }
+    toast.success("Evento cancelado com sucesso.");
     setCancelLog(null);
     setCancelMotivo("");
+    fetchLogs();
   };
 
   const viewPayload = modalLog
     ? {
+        resumo: buildResumo(modalLog),
+        modulo: modalLog.modulo ?? null,
+        entidade: modalLog.entidade ?? null,
+        acao: modalLog.acao ?? null,
         ids: {
           id: modalLog.id,
           registro_id: modalLog.registro_id,
           animal_id: modalLog.animal_id,
           animal_numero: modalLog.animal_numero,
         },
-        diff: modalLog.diff ?? null,
-        meta: modalLog.meta ?? null,
       }
     : null;
 
@@ -354,33 +354,33 @@ export default function LogsAuditoria({ showHeader = true }) {
                 </tr>
               </thead>
               <tbody>
-                {carregando && (
+                {loading && (
                   <tr>
                     <td style={{ ...styles.td, textAlign: "center" }} colSpan={6}>
                       Carregando logs...
                     </td>
                   </tr>
                 )}
-                {!carregando && erro && (
+                {!loading && error && (
                   <tr>
                     <td style={{ ...styles.td, textAlign: "center" }} colSpan={6}>
-                      {erro}
+                      {error}
                     </td>
                   </tr>
                 )}
-                {!carregando && !erro && logs.length === 0 && (
+                {!loading && !error && logs.length === 0 && (
                   <tr>
                     <td style={{ ...styles.td, textAlign: "center" }} colSpan={6}>
-                      Nenhum log encontrado.
+                      Nenhuma atividade registrada ainda.
                     </td>
                   </tr>
                 )}
-                {!carregando && !erro &&
+                {!loading && !error &&
                   logs.map((log) => {
                     const resumo = resumoMap.get(log.id);
                     const isHovered = hoveredRowId === log.id;
                     const cancelado = Boolean(log.cancelado_em);
-                    const cancelavel = Boolean(log.cancelavel) && !cancelado;
+                    const cancelavel = log.entidade === "repro_eventos" && !cancelado;
                     return (
                       <tr
                         key={log.id}
@@ -400,7 +400,7 @@ export default function LogsAuditoria({ showHeader = true }) {
                           </div>
                         </td>
                         <td style={{ ...styles.td, fontFamily: "ui-monospace, monospace" }}>
-                          {log.animal_numero ?? "—"}
+                          {log.animal_numero ?? "-"}
                         </td>
                         <td style={styles.td}>{log.modulo ?? "—"}</td>
                         <td style={styles.td}>
@@ -423,7 +423,7 @@ export default function LogsAuditoria({ showHeader = true }) {
                             <button
                               type="button"
                               style={styles.actionBtn}
-                              onClick={() => handleEditar(log)}
+                              onClick={handleEditar}
                             >
                               Editar
                             </button>
@@ -437,7 +437,7 @@ export default function LogsAuditoria({ showHeader = true }) {
                               onClick={() => {
                                 if (!cancelavel) return;
                                 setCancelLog(log);
-                                setCancelMotivo(cancelamentos[log.id] || "");
+                                setCancelMotivo("");
                               }}
                               disabled={!cancelavel}
                             >
@@ -455,11 +455,11 @@ export default function LogsAuditoria({ showHeader = true }) {
       </section>
 
       <div style={styles.footer}>
-        Mostrando últimos {Math.min(limite, logs.length || 0)} registros •{" "}
+        Mostrando últimos {Math.min(limit, logs.length || 0)} registros •{" "}
         <button
           style={styles.footerButton}
           type="button"
-          onClick={() => setLimite((prev) => prev * 2)}
+          onClick={() => setLimit((prev) => prev + BASE_LIMIT)}
         >
           Carregar mais
         </button>
