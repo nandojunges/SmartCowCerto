@@ -127,6 +127,18 @@ export default function CentroOperacoes() {
         })}
       </div>
 
+      <section style={{ marginBottom: 32 }}>
+        <div style={{ marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
+            Logs de Atividade
+          </h3>
+          <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 14 }}>
+            Histórico completo de ações realizadas no sistema
+          </p>
+        </div>
+        <LogsAuditoria showHeader={false} />
+      </section>
+
       {/* Conteúdo da Aba */}
       <AnimatePresence mode="wait">
         <motion.div
