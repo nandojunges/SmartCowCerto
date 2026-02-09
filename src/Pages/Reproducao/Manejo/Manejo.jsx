@@ -232,6 +232,7 @@ async function insertReproEvento(payload) {
   const validatedPayload = ensureTipoReproEvento(payload, "insertReproEvento");
   const sanitizedPayload = sanitizeReproEventoPayload(validatedPayload);
   console.log("[INSERT repro_eventos A] tipo=", sanitizedPayload?.tipo, sanitizedPayload);
+  console.log("[DEBUG INSERT repro_eventos] tipo=", sanitizedPayload?.tipo, sanitizedPayload);
   const { data, error } = await supabase.from("repro_eventos").insert([sanitizedPayload]).select("*").maybeSingle();
   if (error) throw error;
   return data;
@@ -763,6 +764,7 @@ export default function VisaoGeral({
     });
     sanitizedPayloads.forEach((item) => {
       console.log("[INSERT repro_eventos B] tipo=", item?.tipo, item);
+      console.log("[DEBUG INSERT repro_eventos] tipo=", item?.tipo, item);
     });
     const { error } = await supabase.from("repro_eventos").insert(sanitizedPayloads);
     if (error) throw error;
