@@ -2,7 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
@@ -12,31 +11,41 @@ export default defineConfig({
       manifest: {
         name: "SmartCow",
         short_name: "SmartCow",
-        start_url: "/",
+        start_url: "/inicio",
+        scope: "/",
         display: "standalone",
         background_color: "#ffffff",
         theme_color: "#1b5e20",
         orientation: "any",
         icons: [
-          {
-            src: "/icons/icon-192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-          {
-            src: "/icons/icon-512.png",
-            sizes: "512x512",
-            type: "image/png",
-          },
+          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
         ],
       },
+
+      workbox: {
+        navigateFallback: "/index.html",
+        navigateFallbackAllowlist: [/^\/.*$/],
+        navigateFallbackDenylist: [
+          /^\/assets\//,
+          /^\/icons\//,
+          /^\/favicon\.ico$/,
+          /^\/manifest\.webmanifest$/,
+          /^\/registerSW\.js$/,
+          /^\/workbox-.*\.js$/,
+          /^\/sw\.js$/,
+          /^\/rest\//,
+          /^\/auth\//,
+        ],
+      },
+
+      // ✅ A ÚNICA MUDANÇA: NÃO ATIVAR SW NO DEV
       devOptions: {
-        enabled: true,
+        enabled: false,
       },
     }),
   ],
 
-  // ✅ evita “Invalid hook call” quando React duplica
   resolve: {
     dedupe: ["react", "react-dom"],
   },
