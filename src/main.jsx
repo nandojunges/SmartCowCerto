@@ -18,7 +18,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   import.meta.env.DEV ? appTree : <React.StrictMode>{appTree}</React.StrictMode>
 );
 
-if ("serviceWorker" in navigator) {
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/service-worker.js").catch(console.error);
   });
