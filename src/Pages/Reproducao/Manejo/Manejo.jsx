@@ -85,6 +85,14 @@ const normalizeTexto = (valor) => {
     .toLowerCase();
 };
 
+function resolveTipoEvento(valor) {
+  if (!valor) return null;
+  const raw = typeof valor === "string" ? valor.trim() : valor;
+  if (TIPO_ENUM_VALIDO.has(raw)) return raw;
+  const normalized = normalizeTexto(raw);
+  return TIPO_POR_ACAO[normalized] || null;
+}
+
 function parseISODate(value) {
   if (!value || typeof value !== "string") return null;
   const [y, m, d] = value.split("-").map(Number);
@@ -222,6 +230,12 @@ function ensureTipoReproEvento(payload, origem) {
   const normalizedTipo = typeof rawTipo === "string" ? rawTipo.trim().toUpperCase() : rawTipo;
   if (TIPO_ENUM_VALIDO.has(normalizedTipo)) {
     return normalizedTipo === rawTipo ? payload : { ...payload, tipo: normalizedTipo };
+  }
+  if (typeof rawTipo === "string") {
+    const resolvedTipo = resolveTipoEvento(rawTipo);
+    if (resolvedTipo) {
+      return { ...payload, tipo: resolvedTipo };
+    }
   }
   console.error("Tipo inválido p/ repro_eventos.tipo", { origem, tipo: rawTipo, payload });
   throw new Error(`Tipo inválido p/ repro_eventos: "${rawTipo}". Use IA/DG/PARTO/SECAGEM/PROTOCOLO.`);
@@ -1129,7 +1143,7 @@ export default function VisaoGeral({
     }
 
     const acaoAtiva = typeof selectedType === "string" ? selectedType.toLowerCase() : selectedType;
-    const tipoEvento = TIPO_POR_ACAO[acaoAtiva] || acaoAtiva;
+    const tipoEvento = resolveTipoEvento(acaoAtiva);
     if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
       console.error("Tipo inválido p/ repro_eventos.tipo", { acaoAtiva, tipoEvento });
       throw new Error(`Tipo inválido: "${tipoEvento}". Use IA/DG/PARTO/SECAGEM/PROTOCOLO.`);
