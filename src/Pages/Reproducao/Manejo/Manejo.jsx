@@ -319,6 +319,7 @@ export default function VisaoGeral({
   const [iaBlockMessage, setIaBlockMessage] = useState("");
   const [bulkIABlockMessage, setBulkIABlockMessage] = useState("");
   const [bulkIAMatches, setBulkIAMatches] = useState({});
+  const [showNovoProt, setShowNovoProt] = useState(false);
 
   const bulkActive = Boolean(bulkMode);
 
@@ -717,6 +718,7 @@ export default function VisaoGeral({
     setProtocoloVinculadoId("");
     setBulkProtocolConflicts([]);
     setBulkProtocolSelections({});
+    setShowNovoProt(false);
     onClose?.();
   };
 
@@ -1334,7 +1336,8 @@ export default function VisaoGeral({
         display: "flex",
         boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)",
         border: `1px solid ${theme.colors.slate[200]}`,
-        opacity: isAnimating ? 0 : 1,
+        opacity: showNovoProt ? 0 : isAnimating ? 0 : 1,
+        pointerEvents: showNovoProt ? "none" : "auto",
         transform: isAnimating ? "scale(0.98)" : "scale(1)",
         transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
       }}>
@@ -1708,6 +1711,8 @@ export default function VisaoGeral({
                 protocoloVinculadoRequired={selectedType === "IA" && protocoloVinculadoOptions.length > 1}
                 onSelectProtocoloVinculado={selectedType === "IA" ? setProtocoloVinculadoId : undefined}
                 bulkMode={bulkActive}
+                showNovoProt={showNovoProt}
+                onShowNovoProtChange={setShowNovoProt}
                 key={selectedType} // Força remount ao trocar de aba
               />
             )}
