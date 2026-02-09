@@ -1,20 +1,29 @@
-import { useEffect, useMemo, useRef } from "react";
-import NavegacaoPrincipal from "./NavegacaoPrincipal";
+import { useEffect, useMemo, useReducer, useRef } from "react";
 import { useLocation, useOutlet } from "react-router-dom";
+import NavegacaoPrincipal from "./NavegacaoPrincipal";
 
-/**
- * KeepAlive de rotas: mantém páginas montadas ao trocar abas do sistema.
- * - Evita “piscada”/tela branca ao navegar
- * - Preserva estado local (inputs/modais) ao trocar entre páginas
- */
-function KeepAliveOutlet({ max = 10 }) {
+function KeepAliveOutlet({ max = 12 }) {
   const location = useLocation();
   const outlet = useOutlet();
 
   const key = location.pathname;
 
-  const cacheRef = useRef(new Map()); // pathname -> ReactNode
-  const orderRef = useRef([]);        // LRU simples
+  const cacheRef = useRef(new Map()); // pathname -> element
+  const orderRef = useRef([]); // LRU
+  const [, bump] = useReducer((x) => x + 1, 0);
+
+  // ✅ entries SEMPRE inclui a rota atual (mesmo antes de entrar no cache)
+  const entries = useMemo(() => {
+    const cache = cacheRef.current;
+    const arr = Array.from(cache.entries());
+
+    const hasCurrent = cache.has(key);
+    if (!hasCurrent && outlet) {
+      // mostra a página atual imediatamente (evita tela branca)
+      arr.push([key, outlet]);
+    }
+    return arr;
+  }, [key, outlet]);
 
   useEffect(() => {
     if (!outlet) return;
@@ -22,24 +31,34 @@ function KeepAliveOutlet({ max = 10 }) {
     const cache = cacheRef.current;
     const order = orderRef.current;
 
-    if (!cache.has(key)) {
+    const existed = cache.has(key);
+    if (!existed) {
       cache.set(key, outlet);
       order.push(key);
 
+      // LRU
       while (order.length > max) {
         const oldest = order.shift();
         if (oldest && oldest !== key) cache.delete(oldest);
       }
-    } else {
-      const idx = order.indexOf(key);
-      if (idx >= 0) {
-        order.splice(idx, 1);
-        order.push(key);
-      }
-    }
-  }, [key, outlet, max]);
 
-  const entries = useMemo(() => Array.from(cacheRef.current.entries()), [key]);
+      // ✅ força re-render após inserir no cache
+      bump();
+      return;
+    }
+
+    // atualiza referência do elemento atual (caso o outlet mude)
+    cache.set(key, outlet);
+
+    const idx = order.indexOf(key);
+    if (idx >= 0) {
+      order.splice(idx, 1);
+      order.push(key);
+    }
+
+    // ✅ garante re-render quando atualiza o cache do atual
+    bump();
+  }, [key, outlet, max]);
 
   return (
     <>
@@ -93,7 +112,7 @@ export default function SistemaBase({ tipoConta }) {
             boxSizing: "border-box",
           }}
         >
-          <KeepAliveOutlet max={10} />
+          <KeepAliveOutlet max={12} />
         </div>
       </main>
     </div>
