@@ -1,6 +1,60 @@
-// src/layout/SistemaBase.jsx
+import { useEffect, useMemo, useRef } from "react";
 import NavegacaoPrincipal from "./NavegacaoPrincipal";
-import { Outlet } from "react-router-dom";
+import { useLocation, useOutlet } from "react-router-dom";
+
+/**
+ * KeepAlive de rotas: mantém páginas montadas ao trocar abas do sistema.
+ * - Evita “piscada”/tela branca ao navegar
+ * - Preserva estado local (inputs/modais) ao trocar entre páginas
+ */
+function KeepAliveOutlet({ max = 10 }) {
+  const location = useLocation();
+  const outlet = useOutlet();
+
+  const key = location.pathname;
+
+  const cacheRef = useRef(new Map()); // pathname -> ReactNode
+  const orderRef = useRef([]);        // LRU simples
+
+  useEffect(() => {
+    if (!outlet) return;
+
+    const cache = cacheRef.current;
+    const order = orderRef.current;
+
+    if (!cache.has(key)) {
+      cache.set(key, outlet);
+      order.push(key);
+
+      while (order.length > max) {
+        const oldest = order.shift();
+        if (oldest && oldest !== key) cache.delete(oldest);
+      }
+    } else {
+      const idx = order.indexOf(key);
+      if (idx >= 0) {
+        order.splice(idx, 1);
+        order.push(key);
+      }
+    }
+  }, [key, outlet, max]);
+
+  const entries = useMemo(() => Array.from(cacheRef.current.entries()), [key]);
+
+  return (
+    <>
+      {entries.map(([path, element]) => (
+        <div
+          key={path}
+          style={{ display: path === key ? "block" : "none" }}
+          aria-hidden={path !== key}
+        >
+          {element}
+        </div>
+      ))}
+    </>
+  );
+}
 
 export default function SistemaBase({ tipoConta }) {
   return (
@@ -13,7 +67,6 @@ export default function SistemaBase({ tipoConta }) {
         fontFamily: "'Inter', 'Poppins', sans-serif",
       }}
     >
-      {/* TOPO COM AS ABAS */}
       <header
         style={{
           width: "100%",
@@ -22,11 +75,9 @@ export default function SistemaBase({ tipoConta }) {
           zIndex: 10,
         }}
       >
-        {/* Agora sem maxWidth, ocupa toda a tela */}
         <NavegacaoPrincipal tipoConta={tipoConta} />
       </header>
 
-      {/* CONTEÚDO DAS PÁGINAS */}
       <main
         style={{
           flex: 1,
@@ -42,7 +93,7 @@ export default function SistemaBase({ tipoConta }) {
             boxSizing: "border-box",
           }}
         >
-          <Outlet />
+          <KeepAliveOutlet max={10} />
         </div>
       </main>
     </div>
