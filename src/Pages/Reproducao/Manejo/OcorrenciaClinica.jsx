@@ -757,6 +757,7 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
           setShowNovoProt(false);
           carregarProtocolos(true);
         }}
+        initialDoenca={oc}
         sugestoesDoencas={OCORRENCIAS.map((o) => ({ value: o, label: o }))}
       />
     </form>

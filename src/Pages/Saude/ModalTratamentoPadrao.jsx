@@ -1,24 +1,28 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 
 const overlayStyle = {
   position: "fixed",
   inset: 0,
-  background: "rgba(15,23,42,0.7)",
+  background: "rgba(0,0,0,0.55)",
   display: "flex",
   justifyContent: "center",
   alignItems: "center",
-  zIndex: 9999,
-  padding: 12,
+  zIndex: 10000,
+  padding: 24,
 };
 
 const modalStyle = {
   background: "#fff",
-  width: "min(760px, 95vw)",
+  width: "min(1100px, 92vw)",
+  height: "min(86vh, 920px)",
   borderRadius: 16,
-  boxShadow: "0 16px 40px rgba(15,23,42,0.35)",
+  boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
   overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
   fontFamily: "Poppins, sans-serif",
 };
 
@@ -76,7 +80,14 @@ const emptyItem = () => ({
   carencia_carne_dias: "",
 });
 
-export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoesDoencas = [] }) {
+export default function ModalTratamentoPadrao({
+  open,
+  onClose,
+  onSaved,
+  initialDoenca = "",
+  initialNome = "",
+  sugestoesDoencas = [],
+}) {
   const { fazendaAtualId } = useFazenda();
   const [nome, setNome] = useState("");
   const [doenca, setDoenca] = useState("");
@@ -91,12 +102,12 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
 
   useEffect(() => {
     if (!open) return;
-    setNome("");
-    setDoenca("");
+    setNome(initialNome || "");
+    setDoenca(initialDoenca || "");
     setItens([emptyItem()]);
     setErrorMsg("");
     setLoading(false);
-  }, [open]);
+  }, [open, initialNome, initialDoenca]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -106,8 +117,6 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
-
-  if (!open) return null;
 
   const atualizarItem = (id, patch) => {
     setItens((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -174,10 +183,10 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
         carencia_carne_dias_max: carenciaCarneMax,
       };
 
-      const { error } = await supabase.from("saude_protocolos").insert([row]);
+      const { data, error } = await supabase.from("saude_protocolos").insert([row]).select("*").single();
       if (error) throw error;
 
-      onSaved?.();
+      onSaved?.(data ?? row);
     } catch (err) {
       console.error(err);
       setErrorMsg("Não foi possível salvar o protocolo. Tente novamente.");
@@ -186,7 +195,9 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
     }
   };
 
-  return (
+  if (!open) return null;
+
+  const content = (
     <div style={overlayStyle} onClick={(e) => e.target === e.currentTarget && onClose?.()}>
       <div style={modalStyle}>
         <div style={headerStyle}>
@@ -196,7 +207,7 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
           </button>
         </div>
 
-        <div style={{ padding: "18px 20px", display: "grid", gap: 16, maxHeight: "75vh", overflowY: "auto" }}>
+        <div style={{ padding: "18px 20px", display: "grid", gap: 16, overflowY: "auto", flex: 1 }}>
           <div>
             <div style={sectionTitleStyle}>Informações gerais</div>
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
@@ -351,4 +362,6 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
       </div>
     </div>
   );
+
+  return createPortal(content, document.body);
 }
