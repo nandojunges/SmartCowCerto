@@ -171,6 +171,7 @@ export default function Animais() {
   const [animaisAtivos, setAnimaisAtivos] = useState(() => memoData.animaisAtivos ?? []);
   const [animaisInativos, setAnimaisInativos] = useState(() => memoData.animaisInativos ?? []);
   const [carregando, setCarregando] = useState(() => memoData.carregando ?? false);
+  const [atualizando, setAtualizando] = useState(() => memoData.atualizando ?? false);
   const [offlineAviso, setOfflineAviso] = useState(() => memoData.offlineAviso ?? "");
 
   const [fichaOpen, setFichaOpen] = useState(false);
@@ -181,11 +182,23 @@ export default function Animais() {
       animaisAtivos,
       animaisInativos,
       carregando,
+      atualizando,
       offlineAviso,
       isOnline,
       abaAtiva,
     };
-  }, [animaisAtivos, animaisInativos, carregando, offlineAviso, isOnline, abaAtiva]);
+  }, [animaisAtivos, animaisInativos, carregando, atualizando, offlineAviso, isOnline, abaAtiva]);
+
+  useEffect(() => {
+    console.log("[Animais] mount");
+    return () => console.log("[Animais] unmount");
+  }, []);
+
+  useEffect(() => {
+    const onVis = () => console.log("[Animais] visibility:", document.visibilityState);
+    window.addEventListener("visibilitychange", onVis);
+    return () => window.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   useEffect(() => {
     const on = () => setIsOnline(true);
@@ -292,6 +305,7 @@ export default function Animais() {
       const CACHE_PLANTEL_KEY = "cache:animais:plantel:v1";
       const memo = MEMO_ANIMAIS.data;
       const memoFresh = memo && Date.now() - MEMO_ANIMAIS.lastAt < 30000;
+      const hasAnimais = animaisAtivos.length > 0 || animaisInativos.length > 0;
 
       if (
         !force &&
@@ -303,58 +317,64 @@ export default function Animais() {
         return;
       }
 
-      setCarregando(true);
+      if (!hasAnimais) {
+        setCarregando(true);
+      } else {
+        setAtualizando(true);
+      }
       setOfflineAviso("");
 
-      if (!isOnline) {
-        console.log("[animais] offline -> lendo cache:animais:list");
-        const cachePrimario = await kvGet(CACHE_LIST_KEY);
-        const cacheSecundario = cachePrimario ? null : await kvGet(CACHE_PLANTEL_KEY);
-        const cache = cachePrimario ?? cacheSecundario;
-        const lista = Array.isArray(cache) ? cache : Array.isArray(cache?.animais) ? cache.animais : [];
-        console.log(`[animais] cache length: ${lista.length}`);
+      try {
+        if (!isOnline) {
+          console.log("[animais] offline -> lendo cache:animais:list");
+          const cachePrimario = await kvGet(CACHE_LIST_KEY);
+          const cacheSecundario = cachePrimario ? null : await kvGet(CACHE_PLANTEL_KEY);
+          const cache = cachePrimario ?? cacheSecundario;
+          const lista = Array.isArray(cache)
+            ? cache
+            : Array.isArray(cache?.animais)
+              ? cache.animais
+              : [];
+          console.log(`[animais] cache length: ${lista.length}`);
 
-        if (lista.length === 0) {
-          const aviso =
-            "Sem dados offline ainda. Conecte na internet uma vez para baixar os animais.";
+          if (lista.length === 0) {
+            const aviso =
+              "Sem dados offline ainda. Conecte na internet uma vez para baixar os animais.";
+            setOfflineAviso(aviso);
+            return;
+          }
+
+          const ativos = lista.filter((animal) => animal?.ativo !== false);
+          const inativos = lista
+            .filter((animal) => animal?.ativo === false)
+            .map((animal) => ({
+              id: animal?.id,
+              numero: animal?.numero,
+              brinco: animal?.brinco,
+              saida_id: null,
+              tipo_saida: "",
+              motivo: "",
+              data_saida: "",
+              observacoes: "",
+              valor: null,
+            }));
+
+          const aviso = "";
+          setAnimaisAtivos(ativos);
+          setAnimaisInativos(inativos);
           setOfflineAviso(aviso);
-          setCarregando(false);
+          MEMO_ANIMAIS.lastAt = Date.now();
+          MEMO_ANIMAIS.data = {
+            ...(MEMO_ANIMAIS.data || {}),
+            animaisAtivos: ativos,
+            animaisInativos: inativos,
+            offlineAviso: aviso,
+            isOnline,
+          };
           return;
         }
 
-        const ativos = lista.filter((animal) => animal?.ativo !== false);
-        const inativos = lista
-          .filter((animal) => animal?.ativo === false)
-          .map((animal) => ({
-            id: animal?.id,
-            numero: animal?.numero,
-            brinco: animal?.brinco,
-            saida_id: null,
-            tipo_saida: "",
-            motivo: "",
-            data_saida: "",
-            observacoes: "",
-            valor: null,
-          }));
-
-        const aviso = "";
-        setAnimaisAtivos(ativos);
-        setAnimaisInativos(inativos);
-        setOfflineAviso(aviso);
-        MEMO_ANIMAIS.lastAt = Date.now();
-        MEMO_ANIMAIS.data = {
-          ...(MEMO_ANIMAIS.data || {}),
-          animaisAtivos: ativos,
-          animaisInativos: inativos,
-          offlineAviso: aviso,
-          isOnline,
-        };
-        setCarregando(false);
-        return;
-      }
-
-      console.log("[animais] online -> buscando supabase");
-      try {
+        console.log("[animais] online -> buscando supabase");
         if (!fazendaAtualId) {
           return;
         }
@@ -364,7 +384,9 @@ export default function Animais() {
           fazendaAtualId
         ).order("numero", { ascending: true });
 
-        setAnimaisAtivos(!erroAtivos && ativos ? ativos : []);
+        if (!erroAtivos && Array.isArray(ativos)) {
+          setAnimaisAtivos(ativos);
+        }
 
         const { data: inativosRaw, error: erroInativos } = await withFazendaId(
           supabase.from("animais").select("id, numero, brinco").eq("ativo", false),
@@ -433,22 +455,98 @@ export default function Animais() {
         MEMO_ANIMAIS.lastAt = Date.now();
         MEMO_ANIMAIS.data = {
           ...(MEMO_ANIMAIS.data || {}),
-          animaisAtivos: !erroAtivos && ativos ? ativos : [],
+          animaisAtivos: !erroAtivos && ativos ? ativos : animaisAtivos,
           animaisInativos: formatado,
           offlineAviso: "",
           isOnline,
         };
       } finally {
         setCarregando(false);
+        setAtualizando(false);
       }
     },
-    [fazendaAtualId, isOnline]
+    [animaisAtivos, animaisInativos, fazendaAtualId, isOnline]
   );
 
   useEffect(() => {
     if (!fazendaAtualId) return;
     carregarAnimais();
   }, [carregarAnimais, fazendaAtualId]);
+
+  useEffect(() => {
+    if (!fazendaAtualId) return;
+
+    const sortPorNumero = (a, b) => {
+      const numA = Number(a?.numero);
+      const numB = Number(b?.numero);
+      if (!Number.isNaN(numA) && !Number.isNaN(numB)) return numA - numB;
+      return String(a?.numero ?? "").localeCompare(String(b?.numero ?? ""));
+    };
+
+    const montarInativo = (animal, atual) => {
+      const base = atual || {
+        saida_id: null,
+        tipo_saida: "",
+        motivo: "",
+        data_saida: "",
+        observacoes: "",
+        valor: null,
+      };
+      return {
+        ...base,
+        id: animal?.id,
+        numero: animal?.numero,
+        brinco: animal?.brinco,
+      };
+    };
+
+    const upsertOrdenado = (lista, item, mapFn) => {
+      const filtrada = lista.filter((it) => it?.id !== item?.id);
+      const novoItem = mapFn ? mapFn(item, lista.find((it) => it?.id === item?.id)) : item;
+      return [...filtrada, novoItem].sort(sortPorNumero);
+    };
+
+    const removerPorId = (lista, id) => lista.filter((it) => it?.id !== id);
+
+    const channel = supabase
+      .channel(`rt-animais-${fazendaAtualId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "animais", filter: `fazenda_id=eq.${fazendaAtualId}` },
+        (payload) => {
+          const novo = payload?.new || payload?.old;
+          if (!novo?.id) return;
+
+          const ativo = novo?.ativo !== false;
+          if (payload.eventType === "INSERT") {
+            if (ativo) {
+              setAnimaisAtivos((prev) => upsertOrdenado(prev, novo));
+            } else {
+              setAnimaisInativos((prev) => upsertOrdenado(prev, novo, montarInativo));
+            }
+            return;
+          }
+
+          if (payload.eventType === "UPDATE") {
+            setAnimaisAtivos((prev) => (ativo ? upsertOrdenado(prev, novo) : removerPorId(prev, novo.id)));
+            setAnimaisInativos((prev) =>
+              ativo ? removerPorId(prev, novo.id) : upsertOrdenado(prev, novo, montarInativo)
+            );
+            return;
+          }
+
+          if (payload.eventType === "DELETE") {
+            setAnimaisAtivos((prev) => removerPorId(prev, novo.id));
+            setAnimaisInativos((prev) => removerPorId(prev, novo.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fazendaAtualId]);
 
   useEffect(() => {
     const overflowOriginal = document.body.style.overflow;
@@ -506,7 +604,7 @@ export default function Animais() {
       >
         <div style={isPlantelTab ? plantelWrapperStyle : cardBaseStyle}>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            {carregando && hasAnimais && (
+            {atualizando && (
               <div className="px-4 pb-2 text-xs font-medium text-gray-500">
                 Atualizando animais...
               </div>

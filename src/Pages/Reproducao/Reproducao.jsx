@@ -13,6 +13,7 @@ export default function Reproducao() {
   const [registros, setRegistros] = useState([]);
   const [previsoesMap, setPrevisoesMap] = useState(new Map());
   const [carregando, setCarregando] = useState(false);
+  const [atualizando, setAtualizando] = useState(false);
   const [erro, setErro] = useState("");
   const [animalSelecionado, setAnimalSelecionado] = useState(null);
   const [abaAtiva, setAbaAtiva] = useState("tabela");
@@ -278,14 +279,21 @@ export default function Reproducao() {
   // Carregar tabela principal
   // =========================
   const carregarTabela = useCallback(async () => {
+    const hasRegistros = registros.length > 0;
+
     if (!fazendaAtualId) {
       setRegistros([]);
       setErro("");
       setCarregando(false);
+      setAtualizando(false);
       return;
     }
 
-    setCarregando(true);
+    if (!hasRegistros) {
+      setCarregando(true);
+    } else {
+      setAtualizando(true);
+    }
     setErro("");
 
     try {
@@ -296,7 +304,9 @@ export default function Reproducao() {
         .order("numero", { ascending: true });
 
       if (error) throw error;
-      setRegistros(Array.isArray(data) ? data : []);
+      if (Array.isArray(data)) {
+        setRegistros(data);
+      }
 
       const { data: previsoesData, error: previsoesError } = await supabase
         .from("v_repro_previsoes")
@@ -304,7 +314,7 @@ export default function Reproducao() {
         .eq("fazenda_id", fazendaAtualId);
       if (previsoesError) {
         console.warn("Erro ao carregar previsões reprodutivas:", previsoesError);
-        setPrevisoesMap(new Map());
+        if (!hasRegistros) setPrevisoesMap(new Map());
       } else {
         const map = new Map();
         (previsoesData || []).forEach((row) => {
@@ -314,16 +324,30 @@ export default function Reproducao() {
       }
     } catch (err) {
       setErro(err?.message || "Erro ao carregar reprodução.");
-      setRegistros([]);
-      setPrevisoesMap(new Map());
+      if (!hasRegistros) {
+        setRegistros([]);
+        setPrevisoesMap(new Map());
+      }
     } finally {
       setCarregando(false);
+      setAtualizando(false);
     }
-  }, [fazendaAtualId]);
+  }, [fazendaAtualId, registros.length]);
 
   useEffect(() => {
     carregarTabela();
   }, [carregarTabela]);
+
+  useEffect(() => {
+    console.log("[Reproducao] mount");
+    return () => console.log("[Reproducao] unmount");
+  }, []);
+
+  useEffect(() => {
+    const onVis = () => console.log("[Reproducao] visibility:", document.visibilityState);
+    window.addEventListener("visibilitychange", onVis);
+    return () => window.removeEventListener("visibilitychange", onVis);
+  }, []);
 
 
   const carregarAplicacoesAtivas = useCallback(async () => {
@@ -486,7 +510,7 @@ export default function Reproducao() {
                   Selecione uma fazenda para visualizar os registros
                 </td>
               </tr>
-            ) : carregando ? (
+            ) : carregando && registros.length === 0 ? (
               <tr>
                 <td colSpan={12} style={styles.loadingState}>
                   Carregando registros...
@@ -615,7 +639,13 @@ export default function Reproducao() {
                 backgroundColor: carregando ? "#f59e0b" : "#22c55e",
               }}
             />
-            <span>{carregando ? "Carregando..." : `${linhas.length} animais`}</span>
+            <span>
+              {carregando && registros.length === 0
+                ? "Carregando..."
+                : atualizando
+                  ? "Atualizando..."
+                  : `${linhas.length} animais`}
+            </span>
           </div>
           <span style={{ color: "#cbd5e1" }}>•</span>
           <span>{fazendaAtualId ? "Dados atualizados" : "Selecione uma fazenda"}</span>
