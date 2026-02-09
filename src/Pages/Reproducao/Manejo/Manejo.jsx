@@ -216,9 +216,22 @@ function sanitizeReproEventoPayload(payload) {
   return cleanPayload;
 }
 
+function ensureTipoReproEvento(payload, origem) {
+  if (!payload || typeof payload !== "object") return payload;
+  const rawTipo = payload?.tipo;
+  const normalizedTipo = typeof rawTipo === "string" ? rawTipo.trim().toUpperCase() : rawTipo;
+  if (TIPO_ENUM_VALIDO.has(normalizedTipo)) {
+    return normalizedTipo === rawTipo ? payload : { ...payload, tipo: normalizedTipo };
+  }
+  console.error("Tipo inválido p/ repro_eventos.tipo", { origem, tipo: rawTipo, payload });
+  throw new Error(`Tipo inválido p/ repro_eventos: "${rawTipo}". Use IA/DG/PARTO/SECAGEM/PROTOCOLO.`);
+}
+
 async function insertReproEvento(payload) {
   console.log("[repro_eventos] payload(tipo)", payload?.tipo, payload);
-  const sanitizedPayload = sanitizeReproEventoPayload(payload);
+  const validatedPayload = ensureTipoReproEvento(payload, "insertReproEvento");
+  const sanitizedPayload = sanitizeReproEventoPayload(validatedPayload);
+  console.log("[INSERT repro_eventos A] tipo=", sanitizedPayload?.tipo, sanitizedPayload);
   const { data, error } = await supabase.from("repro_eventos").insert([sanitizedPayload]).select("*").maybeSingle();
   if (error) throw error;
   return data;
@@ -744,7 +757,13 @@ export default function VisaoGeral({
   const insertReproEventos = async (payloads) => {
     const payload = payloads;
     console.log("[repro_eventos] payload(tipo)", payload?.tipo, payload);
-    const sanitizedPayloads = payloads.map((item) => sanitizeReproEventoPayload(item));
+    const sanitizedPayloads = payloads.map((item) => {
+      const validated = ensureTipoReproEvento(item, "insertReproEventos");
+      return sanitizeReproEventoPayload(validated);
+    });
+    sanitizedPayloads.forEach((item) => {
+      console.log("[INSERT repro_eventos B] tipo=", item?.tipo, item);
+    });
     const { error } = await supabase.from("repro_eventos").insert(sanitizedPayloads);
     if (error) throw error;
   };
