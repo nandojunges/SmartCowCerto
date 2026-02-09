@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import Select, { components } from "react-select";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Select from "react-select";
 import CreatableSelect from "react-select/creatable";
+import { supabase } from "../../../lib/supabaseClient";
+import { useFazenda } from "../../../context/FazendaContext";
+import ModalTratamentoPadrao from "../../Saude/ModalTratamentoPadrao";
 
 /* =========================================================
    DESIGN SYSTEM
@@ -42,6 +45,8 @@ const parseBR = (str) => {
   return Number.isFinite(dt.getTime()) ? dt : null;
 };
 const addHours = (dt, h) => { const d = new Date(dt.getTime()); d.setHours(d.getHours() + h); return d; };
+const addDays = (dt, days) => { const d = new Date(dt.getTime()); d.setDate(d.getDate() + days); return d; };
+const toBRDate = (dt) => `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`;
 const duracaoTotalTexto = (reps, gapH) => {
   const r = Number(reps), gap = Number(gapH);
   if (!Number.isFinite(r) || !Number.isFinite(gap) || r <= 0 || gap <= 0) return "";
@@ -350,6 +355,7 @@ const OCORRENCIAS = [
 ];
 
 export default function OcorrenciaClinica({ animal, onSubmit }) {
+  const { fazendaAtualId } = useFazenda();
   const [oc, setOc] = useState("Metrite");
   const [obs, setObs] = useState("");
   const [produtos, setProdutos] = useState([]);
@@ -358,6 +364,10 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
   const [items, setItems] = useState([]);
   const [agendar, setAgendar] = useState(true);
   const [baixarEstoque, setBaixarEstoque] = useState(true);
+  const [protocolosSaude, setProtocolosSaude] = useState([]);
+  const [protocoloSel, setProtocoloSel] = useState(null);
+  const [showNovoProtocolo, setShowNovoProtocolo] = useState(false);
+  const [carregandoProtocolos, setCarregandoProtocolos] = useState(false);
 
   // Fetch produtos (mantido igual)
   useEffect(() => {
@@ -405,6 +415,14 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
     });
   }, [produtos]);
 
+  const protocoloOptions = useMemo(() => {
+    return (protocolosSaude || []).map((p) => ({
+      value: p.id,
+      label: `${p.nome || "Protocolo"}${p.doenca ? ` (${p.doenca})` : ""}`,
+      meta: p,
+    }));
+  }, [protocolosSaude]);
+
   const novaLinha = () => ({
     id: crypto.randomUUID(),
     produtoId: "", produtoNome: "", _optLabel: "",
@@ -417,6 +435,72 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
   const add = () => { if (!showTrat) setShowTrat(true); setItems(prev => [...prev, novaLinha()]); };
   const upd = (id, patch) => setItems(prev => prev.map(it => (it.id === id ? { ...it, ...patch } : it)));
   const del = (id) => setItems(prev => prev.filter(it => it.id !== id));
+
+  const aplicarProtocolo = useCallback((protocolo) => {
+    if (!protocolo) return;
+    const hoje = new Date();
+    const itensProto = Array.isArray(protocolo.itens) ? protocolo.itens : [];
+    const novos = itensProto.map((it) => {
+      const dia = Number(it.dia) || 0;
+      const inicio = toBRDate(addDays(hoje, dia));
+      const produtoNome = it.produto_nome || "";
+      const produtoId = it.produto_id || (produtoNome ? `name:${produtoNome}` : "");
+      return {
+        id: crypto.randomUUID(),
+        produtoId,
+        produtoNome,
+        _optLabel: produtoNome,
+        dose: it.quantidade ?? "",
+        unidade: it.unidade || "",
+        via: it.via || "",
+        inicioData: inicio,
+        inicioHora: "08:00",
+        repeticoes: 1,
+        intervaloHoras: 24,
+        obs: it.obs || "",
+      };
+    });
+    setItems(novos);
+    setShowTrat(true);
+  }, []);
+
+  const carregarProtocolos = useCallback(async (selecionarRecente = false) => {
+    if (!fazendaAtualId) {
+      setProtocolosSaude([]);
+      setProtocoloSel(null);
+      return;
+    }
+    setCarregandoProtocolos(true);
+    try {
+      const { data, error } = await supabase
+        .from("saude_protocolos")
+        .select("*")
+        .eq("fazenda_id", fazendaAtualId)
+        .order("created_at", { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        setProtocolosSaude(data);
+        if (selecionarRecente && data.length > 0) {
+          setProtocoloSel(data[0]);
+          aplicarProtocolo(data[0]);
+        }
+      } else {
+        setProtocolosSaude([]);
+      }
+    } finally {
+      setCarregandoProtocolos(false);
+    }
+  }, [fazendaAtualId, aplicarProtocolo]);
+
+  useEffect(() => {
+    carregarProtocolos();
+  }, [carregarProtocolos]);
+
+  const handleProtocoloChange = (opt) => {
+    const selecionado = opt?.meta || null;
+    setProtocoloSel(selecionado);
+    if (selecionado) aplicarProtocolo(selecionado);
+  };
 
   const makeAgendaLabel = (it) => {
     const nome = it.produtoId?.startsWith("custom:") || it.produtoId?.startsWith("name:")
@@ -521,6 +605,50 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
 
       {/* SEÇÃO 2: TRATAMENTOS */}
       <div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "12px", alignItems: "end", marginBottom: "12px" }}>
+          <div>
+            <InputGroup
+              label="Protocolo terapêutico (opcional)"
+              icon={() => <span>📋</span>}
+              help="Selecione para preencher automaticamente D0/D7 etc. (você pode editar depois)."
+            >
+              <Select
+                styles={{
+                  control: (b,s) => ({ ...b, minHeight: 44, borderRadius: theme.radius.md, borderColor: s.isFocused ? theme.colors.primary[500] : theme.colors.slate[200], boxShadow: s.isFocused ? `0 0 0 3px ${theme.colors.primary[100]}` : "none" }),
+                  menuPortal: (b) => ({ ...b, zIndex: 9999 }),
+                }}
+                options={protocoloOptions}
+                value={protocoloSel ? { value: protocoloSel.id, label: `${protocoloSel.nome || "Protocolo"}${protocoloSel.doenca ? ` (${protocoloSel.doenca})` : ""}`, meta: protocoloSel } : null}
+                onChange={handleProtocoloChange}
+                placeholder={carregandoProtocolos ? "Carregando protocolos..." : "Selecione um protocolo"}
+                isClearable
+                isLoading={carregandoProtocolos}
+                noOptionsMessage={() => carregandoProtocolos ? "Carregando..." : "Nenhum protocolo cadastrado"}
+                menuPortalTarget={document.body}
+              />
+            </InputGroup>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={() => setShowNovoProtocolo(true)}
+              style={{
+                padding: "10px 14px",
+                fontSize: "12px",
+                fontWeight: 700,
+                color: theme.colors.primary[700],
+                background: theme.colors.primary[50],
+                border: `1px solid ${theme.colors.primary[200]}`,
+                borderRadius: theme.radius.md,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              + Criar protocolo
+            </button>
+          </div>
+        </div>
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
           <h3 style={{ margin: 0, fontSize: "12px", fontWeight: 800, color: theme.colors.slate[600], textTransform: "uppercase", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: "8px" }}>
             <Icons.pill /> Protocolo de Tratamento
@@ -592,6 +720,16 @@ export default function OcorrenciaClinica({ animal, onSubmit }) {
           Registrar Ocorrência Clínica
         </button>
       </div>
+
+      <ModalTratamentoPadrao
+        open={showNovoProtocolo}
+        onClose={() => setShowNovoProtocolo(false)}
+        onSaved={() => {
+          setShowNovoProtocolo(false);
+          carregarProtocolos(true);
+        }}
+        sugestoesDoencas={OCORRENCIAS.map((o) => ({ value: o, label: o }))}
+      />
     </div>
   );
 }

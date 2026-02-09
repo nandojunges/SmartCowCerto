@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Select from "react-select";
 import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
 import "../../styles/botoes.css";
 
 /* ===================== MODAL BASE ===================== */
@@ -133,6 +134,7 @@ function InputBase(props) {
 }
 
 export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoesDoencas }) {
+  const { fazendaAtualId } = useFazenda();
   const [salvando, setSalvando] = useState(false);
   const [carregandoProdutos, setCarregandoProdutos] = useState(false);
   const [erro, setErro] = useState("");
@@ -172,11 +174,18 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
     setErro("");
 
     try {
+      if (!fazendaAtualId) {
+        setProdutosEstoque([]);
+        setErro("Selecione uma fazenda para carregar os produtos.");
+        return;
+      }
+
       const { data, error } = await supabase
         .from("estoque_produtos")
         .select(
           "id, nome_comercial, categoria, unidade, tipo_farmacia, carencia_leite_dias, carencia_carne_dias, sem_carencia_leite, sem_carencia_carne"
         )
+        .eq("fazenda_id", fazendaAtualId)
         .order("nome_comercial", { ascending: true });
 
       if (error) {
@@ -219,7 +228,7 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
     } finally {
       setCarregandoProdutos(false);
     }
-  }, []);
+  }, [fazendaAtualId]);
 
   useEffect(() => {
     if (!open) return;
@@ -249,6 +258,9 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
 
   const salvar = async () => {
     setErro("");
+    if (!fazendaAtualId) {
+      return setErro("Selecione uma fazenda antes de salvar o protocolo.");
+    }
     const nomeLimpo = nome.trim();
     if (!nomeLimpo) return setErro("Informe um nome para o protocolo.");
     if (!doencaSel?.value) return setErro("Selecione a doença/condição.");
@@ -276,6 +288,9 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
 
     setSalvando(true);
     try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id ?? null;
+
       const payload = {
         nome: nomeLimpo,
         doenca: doencaSel.value,
@@ -284,6 +299,8 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
         duracao_dias: duracaoCalculada,
         carencia_leite_dias_max: resumoCarencia.maxLeite,
         carencia_carne_dias_max: resumoCarencia.maxCarne,
+        fazenda_id: fazendaAtualId,
+        user_id: userId,
       };
 
       const { error } = await supabase.from("saude_protocolos").insert([payload]);

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Select from "react-select";
 import { supabase } from "../../lib/supabaseClient";
+import { useFazenda } from "../../context/FazendaContext";
 
 import "../../styles/tabelamoderna.css";
 import "../../styles/botoes.css";
@@ -78,6 +79,7 @@ function endOfDayISO(dateInputYYYYMMDD) {
 }
 
 export default function Saude() {
+  const { fazendaAtualId } = useFazenda();
   const hoje = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -137,6 +139,15 @@ export default function Saude() {
     const mySeq = ++reqSeq.current;
     setCarregando(true);
 
+    if (!fazendaAtualId) {
+      setAnimais([]);
+      setTratamentos([]);
+      setAplicacoes([]);
+      setProtocolos([]);
+      setCarregando(false);
+      return;
+    }
+
     const iniISO = startOfDayISO(dtIni);
     const fimISO = endOfDayISO(dtFim);
 
@@ -146,6 +157,7 @@ export default function Saude() {
       const { data, error } = await supabase
         .from("animais")
         .select("id, numero, brinco, raca_id, categoria, situacao_produtiva, ativo")
+        .eq("fazenda_id", fazendaAtualId)
         .order("numero", { ascending: true });
 
       if (!error && Array.isArray(data)) animaisData = data;
@@ -159,6 +171,7 @@ export default function Saude() {
         .select(
           "id, animal_id, doenca, protocolo_id, status, data_inicio, data_fim, responsavel_id, observacao, created_at"
         )
+        .eq("fazenda_id", fazendaAtualId)
         .gte("data_inicio", iniISO)
         .lte("data_inicio", fimISO)
         .order("data_inicio", { ascending: false });
@@ -172,6 +185,7 @@ export default function Saude() {
       const { data, error } = await supabase
         .from("saude_aplicacoes")
         .select("id, tratamento_id, animal_id, data_prevista, data_real, produto, dose, via, status")
+        .eq("fazenda_id", fazendaAtualId)
         .gte("data_prevista", iniISO)
         .lte("data_prevista", fimISO)
         .order("data_prevista", { ascending: true });
@@ -184,10 +198,9 @@ export default function Saude() {
     try {
       const { data, error } = await supabase
         .from("saude_protocolos")
-        .select(
-          "id, nome, doenca, duracao_dias, ultimo_dia, carencia_leite_dias_max, carencia_carne_dias_max, itens, created_at"
-        )
-        .order("nome", { ascending: true });
+        .select("*")
+        .eq("fazenda_id", fazendaAtualId)
+        .order("created_at", { ascending: false });
 
       if (!error && Array.isArray(data)) protData = data;
     } catch {}
@@ -200,7 +213,7 @@ export default function Saude() {
     setProtocolos(protData);
 
     setCarregando(false);
-  }, [dtIni, dtFim]);
+  }, [dtIni, dtFim, fazendaAtualId]);
 
   useEffect(() => {
     carregarTudo();
