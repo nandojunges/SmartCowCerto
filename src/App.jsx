@@ -32,6 +32,19 @@ import AjustesNotificacoes from "./Pages/Ajustes/AjustesNotificacoes.jsx";
 import AjustesPerfil from "./Pages/Ajustes/AjustesPerfil.jsx";
 import Admin from "./Pages/Admin/Admin.jsx";
 import TecnicoHome from "./Pages/Tecnico/TecnicoHome.jsx";
+import SmartCowShell from "./app/routes/SmartCowShell";
+import HomeMobile from "./features/home_mobile/HomeMobile";
+import AnimaisMobile from "./features/animais_mobile/AnimaisMobile";
+import NovoAnimalMobile from "./features/animais_mobile/NovoAnimalMobile";
+import AnimalMobileDetalhe from "./features/animais_mobile/AnimalMobileDetalhe";
+import LeiteMobile from "./features/leite_mobile/LeiteMobile";
+import LancarLeiteMobile from "./features/leite_mobile/LancarLeiteMobile";
+import ReproMobile from "./features/repro_mobile/ReproMobile";
+import RegistrarIAMobile from "./features/repro_mobile/RegistrarIAMobile";
+import RegistrarDGMobile from "./features/repro_mobile/RegistrarDGMobile";
+import ProtocolosMobile from "./features/repro_mobile/ProtocolosMobile";
+import CalendarioMobile from "./features/calendario_mobile/CalendarioMobile";
+import MaisMobile from "./features/mais_mobile/MaisMobile";
 
 export default function App() {
   const {
@@ -97,6 +110,23 @@ export default function App() {
             {/* redireciona "/" para /inicio por padrão */}
             <Route path="/" element={<Navigate to="/inicio" replace />} />
 
+            <Route element={<SmartCowShell />}>
+              <Route path="/m" element={<Outlet />}>
+                <Route index element={<HomeMobile />} />
+                <Route path="animais" element={<AnimaisMobile />} />
+                <Route path="animais/novo" element={<NovoAnimalMobile />} />
+                <Route path="animais/:id" element={<AnimalMobileDetalhe />} />
+                <Route path="leite" element={<LeiteMobile />} />
+                <Route path="leite/lancar" element={<LancarLeiteMobile />} />
+                <Route path="repro" element={<ReproMobile />} />
+                <Route path="repro/ia" element={<RegistrarIAMobile />} />
+                <Route path="repro/dg" element={<RegistrarDGMobile />} />
+                <Route path="repro/protocolos" element={<ProtocolosMobile />} />
+                <Route path="calendario" element={<CalendarioMobile />} />
+                <Route path="mais" element={<MaisMobile />} />
+              </Route>
+            </Route>
+
             {/* 🟥 ADMIN FORA DO LAYOUT (sem menu azul) */}
             <Route
               path="/admin/*"
@@ -114,7 +144,8 @@ export default function App() {
             </Route>
 
             {/* 🟦 DEMAIS PÁGINAS DENTRO DO SISTEMABASE (com menu azul) */}
-            <Route element={<SistemaBase tipoConta={tipoConta} />}>
+            <Route element={<SmartCowShell />}>
+              <Route element={<SistemaBase tipoConta={tipoConta} />}>
               <Route
                 element={
                 <AssistenteGuard
@@ -148,6 +179,7 @@ export default function App() {
 
               {/* qualquer rota desconhecida volta para /inicio */}
               <Route path="*" element={<Navigate to={isAdminPath ? "/admin" : "/inicio"} replace />} />
+              </Route>
             </Route>
           </>
         )}
