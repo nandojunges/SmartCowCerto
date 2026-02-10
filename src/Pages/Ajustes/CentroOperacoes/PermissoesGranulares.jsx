@@ -6,7 +6,7 @@ import { Shield, Eye, EyeOff, Check, X } from "lucide-react";
 const MODULOS = [
   { id: "animais", label: "Cadastro de Animais", icon: "🐄" },
   { id: "reproducao", label: "Reprodução", icon: "🧬" },
-  { id: "saude", label: "Sanidade", icon: "💉" },
+  { id: "saude", label: "Saúde", icon: "💉" },
   { id: "financeiro", label: "Financeiro", icon: "💰" },
   { id: "relatorios", label: "Relatórios", icon: "📊" },
   { id: "configuracoes", label: "Configurações", icon: "⚙️" },
