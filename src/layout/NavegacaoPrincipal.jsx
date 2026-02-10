@@ -1,4 +1,5 @@
-import React from "react";
+// src/components/NavegacaoPrincipal.jsx
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import StatusConexao from "../components/StatusConexao";
@@ -17,17 +18,18 @@ const ABAS_BASE = [
   { id: "ajustes",    label: "Ajustes",           icon: "⚙️" },
 ];
 
-const ABAS_TECNICO = [{ id: "tecnico", label: "Fazendas", icon: "🏘️" }];
+const ABA_TECNICO = { id: "tecnico", label: "Fazendas", icon: "🏘️" };
 
 function useAbaAtiva(pathname, abas) {
   const seg = pathname.split("/")[1] || abas[0]?.id || "inicio";
-  return abas.some((a) => a.id === seg) ? seg : abas[0]?.id || "inicio";
+  return abas.some((a) => a.id === seg) ? seg : (abas[0]?.id || "inicio");
 }
 
 export default function NavegacaoPrincipal() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { fazendaAtualId, clearFazendaAtualId, tipoConta, ready } = useFazenda();
+
   const consultorStorageKeys = [
     "modo",
     "consultorSession",
@@ -35,31 +37,67 @@ export default function NavegacaoPrincipal() {
     "smartcow:currentFarmId",
   ];
 
-  if (!ready) return null;
+  const colors = {
+    bg: "#0f172a",
+    text: "#f8fafc",
+    textMuted: "#94a3b8",
+    accent: "#3b82f6",
+    border: "rgba(148, 163, 184, 0.1)",
+  };
 
-  const tipoContaAtual = tipoConta ? String(tipoConta).trim().toUpperCase() : null;
-  if (!tipoContaAtual) return null;
+  const tipoContaAtual = useMemo(() => {
+    if (!tipoConta) return null;
+    const t = String(tipoConta).trim().toUpperCase();
+    return t || null;
+  }, [tipoConta]);
 
   const isAssistenteTecnico = tipoContaAtual === "ASSISTENTE_TECNICO";
-  const abas = isAssistenteTecnico ? ABAS_TECNICO : ABAS_BASE;
+
+  // ===== Abas finais conforme fluxo desejado =====
+  const abas = useMemo(() => {
+    if (!isAssistenteTecnico) return ABAS_BASE;
+
+    // CONSULTOR fora de fazenda -> só Fazendas
+    if (!fazendaAtualId) return [ABA_TECNICO];
+
+    // CONSULTOR dentro de fazenda -> só abas do produtor SEM Ajustes (e sem Fazendas)
+    return ABAS_BASE.filter((a) => a.id !== "ajustes");
+  }, [isAssistenteTecnico, fazendaAtualId]);
+
   const abaAtiva = useAbaAtiva(pathname, abas);
 
-  // Cores do sistema (consistente com as outras páginas)
-  const colors = {
-    bg: "#0f172a",           // slate-900 (mais suave que o navy anterior)
-    bgHover: "#1e293b",      // slate-800
-    text: "#f8fafc",         // slate-50
-    textMuted: "#94a3b8",    // slate-400
-    accent: "#3b82f6",       // blue-500 (para combinar com o sistema)
-    accentHover: "#2563eb",  // blue-600
-    border: "rgba(148, 163, 184, 0.1)"
-  };
+  // ===== Proteção: consultor fora da fazenda não pode cair em /inicio =====
+  useEffect(() => {
+    if (!ready) return;
+    if (!tipoContaAtual) return;
+
+    if (isAssistenteTecnico && !fazendaAtualId) {
+      const seg = pathname.split("/")[1] || "";
+      if (seg !== "tecnico") {
+        navigate("/tecnico", { replace: true });
+      }
+    }
+  }, [ready, tipoContaAtual, isAssistenteTecnico, fazendaAtualId, pathname, navigate]);
+
+  if (!ready) return null;
+  if (!tipoContaAtual) return null;
 
   const limparDadosConsultor = () => {
     clearFazendaAtualId();
     if (typeof localStorage !== "undefined") {
       consultorStorageKeys.forEach((key) => localStorage.removeItem(key));
     }
+  };
+
+  const handleIrParaAba = (abaId) => {
+    // fora da fazenda, a única aba é /tecnico
+    if (isAssistenteTecnico && !fazendaAtualId) {
+      navigate("/tecnico");
+      return;
+    }
+
+    // dentro da fazenda, navega normal entre as abas do produtor
+    navigate(`/${abaId}`);
   };
 
   return (
@@ -71,7 +109,8 @@ export default function NavegacaoPrincipal() {
         zIndex: 50,
         backgroundColor: colors.bg,
         borderBottom: `1px solid ${colors.border}`,
-        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+        boxShadow:
+          "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
@@ -102,7 +141,7 @@ export default function NavegacaoPrincipal() {
             </span>
           </div>
 
-          {isAssistenteTecnico && fazendaAtualId && (
+          {isAssistenteTecnico && (
             <span
               style={{
                 fontSize: 11,
@@ -121,7 +160,7 @@ export default function NavegacaoPrincipal() {
           )}
         </div>
 
-        {/* Navegação - Estilo Pill (igual às sub-abas do Consumo) */}
+        {/* Navegação */}
         <nav
           style={{
             display: "flex",
@@ -130,7 +169,7 @@ export default function NavegacaoPrincipal() {
             overflowX: "auto",
             flex: 1,
             padding: "4px",
-            backgroundColor: "rgba(30, 41, 59, 0.5)", // slate-800 com transparência
+            backgroundColor: "rgba(30, 41, 59, 0.5)",
             borderRadius: 12,
             border: `1px solid ${colors.border}`,
           }}
@@ -144,7 +183,7 @@ export default function NavegacaoPrincipal() {
               <button
                 key={aba.id}
                 type="button"
-                onClick={() => navigate(`/${aba.id}`)}
+                onClick={() => handleIrParaAba(aba.id)}
                 title={aba.label}
                 style={{
                   display: "flex",
@@ -177,8 +216,7 @@ export default function NavegacaoPrincipal() {
               >
                 <span style={{ fontSize: 14, opacity: isAtiva ? 1 : 0.7 }}>{aba.icon}</span>
                 <span>{aba.label}</span>
-                
-                {/* Indicador ativo (ponto) */}
+
                 {isAtiva && (
                   <span
                     style={{
@@ -198,26 +236,30 @@ export default function NavegacaoPrincipal() {
           })}
         </nav>
 
-        {/* Botão Sair - Estilo Ghost */}
+        {/* Sair */}
         <button
           onClick={async () => {
             if (isAssistenteTecnico) {
               if (fazendaAtualId) {
+                // dentro da fazenda -> volta pro painel consultor
                 limparDadosConsultor();
-                navigate("/tecnico");
+                navigate("/tecnico", { replace: true });
                 return;
               }
+
+              // fora da fazenda -> logout normal
               clearFazendaAtualId();
               await supabase.auth.signOut();
               if (typeof localStorage !== "undefined") localStorage.clear();
               if (typeof sessionStorage !== "undefined") sessionStorage.clear();
-              navigate("/login");
+              navigate("/login", { replace: true });
               return;
             }
+
             await supabase.auth.signOut();
             if (typeof localStorage !== "undefined") localStorage.clear();
             if (typeof sessionStorage !== "undefined") sessionStorage.clear();
-            navigate("/login");
+            navigate("/login", { replace: true });
           }}
           style={{
             display: "flex",
@@ -245,7 +287,16 @@ export default function NavegacaoPrincipal() {
             e.currentTarget.style.color = colors.textMuted;
           }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
             <polyline points="16 17 21 12 16 7" />
             <line x1="21" y1="12" x2="9" y2="12" />
