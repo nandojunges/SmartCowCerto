@@ -45,7 +45,7 @@ const styles = {
     borderSpacing: 0,
     fontSize: "14px",
     tableLayout: "fixed",
-    minWidth: 1100,
+    minWidth: 980,
   },
   th: {
     padding: "12px 12px",
@@ -65,7 +65,7 @@ const styles = {
     borderBottom: "1px solid #f1f5f9",
     color: "#334155",
     fontSize: "14px",
-    verticalAlign: "middle",
+    verticalAlign: "top",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -85,6 +85,21 @@ const styles = {
   userStack: { display: "flex", flexDirection: "column", gap: 2 },
   userName: { fontWeight: 600, color: "#0f172a" },
   userEmail: { fontSize: 12, color: "#64748b" },
+  acaoStack: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
+  acaoMain: {
+    color: "#0f172a",
+    fontWeight: 600,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  acaoMeta: {
+    color: "#64748b",
+    fontSize: 12,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   actionRow: { display: "flex", gap: 8, justifyContent: "flex-end" },
   actionBtn: {
     padding: "6px 10px",
@@ -189,10 +204,15 @@ const formatDateTime = (value) => {
 
 const buildResumo = (log) => {
   const resumo = String(log?.resumo || "").trim();
-  if (resumo) return resumo;
+  if (resumo) {
+    if (String(log?.animal_ref || "").trim()) return resumo;
+    return resumo;
+  }
   const acao = log?.acao ? String(log.acao) : "Ação";
   const entidade = log?.entidade ? String(log.entidade) : "entidade";
-  const animal = log?.animal_numero ? `animal ${log.animal_numero}` : "animal";
+  const animalRef = String(log?.animal_ref || "").trim();
+  const animalNumero = String(log?.animal_numero || "").trim();
+  const animal = animalRef || animalNumero ? `animal ${animalRef || animalNumero}` : "animal";
   return `${acao} – ${entidade} – ${animal}`;
 };
 
@@ -241,6 +261,7 @@ export default function LogsAuditoria({ showHeader = true }) {
           "registro_id",
           "animal_id",
           "animal_numero",
+          "animal_ref",
           "resumo",
           "actor_nome",
           "actor_email",
@@ -335,7 +356,6 @@ export default function LogsAuditoria({ showHeader = true }) {
                   {[
                     { key: "data", label: "Data/Hora", width: "140px" },
                     { key: "acao", label: "Ação" },
-                    { key: "animal", label: "Animal", width: "120px" },
                     { key: "modulo", label: "Módulo", width: "140px" },
                     { key: "usuario", label: "Usuário", width: "200px" },
                     { key: "acoes", label: "Ações", width: "200px", align: "right" },
@@ -356,21 +376,21 @@ export default function LogsAuditoria({ showHeader = true }) {
               <tbody>
                 {loading && (
                   <tr>
-                    <td style={{ ...styles.td, textAlign: "center" }} colSpan={6}>
+                    <td style={{ ...styles.td, textAlign: "center" }} colSpan={5}>
                       Carregando logs...
                     </td>
                   </tr>
                 )}
                 {!loading && error && (
                   <tr>
-                    <td style={{ ...styles.td, textAlign: "center" }} colSpan={6}>
+                    <td style={{ ...styles.td, textAlign: "center" }} colSpan={5}>
                       {error}
                     </td>
                   </tr>
                 )}
                 {!loading && !error && logs.length === 0 && (
                   <tr>
-                    <td style={{ ...styles.td, textAlign: "center" }} colSpan={6}>
+                    <td style={{ ...styles.td, textAlign: "center" }} colSpan={5}>
                       Nenhuma atividade registrada ainda.
                     </td>
                   </tr>
@@ -390,17 +410,19 @@ export default function LogsAuditoria({ showHeader = true }) {
                       >
                         <td style={styles.td}>{formatDateTime(log.created_at)}</td>
                         <td style={styles.td}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span>{resumo}</span>
-                            {cancelado && (
-                              <span style={{ ...styles.pill, ...styles.pillMute }}>
-                                Cancelado
-                              </span>
+                          <div style={styles.acaoStack}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={styles.acaoMain}>{resumo}</span>
+                              {cancelado && (
+                                <span style={{ ...styles.pill, ...styles.pillMute }}>
+                                  Cancelado
+                                </span>
+                              )}
+                            </div>
+                            {log.entidade && (
+                              <span style={styles.acaoMeta}>entidade: {log.entidade}</span>
                             )}
                           </div>
-                        </td>
-                        <td style={{ ...styles.td, fontFamily: "ui-monospace, monospace" }}>
-                          {log.animal_numero ?? "-"}
                         </td>
                         <td style={styles.td}>{log.modulo ?? "—"}</td>
                         <td style={styles.td}>
