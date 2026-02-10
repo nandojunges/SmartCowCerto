@@ -781,6 +781,7 @@ export default function ConsumoReposicao() {
         const userId = auth?.user?.id || null;
         row.user_id = userId;
         let produtoRow = null;
+        let prodData = null;
 
         if (idEdicao) {
           const { data, error } = await supabase
@@ -797,23 +798,25 @@ export default function ConsumoReposicao() {
           }
           produtoRow = data;
         } else {
+          const payloadInsert = row;
           console.log("[estoque_produtos:insert] payloadInsert", row);
           console.log("[estoque_produtos:insert] raca_repro", {
             raca_repro: row.raca_repro,
             categoria: row.categoria,
             sub_tipo: row.sub_tipo,
           });
-          const { data, error } = await supabase
+          const { data: insertedRow, error } = await supabase
             .from("estoque_produtos")
-            .insert(row)
-            .select("*")
+            .insert([payloadInsert])
+            .select("id, nome_comercial, unidade_medida")
             .single();
 
           if (error) {
             logSb("[estoque_produtos]", error);
             throw error;
           }
-          produtoRow = data;
+          prodData = insertedRow;
+          produtoRow = { ...row, ...insertedRow };
           if (import.meta?.env?.DEV) {
             console.log("[DEBUG insert estoque_produtos payload]", produtoPayload);
           }
@@ -930,9 +933,10 @@ export default function ConsumoReposicao() {
             (produtoRow?.unidade_medida || produtoPayload?.unidade_medida || "").trim() ||
             (produtoReutilizavel ? "uso" : "un");
 
-          const movRow = {
+          const payloadMov = {
             fazenda_id: fazendaAtualId,
-            produto_id: produtoRow?.id,
+            produto_id: prodData?.id,
+            produto_nome: prodData?.nome_comercial,
             lote_id: lote.id,
             tipo: "ENTRADA",
             data_mov: dataCompraISO || new Date().toISOString().slice(0, 10),
@@ -942,12 +946,18 @@ export default function ConsumoReposicao() {
             observacoes: observacoesRaw ? String(observacoesRaw).trim() : null,
             meta: { origem: "cadastro_produto_modal" },
           };
-          if (userId) movRow.user_id = userId;
+          if (userId) payloadMov.user_id = userId;
 
-          const { error: eM } = await supabase.from("estoque_movimentos").insert(movRow);
-          if (eM) {
-            logSb("[estoque_movimentos]", eM);
-            throw eM;
+          console.log("[payload movimento]", payloadMov);
+
+          if (prodData?.id === null || prodData?.id === undefined) {
+            toast.error("Produto criado sem ID. Não foi possível registrar o movimento.");
+          } else {
+            const { error: eM } = await supabase.from("estoque_movimentos").insert(payloadMov);
+            if (eM) {
+              logSb("[estoque_movimentos]", eM);
+              throw eM;
+            }
           }
         }
 
