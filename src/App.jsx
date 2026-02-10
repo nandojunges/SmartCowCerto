@@ -42,6 +42,8 @@ export default function App() {
     hasFazendaAtual,
     profileLoading,
     fazendasLoading,
+    permissoesModulo,
+    permissoesLoading,
   } = useFazenda();
   const { pathname } = useLocation();
 
@@ -125,22 +127,22 @@ export default function App() {
                 />
               }
             >
-                <Route path="/inicio" element={<Inicio />} />
-                <Route path="/animais" element={<Animais />} />
-                <Route path="/bezerras" element={<Bezerras />} />
-                <Route path="/reproducao" element={<Reproducao />} />
-                <Route path="/leite" element={<Leite />} />
-                <Route path="/saude" element={<Saude />} />
-                <Route path="/consumo" element={<ConsumoReposicao />} />
-                <Route path="/financeiro" element={<Financeiro />} />
-                <Route path="/calendario" element={<Calendario />} />
-                <Route path="/ajustes" element={<Ajustes />} />
-                <Route path="/ajustes/acessos" element={<AjustesAcessos />} />
-                <Route path="/ajustes/perfil" element={<AjustesPerfil />} />
-                <Route path="/ajustes/fazendas" element={<AjustesFazendas />} />
-                <Route path="/ajustes/aparencia" element={<AjustesAparencia />} />
-                <Route path="/ajustes/idioma" element={<AjustesIdioma />} />
-                <Route path="/ajustes/notificacoes" element={<AjustesNotificacoes />} />
+                <Route path="/inicio" element={<RequireModuloAccess modulo="inicio" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Inicio /></RequireModuloAccess>} />
+                <Route path="/animais" element={<RequireModuloAccess modulo="animais" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Animais /></RequireModuloAccess>} />
+                <Route path="/bezerras" element={<RequireModuloAccess modulo="bezerras" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Bezerras /></RequireModuloAccess>} />
+                <Route path="/reproducao" element={<RequireModuloAccess modulo="reproducao" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Reproducao /></RequireModuloAccess>} />
+                <Route path="/leite" element={<RequireModuloAccess modulo="leite" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Leite /></RequireModuloAccess>} />
+                <Route path="/saude" element={<RequireModuloAccess modulo="saude" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Saude /></RequireModuloAccess>} />
+                <Route path="/consumo" element={<RequireModuloAccess modulo="consumo" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><ConsumoReposicao /></RequireModuloAccess>} />
+                <Route path="/financeiro" element={<RequireModuloAccess modulo="financeiro" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Financeiro /></RequireModuloAccess>} />
+                <Route path="/calendario" element={<RequireModuloAccess modulo="calendario" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Calendario /></RequireModuloAccess>} />
+                <Route path="/ajustes" element={<RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><Ajustes /></RequireModuloAccess>} />
+                <Route path="/ajustes/acessos" element={<RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><AjustesAcessos /></RequireModuloAccess>} />
+                <Route path="/ajustes/perfil" element={<RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><AjustesPerfil /></RequireModuloAccess>} />
+                <Route path="/ajustes/fazendas" element={<RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><AjustesFazendas /></RequireModuloAccess>} />
+                <Route path="/ajustes/aparencia" element={<RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><AjustesAparencia /></RequireModuloAccess>} />
+                <Route path="/ajustes/idioma" element={<RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><AjustesIdioma /></RequireModuloAccess>} />
+                <Route path="/ajustes/notificacoes" element={<RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} permissoesModulo={permissoesModulo} permissoesLoading={permissoesLoading}><AjustesNotificacoes /></RequireModuloAccess>} />
               </Route>
               <Route path="/tecnico" element={<TecnicoHome />} />
 
@@ -201,4 +203,21 @@ function AdminGuard({ role, tipoConta, loading, fallbackPath }) {
   }
 
   return <Outlet />;
+}
+
+
+function RequireModuloAccess({ modulo, isAssistenteTecnico, permissoesModulo, permissoesLoading, children }) {
+  if (!isAssistenteTecnico) {
+    return children;
+  }
+
+  if (permissoesLoading) {
+    return null;
+  }
+
+  if (!permissoesModulo?.[modulo]?.pode_ver) {
+    return <Navigate to="/inicio" replace />;
+  }
+
+  return children;
 }

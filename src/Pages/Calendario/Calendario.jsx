@@ -2,6 +2,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus } from "lucide-react";
+import { useFazenda } from "../../context/FazendaContext";
 
 // Hooks
 import { useCalendar } from "./hooks/useCalendar";
@@ -47,6 +48,8 @@ export default function Calendario() {
   } = useCalendar();
 
   const { permissao, solicitarPermissao, notificarTarefa } = useNotifications();
+  const { canEditModulo } = useFazenda();
+  const podeEditar = canEditModulo("calendario");
   const toast = useToast();
 
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
@@ -97,6 +100,11 @@ export default function Calendario() {
 
   const handleAdicionarTarefa = useCallback(
     (tarefaData) => {
+      if (!podeEditar) {
+        toast.erro("Você não possui permissão para editar este módulo.");
+        return;
+      }
+
       if (tarefaData?.id) {
         atualizarTarefa(dataSel, tarefaData.id, tarefaData);
         toast.sucesso("Tarefa atualizada com sucesso!");
@@ -116,33 +124,36 @@ export default function Calendario() {
       setTarefaEditando(null);
       setMostrarFormulario(false);
     },
-    [adicionarTarefa, atualizarTarefa, dataSel, toast, permissao, notificarTarefa]
+    [adicionarTarefa, atualizarTarefa, dataSel, toast, permissao, notificarTarefa, podeEditar]
   );
 
   const handleToggleTarefa = useCallback(
     (data, tarefaId) => {
+      if (!podeEditar) return;
       toggleConcluida(data, tarefaId);
       const lista = obterTarefasDoDia(data);
       const tarefa = Array.isArray(lista) ? lista.find((t) => t.id === tarefaId) : null;
       if (tarefa && !tarefa.concluida) toast.sucesso("Tarefa concluída! 🎉");
     },
-    [toggleConcluida, obterTarefasDoDia, toast]
+    [toggleConcluida, obterTarefasDoDia, toast, podeEditar]
   );
 
   const handleExcluirTarefa = useCallback(
     (data, tarefaId) => {
+      if (!podeEditar) return;
       if (window.confirm("Tem certeza que deseja excluir esta tarefa?")) {
         excluirTarefa(data, tarefaId);
         toast.info("Tarefa excluída");
       }
     },
-    [excluirTarefa, toast]
+    [excluirTarefa, toast, podeEditar]
   );
 
   const handleEditarTarefa = useCallback((tarefa) => {
+    if (!podeEditar) return;
     setTarefaEditando(tarefa);
     setMostrarFormulario(true);
-  }, []);
+  }, [podeEditar]);
 
   const handleReorderTarefas = useCallback((novaOrdem) => {
     // Se teu hook tiver reorder real, plugue aqui.
@@ -334,6 +345,7 @@ export default function Calendario() {
               }}
               className="btn-adicionar"
               type="button"
+              disabled={!podeEditar}
               aria-label="Adicionar tarefa"
             >
               <Plus size={20} />
@@ -354,7 +366,7 @@ export default function Calendario() {
       )}
 
       <FormularioTarefa
-        aberto={mostrarFormulario}
+        aberto={mostrarFormulario && podeEditar}
         onFechar={() => {
           setMostrarFormulario(false);
           setTarefaEditando(null);
