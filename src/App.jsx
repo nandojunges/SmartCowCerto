@@ -34,6 +34,7 @@ import Admin from "./Pages/Admin/Admin.jsx";
 import TecnicoHome from "./Pages/Tecnico/TecnicoHome.jsx";
 import SmartCowShell from "./app/routes/SmartCowShell";
 import HomeMobile from "./features/home_mobile/HomeMobile";
+import OperacoesMobile from "./features/operacoes_mobile/OperacoesMobile";
 import AnimaisMobile from "./features/animais_mobile/AnimaisMobile";
 import NovoAnimalMobile from "./features/animais_mobile/NovoAnimalMobile";
 import AnimalMobileDetalhe from "./features/animais_mobile/AnimalMobileDetalhe";
@@ -113,6 +114,7 @@ export default function App() {
             <Route element={<SmartCowShell />}>
               <Route path="/m" element={<Outlet />}>
                 <Route index element={<HomeMobile />} />
+                <Route path="operacoes" element={<OperacoesMobile />} />
                 <Route path="animais" element={<AnimaisMobile />} />
                 <Route path="animais/novo" element={<NovoAnimalMobile />} />
                 <Route path="animais/:id" element={<AnimalMobileDetalhe />} />
