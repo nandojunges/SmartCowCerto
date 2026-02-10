@@ -11,26 +11,6 @@ const MODULOS = MODULOS_MENU.map((item) => ({
   label: item.label,
   icon: item.icon,
 }));
-=======
-import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { Shield, Eye, EyeOff, Check, X } from "lucide-react";
-
-const MODULOS = [
-  { id: "animais", label: "Cadastro de Animais", icon: "🐄" },
-  { id: "reproducao", label: "Reprodução", icon: "🧬" },
-  { id: "saude", label: "Saúde", icon: "💉" },
-  { id: "financeiro", label: "Financeiro", icon: "💰" },
-  { id: "relatorios", label: "Relatórios", icon: "📊" },
-  { id: "configuracoes", label: "Configurações", icon: "⚙️" },
-];
-
-const PERMISSOES = [
-  { id: "visualizar", label: "Visualizar", desc: "Apenas leitura dos dados" },
-  { id: "editar", label: "Editar", desc: "Criar e modificar registros" },
-  { id: "excluir", label: "Excluir", desc: "Remover permanentemente" },
-  { id: "exportar", label: "Exportar", desc: "Download de dados" },
-];
 
 export default function PermissoesGranulares({ membros }) {
   const { fazendaAtualId } = useFazenda();
@@ -136,12 +116,13 @@ export default function PermissoesGranulares({ membros }) {
 
       const payload = MODULOS.map((modulo) => {
         const item = permissoes[modulo.id] || { pode_ver: false, pode_editar: false };
+        const podeVer = Boolean(item.pode_ver);
         return {
           fazenda_id: fazendaAtualId,
           user_id: membroSelecionado.user_id,
           modulo: modulo.id,
-          pode_ver: Boolean(item.pode_ver),
-          pode_editar: Boolean(item.pode_editar),
+          pode_ver: podeVer,
+          pode_editar: podeVer && Boolean(item.pode_editar),
         };
       });
 
