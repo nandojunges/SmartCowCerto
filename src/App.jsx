@@ -1,6 +1,6 @@
 // src/App.jsx
 import { useEffect } from "react";
-import { Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { syncAnimaisSeed, syncPending } from "./offline/sync";
@@ -38,10 +38,12 @@ export default function App() {
     ready,
     session,
     tipoConta,
+    role,
     hasFazendaAtual,
     profileLoading,
     fazendasLoading,
   } = useFazenda();
+  const { pathname } = useLocation();
 
   useEffect(() => {
     const handleOnline = () => {
@@ -63,6 +65,13 @@ export default function App() {
   const isAssistenteTecnico = tipoContaNormalizada === "ASSISTENTE_TECNICO";
   const hasFazendaSelecionada = hasFazendaAtual;
   const isProdutor = tipoContaNormalizada === "PRODUTOR";
+  const isAdminPath = pathname.startsWith("/admin");
+
+  if (!ready) {
+    return null;
+  }
+
+  const adminFallbackPath = isAssistenteTecnico ? "/tecnico" : "/inicio";
 
   return (
     <>
@@ -87,7 +96,20 @@ export default function App() {
             <Route path="/" element={<Navigate to="/inicio" replace />} />
 
             {/* 🟥 ADMIN FORA DO LAYOUT (sem menu azul) */}
-            <Route path="/admin" element={<Admin />} />
+            <Route
+              path="/admin/*"
+              element={
+                <AdminGuard
+                  role={role}
+                  tipoConta={tipoContaNormalizada}
+                  loading={profileLoading}
+                  fallbackPath={adminFallbackPath}
+                />
+              }
+            >
+              <Route index element={<Admin />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </Route>
 
             {/* 🟦 DEMAIS PÁGINAS DENTRO DO SISTEMABASE (com menu azul) */}
             <Route element={<SistemaBase tipoConta={tipoConta} />}>
@@ -99,6 +121,7 @@ export default function App() {
                   loading={profileLoading}
                   isProdutor={isProdutor}
                   selecionandoFazenda={fazendasLoading}
+                  isAdminPath={isAdminPath}
                 />
               }
             >
@@ -122,7 +145,7 @@ export default function App() {
               <Route path="/tecnico" element={<TecnicoHome />} />
 
               {/* qualquer rota desconhecida volta para /inicio */}
-              <Route path="*" element={<Navigate to="/inicio" replace />} />
+              <Route path="*" element={<Navigate to={isAdminPath ? "/admin" : "/inicio"} replace />} />
             </Route>
           </>
         )}
@@ -138,15 +161,20 @@ function AssistenteGuard({
   loading,
   isProdutor,
   selecionandoFazenda,
+  isAdminPath,
 }) {
   useEffect(() => {
-    if (loading) {
+    if (loading || isAdminPath) {
       return;
     }
     if (isAssistenteTecnico && !hasFazendaSelecionada) {
       toast.info("Selecione uma fazenda para acessar.");
     }
-  }, [hasFazendaSelecionada, isAssistenteTecnico, loading]);
+  }, [hasFazendaSelecionada, isAssistenteTecnico, loading, isAdminPath]);
+
+  if (isAdminPath) {
+    return <Outlet />;
+  }
 
   if (loading || (isProdutor && selecionandoFazenda)) {
     return null;
@@ -154,6 +182,22 @@ function AssistenteGuard({
 
   if (isAssistenteTecnico && !hasFazendaSelecionada) {
     return <Navigate to="/tecnico" replace />;
+  }
+
+  return <Outlet />;
+}
+
+function AdminGuard({ role, tipoConta, loading, fallbackPath }) {
+  if (loading) {
+    return null;
+  }
+
+  const roleNormalizada = role ? String(role).trim().toUpperCase() : "";
+  const tipoContaNormalizada = tipoConta ? String(tipoConta).trim().toUpperCase() : "";
+  const isAdmin = roleNormalizada === "ADMIN" || tipoContaNormalizada === "ADMIN";
+
+  if (!isAdmin) {
+    return <Navigate to={fallbackPath} replace />;
   }
 
   return <Outlet />;

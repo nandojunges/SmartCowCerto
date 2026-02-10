@@ -66,6 +66,8 @@ export default function NavegacaoPrincipal() {
 
   const abaAtiva = useAbaAtiva(pathname, abas);
 
+  const isAdminPath = pathname.startsWith("/admin");
+
   // ===== Proteção: consultor fora da fazenda não pode cair em /inicio =====
   useEffect(() => {
     if (!ready) return;
@@ -81,6 +83,7 @@ export default function NavegacaoPrincipal() {
 
   if (!ready) return null;
   if (!tipoContaAtual) return null;
+  if (isAdminPath) return null;
 
   const limparDadosConsultor = () => {
     clearFazendaAtualId();
