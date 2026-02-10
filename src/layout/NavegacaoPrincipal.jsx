@@ -4,19 +4,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import StatusConexao from "../components/StatusConexao";
 import { useFazenda } from "../context/FazendaContext";
+import { MODULOS_MENU } from "../lib/permissoes";
 
-const ABAS_BASE = [
-  { id: "inicio",     label: "Início",            icon: "🏠" },
-  { id: "animais",    label: "Animais",           icon: "🐄" },
-  { id: "bezerras",   label: "Bezerras",          icon: "🐮" },
-  { id: "reproducao", label: "Reprodução",        icon: "🧬" },
-  { id: "leite",      label: "Leite",             icon: "🥛" },
-  { id: "saude",      label: "Saúde",             icon: "💉" },
-  { id: "consumo",    label: "Consumo",           icon: "📦" },
-  { id: "financeiro", label: "Financeiro",        icon: "💰" },
-  { id: "calendario", label: "Calendário",        icon: "📅" },
-  { id: "ajustes",    label: "Ajustes",           icon: "⚙️" },
-];
+const ABAS_BASE = MODULOS_MENU;
 
 const ABA_TECNICO = { id: "tecnico", label: "Fazendas", icon: "🏘️" };
 
@@ -28,7 +18,7 @@ function useAbaAtiva(pathname, abas) {
 export default function NavegacaoPrincipal() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { fazendaAtualId, clearFazendaAtualId, tipoConta, ready } = useFazenda();
+  const { fazendaAtualId, clearFazendaAtualId, tipoConta, ready, permissoesModulo } = useFazenda();
 
   const consultorStorageKeys = [
     "modo",
@@ -60,9 +50,12 @@ export default function NavegacaoPrincipal() {
     // CONSULTOR fora de fazenda -> só Fazendas
     if (!fazendaAtualId) return [ABA_TECNICO];
 
-    // CONSULTOR dentro de fazenda -> só abas do produtor SEM Ajustes (e sem Fazendas)
-    return ABAS_BASE.filter((a) => a.id !== "ajustes");
-  }, [isAssistenteTecnico, fazendaAtualId]);
+    // CONSULTOR dentro da fazenda -> filtra por pode_ver e remove Ajustes
+    return ABAS_BASE.filter((a) => {
+      if (a.id === "ajustes") return false;
+      return Boolean(permissoesModulo?.[a.id]?.pode_ver);
+    });
+  }, [isAssistenteTecnico, fazendaAtualId, permissoesModulo]);
 
   const abaAtiva = useAbaAtiva(pathname, abas);
 
