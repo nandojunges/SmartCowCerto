@@ -11,6 +11,26 @@ const MODULOS = MODULOS_MENU.map((item) => ({
   label: item.label,
   icon: item.icon,
 }));
+=======
+import React, { useState } from "react";
+import { motion } from "framer-motion";
+import { Shield, Eye, EyeOff, Check, X } from "lucide-react";
+
+const MODULOS = [
+  { id: "animais", label: "Cadastro de Animais", icon: "🐄" },
+  { id: "reproducao", label: "Reprodução", icon: "🧬" },
+  { id: "saude", label: "Saúde", icon: "💉" },
+  { id: "financeiro", label: "Financeiro", icon: "💰" },
+  { id: "relatorios", label: "Relatórios", icon: "📊" },
+  { id: "configuracoes", label: "Configurações", icon: "⚙️" },
+];
+
+const PERMISSOES = [
+  { id: "visualizar", label: "Visualizar", desc: "Apenas leitura dos dados" },
+  { id: "editar", label: "Editar", desc: "Criar e modificar registros" },
+  { id: "excluir", label: "Excluir", desc: "Remover permanentemente" },
+  { id: "exportar", label: "Exportar", desc: "Download de dados" },
+];
 
 export default function PermissoesGranulares({ membros }) {
   const { fazendaAtualId } = useFazenda();
