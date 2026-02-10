@@ -661,6 +661,7 @@ export default function VisaoGeral({
       const { data, error } = await supabase
         .from("inseminadores")
         .select("id, nome")
+        // sempre por fazenda ativa (não por auth.uid), para funcionar no modo consultor
         .eq("fazenda_id", fazendaAtualId)
         .eq("ativo", true)
         .order("nome", { ascending: true });
