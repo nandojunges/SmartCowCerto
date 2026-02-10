@@ -898,21 +898,23 @@ export default function VisaoGeral({
         const razaoEvento = payload?.extras?.razao || null;
         const evidenciaEvento = payload?.extras?.evidencia || null;
         const exigeVinculo = Boolean(razaoEvento && RAZOES_VINCULO_AUTOMATICO.has(razaoEvento));
-        const baseEvento = {
-          fazenda_id: fazendaAtualId,
-          tipo: payload?.tipoEvento,
-          data_evento: dataEvento,
-          user_id: userId,
-          inseminador_id: payload.inseminadorId || null,
-          touro_id: payload.touroId || null,
-          touro_nome: payload.touroNome || null,
-          razao: razaoEvento,
-          evidencia: evidenciaEvento,
-          tipo_semen: payload?.extras?.tipoSemen || null,
-          palhetas: payload?.extras?.palhetas ?? null,
-          observacoes: payload.obs || null,
-          meta: {},
-        };
+        const tipoFix = ensureTipoReproEvento({ tipo: payload?.tipoEvento }, "handleSubmit:IA").tipo;
+
+const baseEvento = {
+  fazenda_id: fazendaAtualId,
+  tipo: tipoFix,
+  data_evento: dataEvento,
+  user_id: userId,
+  inseminador_id: payload.inseminadorId || null,
+  touro_id: payload.touroId || null,
+  touro_nome: payload.touroNome || null,
+  razao: razaoEvento,
+  evidencia: evidenciaEvento,
+  tipo_semen: payload?.extras?.tipoSemen || null,
+  palhetas: payload?.extras?.palhetas ?? null,
+  observacoes: payload.obs || null,
+  meta: {},
+};
 
         if (hasBulkSelection) {
           if (exigeVinculo && bulkIABlockMessage) {
@@ -1143,12 +1145,15 @@ export default function VisaoGeral({
     }
 
     const acaoAtiva = typeof selectedType === "string" ? selectedType.toLowerCase() : selectedType;
-    const tipoEvento = resolveTipoEvento(acaoAtiva);
-    if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
-      console.error("Tipo inválido p/ repro_eventos.tipo", { acaoAtiva, tipoEvento });
-      throw new Error(`Tipo inválido: "${tipoEvento}". Use IA/DG/PARTO/SECAGEM/PROTOCOLO.`);
-    }
+const tipoEventoResolved = resolveTipoEvento(acaoAtiva);
 
+// NORMALIZA e GARANTE enum aqui (antes de qualquer insert)
+const tipoEvento = ensureTipoReproEvento({ tipo: tipoEventoResolved }, "handleSalvarRegistro").tipo;
+
+if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
+  console.error("Tipo inválido p/ repro_eventos.tipo", { acaoAtiva, tipoEvento });
+  throw new Error(`Tipo inválido: "${tipoEvento}". Use IA/DG/PARTO/SECAGEM/PROTOCOLO.`);
+}
     if (selectedType === "IA") {
       if (!draftIA) {
         setErroSalvar("Preencha os dados da inseminação antes de salvar.");
