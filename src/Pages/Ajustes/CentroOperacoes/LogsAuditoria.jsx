@@ -85,6 +85,7 @@ const styles = {
   userStack: { display: "flex", flexDirection: "column", gap: 2 },
   userName: { fontWeight: 600, color: "#0f172a" },
   userEmail: { fontSize: 12, color: "#64748b" },
+  userRole: { fontSize: 11, color: "#94a3b8" },
   acaoStack: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
   acaoMain: {
     color: "#0f172a",
@@ -250,7 +251,7 @@ export default function LogsAuditoria({ showHeader = true }) {
     setLoading(true);
     setError(null);
     const { data, error: fetchError } = await supabase
-      .from("audit_log")
+      .from("v_audit_log_ui")
       .select(
         [
           "id",
@@ -263,8 +264,9 @@ export default function LogsAuditoria({ showHeader = true }) {
           "animal_numero",
           "animal_ref",
           "resumo",
-          "actor_nome",
-          "actor_email",
+          "usuario_nome_ui",
+          "usuario_email_ui",
+          "usuario_role_ui",
           "cancelavel",
           "cancelado_em",
         ].join(",")
@@ -427,9 +429,12 @@ export default function LogsAuditoria({ showHeader = true }) {
                         <td style={styles.td}>{log.modulo ?? "—"}</td>
                         <td style={styles.td}>
                           <div style={styles.userStack}>
-                            <span style={styles.userName}>{log.actor_nome ?? "—"}</span>
-                            {log.actor_email && (
-                              <span style={styles.userEmail}>{log.actor_email}</span>
+                            <span style={styles.userName}>{log.usuario_nome_ui ?? "—"}</span>
+                            {log.usuario_email_ui && (
+                              <span style={styles.userEmail}>{log.usuario_email_ui}</span>
+                            )}
+                            {log.usuario_role_ui && (
+                              <span style={styles.userRole}>{log.usuario_role_ui}</span>
                             )}
                           </div>
                         </td>
