@@ -4,7 +4,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 import ModalNovoProtocolo from "./ModalNovoProtocolo";
 
-/* ========================= DESIGN TOKENS (mesmo do modal) ========================= */
+/* ========================= DESIGN TOKENS ========================= */
 const TOKENS = {
   colors: {
     primary: "#2563EB",
@@ -14,6 +14,9 @@ const TOKENS = {
     danger: "#DC2626",
     dangerLight: "#FEE2E2",
     success: "#059669",
+    successLight: "#D1FAE5",
+    warning: "#F59E0B",
+    warningLight: "#FEF3C7",
     gray50: "#F9FAFB",
     gray100: "#F3F4F6",
     gray200: "#E5E7EB",
@@ -39,6 +42,7 @@ const TOKENS = {
   },
 };
 
+/* ========================= COMPONENTES UTILITÁRIOS ========================= */
 const Icon = ({ name, size = 20, color = "currentColor" }) => {
   const icons = {
     search: <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />,
@@ -52,6 +56,11 @@ const Icon = ({ name, size = 20, color = "currentColor" }) => {
     flask: <path d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />,
     check: <path d="M5 13l4 4L19 7" />,
     cow: <path d="M12 2a3 3 0 00-3 3v2H7a3 3 0 00-3 3v8a3 3 0 003 3h10a3 3 0 003-3v-8a3 3 0 00-3-3h-2V5a3 3 0 00-3-3zM9 8h6M9 12h6M9 16h6" />,
+    chartBar: <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />,
+    trendingUp: <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />,
+    trophy: <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />,
+    dollar: <path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />,
+    users: <path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />,
   };
 
   return (
@@ -66,6 +75,7 @@ const Badge = ({ children, variant = "default" }) => {
     default: { bg: TOKENS.colors.gray100, color: TOKENS.colors.gray700, border: TOKENS.colors.gray200 },
     primary: { bg: TOKENS.colors.primaryLight, color: TOKENS.colors.primaryDark, border: "#BFDBFE" },
     purple: { bg: "#EDE9FE", color: TOKENS.colors.secondary, border: "#DDD6FE" },
+    success: { bg: TOKENS.colors.successLight, color: TOKENS.colors.success, border: "#86EFAC" },
   };
   const v = variants[variant] || variants.default;
 
@@ -89,35 +99,39 @@ const Badge = ({ children, variant = "default" }) => {
   );
 };
 
-const Button = ({ children, onClick, variant = "primary", icon = null }) => {
+const Button = ({ children, onClick, variant = "primary", icon = null, disabled = false }) => {
   const styles =
     variant === "primary"
       ? { background: `linear-gradient(135deg, ${TOKENS.colors.primary}, ${TOKENS.colors.primaryDark})`, color: "#fff", border: "none", boxShadow: TOKENS.shadows.md }
+      : variant === "secondary"
+      ? { background: TOKENS.colors.gray100, color: TOKENS.colors.gray700, border: `1px solid ${TOKENS.colors.gray200}`, boxShadow: TOKENS.shadows.sm }
       : { background: "#fff", color: TOKENS.colors.gray700, border: `1px solid ${TOKENS.colors.gray200}`, boxShadow: TOKENS.shadows.sm };
 
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         height: "40px",
         padding: "0 16px",
         borderRadius: TOKENS.radii.md,
         fontWeight: "700",
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         display: "inline-flex",
         alignItems: "center",
         gap: "8px",
         transition: "all .2s ease",
+        opacity: disabled ? 0.5 : 1,
         ...styles,
       }}
       onMouseEnter={(e) => {
-        if (variant === "primary") {
+        if (!disabled && variant === "primary") {
           e.currentTarget.style.transform = "translateY(-1px)";
           e.currentTarget.style.boxShadow = TOKENS.shadows.lg;
         }
       }}
       onMouseLeave={(e) => {
-        if (variant === "primary") {
+        if (!disabled && variant === "primary") {
           e.currentTarget.style.transform = "translateY(0)";
           e.currentTarget.style.boxShadow = TOKENS.shadows.md;
         }
@@ -129,10 +143,146 @@ const Button = ({ children, onClick, variant = "primary", icon = null }) => {
   );
 };
 
+/* ========================= MINI GRÁFICO DE BARRAS ========================= */
+const ComparisonBarChart = ({ data, maxValue }) => {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: "12px", height: "140px", padding: "12px 0" }}>
+      {data.map((item, idx) => {
+        const height = maxValue > 0 ? (item.value / maxValue) * 100 : 0;
+        return (
+          <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+            <div style={{ fontSize: "16px", fontWeight: "800", color: item.color }}>{item.value}%</div>
+            <div
+              style={{
+                width: "100%",
+                height: `${height}%`,
+                minHeight: item.value > 0 ? "8px" : "0",
+                background: `linear-gradient(to top, ${item.color}, ${item.color}CC)`,
+                borderRadius: "8px 8px 0 0",
+                transition: "all 0.3s ease",
+              }}
+            />
+            <div style={{ fontSize: "13px", fontWeight: "600", color: TOKENS.colors.gray700, textAlign: "center", marginTop: "4px" }}>
+              {item.label}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/* ========================= DASHBOARD COMPACTO ========================= */
+const DashboardCompacto = ({ protocolos, performanceData }) => {
+  const protocolosIATF = protocolos.filter(p => p.tipo === "IATF");
+  
+  const stats = useMemo(() => {
+    if (performanceData.length === 0) {
+      return {
+        taxaMediaPrenhez: 0,
+        custoMedio: 0,
+        totalAplicacoes: 0,
+        melhorProtocolo: null,
+      };
+    }
+
+    const totalTaxa = performanceData.reduce((sum, p) => sum + (p.taxaPrenhez || 0), 0);
+    const totalCusto = performanceData.reduce((sum, p) => sum + (p.custoMedio || 0), 0);
+    const totalAplicacoes = performanceData.reduce((sum, p) => sum + (p.totalAplicacoes || 0), 0);
+    
+    const melhor = performanceData.reduce((best, p) => 
+      (!best || (p.taxaPrenhez || 0) > (best.taxaPrenhez || 0)) ? p : best
+    , null);
+
+    return {
+      taxaMediaPrenhez: performanceData.length > 0 ? (totalTaxa / performanceData.length) : 0,
+      custoMedio: performanceData.length > 0 ? (totalCusto / performanceData.length) : 0,
+      totalAplicacoes,
+      melhorProtocolo: melhor,
+    };
+  }, [performanceData]);
+
+  return (
+    <div style={{ background: "#fff", borderRadius: TOKENS.radii.xl, padding: "24px", border: `1px solid ${TOKENS.colors.gray200}`, marginBottom: "24px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+        <Icon name="chartBar" size={24} color={TOKENS.colors.primary} />
+        <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "800", color: TOKENS.colors.gray900 }}>Performance dos Protocolos IATF</h2>
+      </div>
+
+      {/* Cards de métricas */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+        <div style={{ padding: "16px", background: TOKENS.colors.gray50, borderRadius: TOKENS.radii.lg, border: `1px solid ${TOKENS.colors.gray200}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <Icon name="trendingUp" size={18} color={TOKENS.colors.success} />
+            <span style={{ fontSize: "12px", fontWeight: "600", color: TOKENS.colors.gray600 }}>Taxa Média de Prenhez</span>
+          </div>
+          <div style={{ fontSize: "32px", fontWeight: "900", color: TOKENS.colors.gray900 }}>
+            {stats.taxaMediaPrenhez.toFixed(1)}%
+          </div>
+        </div>
+
+        <div style={{ padding: "16px", background: TOKENS.colors.gray50, borderRadius: TOKENS.radii.lg, border: `1px solid ${TOKENS.colors.gray200}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <Icon name="dollar" size={18} color={TOKENS.colors.warning} />
+            <span style={{ fontSize: "12px", fontWeight: "600", color: TOKENS.colors.gray600 }}>Custo Médio</span>
+          </div>
+          <div style={{ fontSize: "32px", fontWeight: "900", color: TOKENS.colors.gray900 }}>
+            R$ {stats.custoMedio.toFixed(0)}
+          </div>
+        </div>
+
+        <div style={{ padding: "16px", background: TOKENS.colors.gray50, borderRadius: TOKENS.radii.lg, border: `1px solid ${TOKENS.colors.gray200}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <Icon name="users" size={18} color={TOKENS.colors.primary} />
+            <span style={{ fontSize: "12px", fontWeight: "600", color: TOKENS.colors.gray600 }}>Total de Aplicações</span>
+          </div>
+          <div style={{ fontSize: "32px", fontWeight: "900", color: TOKENS.colors.gray900 }}>
+            {stats.totalAplicacoes}
+          </div>
+        </div>
+
+        {stats.melhorProtocolo && (
+          <div style={{ padding: "16px", background: `linear-gradient(135deg, ${TOKENS.colors.success}15, ${TOKENS.colors.success}05)`, borderRadius: TOKENS.radii.lg, border: `2px solid ${TOKENS.colors.success}30` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              <Icon name="trophy" size={18} color={TOKENS.colors.success} />
+              <span style={{ fontSize: "12px", fontWeight: "600", color: TOKENS.colors.gray600 }}>Melhor Protocolo</span>
+            </div>
+            <div style={{ fontSize: "18px", fontWeight: "800", color: TOKENS.colors.gray900, marginBottom: "4px" }}>
+              {stats.melhorProtocolo.nome}
+            </div>
+            <div style={{ fontSize: "13px", color: TOKENS.colors.gray600 }}>
+              {stats.melhorProtocolo.taxaPrenhez}% de prenhez
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Gráfico comparativo */}
+      {performanceData.length > 0 && (
+        <div>
+          <h3 style={{ fontSize: "14px", fontWeight: "700", color: TOKENS.colors.gray700, marginBottom: "12px" }}>
+            Comparação de Taxa de Prenhez
+          </h3>
+          <ComparisonBarChart
+            data={performanceData.map((p, idx) => ({
+              label: p.nome,
+              value: p.taxaPrenhez || 0,
+              color: [TOKENS.colors.primary, TOKENS.colors.secondary, TOKENS.colors.success][idx % 3],
+            }))}
+            maxValue={100}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ========================= COMPONENTE PRINCIPAL ========================= */
 export default function Protocolos() {
   const { fazendaAtualId } = useFazenda();
 
   const [protocolos, setProtocolos] = useState([]);
+  const [performanceData, setPerformanceData] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [busca, setBusca] = useState("");
@@ -151,25 +301,26 @@ export default function Protocolos() {
     };
   }, []);
 
-  const normalizeTipo = (value) => {
+  /* ========================= FUNÇÕES UTILITÁRIAS ========================= */
+  const normalizeTipo = useCallback((value) => {
     const t = String(value || "")
       .normalize("NFD")
       .replace(/\p{Diacritic}/gu, "")
       .toUpperCase()
       .replace(/[\s_-]/g, "");
     if (t.includes("IATF")) return "IATF";
-    if (t.includes("PRE") || t.includes("PRESYNC")) return "PRESYNC";
+    if (t.includes("PRE") || t.includes("PRESYNC")) return "PRÉ-SINCRONIZAÇÃO";
     return "OUTRO";
-  };
+  }, []);
 
-  const tipoLabel = (value) => {
+  const tipoLabel = useCallback((value) => {
     const t = normalizeTipo(value);
     if (t === "IATF") return "IATF";
-    if (t === "PRESYNC") return "PRÉ-SINCRONIZAÇÃO";
+    if (t === "PRÉ-SINCRONIZAÇÃO") return "PRÉ-SINCRONIZAÇÃO";
     return String(value || "—");
-  };
+  }, [normalizeTipo]);
 
-  const parseEtapas = (maybe) => {
+  const parseEtapas = useCallback((maybe) => {
     if (!maybe) return [];
     if (Array.isArray(maybe)) return maybe;
     try {
@@ -178,11 +329,11 @@ export default function Protocolos() {
     } catch {
       return [];
     }
-  };
+  }, []);
 
-  const getLocalYmd = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+  const getLocalYmd = useCallback(() => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }), []);
 
-  const toUtcDay = (value) => {
+  const toUtcDay = useCallback((value) => {
     if (!value) return null;
     if (value instanceof Date) {
       return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
@@ -194,16 +345,16 @@ export default function Protocolos() {
       return Date.UTC(y, m - 1, d);
     }
     return null;
-  };
+  }, []);
 
-  const diffInDays = (start, end) => {
+  const diffInDays = useCallback((start, end) => {
     const startUtc = toUtcDay(start);
     const endUtc = toUtcDay(end);
     if (!Number.isFinite(startUtc) || !Number.isFinite(endUtc)) return 0;
     return Math.round((endUtc - startUtc) / 86400000);
-  };
+  }, [toUtcDay]);
 
-  const isInseminacao = (texto) => {
+  const isInseminacao = useCallback((texto) => {
     if (!texto) return false;
     return texto
       .toString()
@@ -211,9 +362,9 @@ export default function Protocolos() {
       .replace(/\p{Diacritic}/gu, "")
       .toLowerCase()
       .includes("insemin");
-  };
+  }, []);
 
-  const resolveEtapaDoDia = (etapas, dia) => {
+  const resolveEtapaDoDia = useCallback((etapas, dia) => {
     const etapa = (etapas || []).find((e) => {
       const value = e?.dia ?? e?.D ?? e?.d ?? e?.day;
       const numeric = typeof value === "string" ? Number(value) : value;
@@ -229,7 +380,71 @@ export default function Protocolos() {
       return "IA prevista hoje";
     }
     return descricao;
-  };
+  }, [isInseminacao]);
+
+  /* ========================= CARREGAMENTO DE DADOS ========================= */
+  const carregarPerformance = useCallback(async (protocolosList) => {
+    if (!fazendaAtualId || protocolosList.length === 0) {
+      setPerformanceData([]);
+      return;
+    }
+
+    try {
+      const protocolosIATF = protocolosList.filter(p => normalizeTipo(p.tipo) === "IATF");
+      
+      const performancePromises = protocolosIATF.map(async (protocolo) => {
+        // Buscar todas as aplicações deste protocolo
+        const { data: aplicacoes, error: aplicacoesError } = await supabase
+          .from("repro_aplicacoes")
+          .select("id, status")
+          .eq("fazenda_id", fazendaAtualId)
+          .eq("protocolo_id", protocolo.id);
+
+        if (aplicacoesError) throw aplicacoesError;
+
+        const totalAplicacoes = (aplicacoes || []).length;
+        const aplicacoesIds = (aplicacoes || []).map(a => a.id).filter(Boolean);
+
+        let prenhezConfirmadas = 0;
+        if (aplicacoesIds.length > 0) {
+          // Buscar diagnósticos de prenhez confirmados
+          const { data: diagnosticos, error: diagnosticosError } = await supabase
+  .from("repro_eventos")
+  .select("id")
+  .eq("fazenda_id", fazendaAtualId)
+  .eq("tipo", "DG")
+  .in("protocolo_aplicacao_id", aplicacoesIds);
+
+          if (diagnosticosError) throw diagnosticosError;
+          prenhezConfirmadas = (diagnosticos || []).length;
+        }
+
+        const taxaPrenhez = totalAplicacoes > 0 ? Math.round((prenhezConfirmadas / totalAplicacoes) * 100) : 0;
+        
+        // Calcular custo médio baseado nas etapas (simulado - em produção você teria isso no BD)
+        const custoMedio = 150 + (protocolo.etapas?.length || 0) * 15;
+
+        return {
+          nome: protocolo.nome,
+          taxaPrenhez,
+          custoMedio,
+          totalAplicacoes,
+          prenhezConfirmadas,
+        };
+      });
+
+      const results = await Promise.all(performancePromises);
+      
+      if (aliveRef.current) {
+        setPerformanceData(results);
+      }
+    } catch (e) {
+      console.error("Erro ao carregar performance:", e);
+      if (aliveRef.current) {
+        setPerformanceData([]);
+      }
+    }
+  }, [fazendaAtualId, normalizeTipo]);
 
   const carregarProtocolos = useCallback(async () => {
     if (!fazendaAtualId || inFlightRef.current) {
@@ -239,7 +454,6 @@ export default function Protocolos() {
     inFlightRef.current = true;
     setCarregando(true);
     setErro("");
-    console.debug("[Protocolos] fetch protocolos start", { fazenda_id: fazendaAtualId });
 
     try {
       const { data, error } = await supabase
@@ -247,6 +461,7 @@ export default function Protocolos() {
         .select("*")
         .eq("fazenda_id", fazendaAtualId)
         .order("created_at", { ascending: false });
+      
       if (error) throw error;
 
       const nextProtocolos = (data || []).map((p) => ({
@@ -266,8 +481,10 @@ export default function Protocolos() {
             });
           return sameItems ? prev : nextProtocolos;
         });
+
+        // Carregar dados de performance
+        await carregarPerformance(nextProtocolos);
       }
-      console.debug("[Protocolos] fetch protocolos end", { fazenda_id: fazendaAtualId, count: nextProtocolos.length });
     } catch (e) {
       console.error(e);
       if (aliveRef.current) {
@@ -279,7 +496,7 @@ export default function Protocolos() {
       }
       inFlightRef.current = false;
     }
-  }, [fazendaAtualId]);
+  }, [fazendaAtualId, tipoLabel, parseEtapas, carregarPerformance]);
 
   const carregarAtivos = useCallback(async () => {
     if (!fazendaAtualId) {
@@ -358,11 +575,12 @@ export default function Protocolos() {
         setActiveByProtocol({});
       }
     }
-  }, [fazendaAtualId]);
+  }, [fazendaAtualId, getLocalYmd]);
 
   useEffect(() => {
     if (!fazendaAtualId) {
       setProtocolos([]);
+      setPerformanceData([]);
       setErro("");
       setCarregando(false);
       setActiveByProtocol({});
@@ -375,7 +593,7 @@ export default function Protocolos() {
     carregarDados();
   }, [fazendaAtualId, carregarProtocolos, carregarAtivos]);
 
-
+  /* ========================= HANDLERS ========================= */
   const getAuthUserId = async () => {
     const { data, error } = await supabase.auth.getUser();
     if (error) throw error;
@@ -392,12 +610,12 @@ export default function Protocolos() {
       const descricao = descricaoLimpa ? descricaoLimpa : null;
 
       const payload = {
-        user_id: uid, // ✅ obrigatório pelas policies
+        user_id: uid,
         fazenda_id: fazendaAtualId,
         nome: protocolo.nome.trim(),
         tipo: String(protocolo.tipo || "").toUpperCase(),
         descricao,
-        etapas: protocolo.etapas, // jsonb
+        etapas: protocolo.etapas,
         ativo: true,
         created_at: editando?.id ? undefined : new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -419,6 +637,7 @@ export default function Protocolos() {
           .eq("id", editando.id)
           .select()
           .single();
+        
         if (error) throw error;
 
         setProtocolos((prev) => prev.map((p) => (p.id === editando.id ? { ...data, etapas: parseEtapas(data.etapas) } : p)));
@@ -441,8 +660,10 @@ export default function Protocolos() {
         setProtocolos((prev) => [{ ...data, etapas: parseEtapas(data.etapas) }, ...prev]);
       }
 
+      await carregarProtocolos(); // Recarregar para atualizar performance
       setModalAberto(false);
       setEditando(null);
+      toast.success(editando?.id ? "Protocolo atualizado!" : "Protocolo criado!");
     } catch (e) {
       console.error(e);
       toast.error(`Erro ao salvar: ${e?.message || "desconhecido"}`);
@@ -450,8 +671,13 @@ export default function Protocolos() {
   };
 
   const handleExcluir = async (prot) => {
+    if (!window.confirm(`Tem certeza que deseja excluir o protocolo "${prot.nome}"?`)) {
+      return;
+    }
+
     try {
       if (!fazendaAtualId) throw new Error("Fazenda não selecionada");
+      
       const { count, error: countError } = await supabase
         .from("repro_aplicacoes")
         .select("id", { count: "exact", head: true })
@@ -460,17 +686,22 @@ export default function Protocolos() {
         .eq("status", "ATIVO");
 
       if (countError) throw countError;
+      
       if ((count ?? 0) > 0) {
         toast.error("Protocolo em uso. Não é permitido apagar.");
         return;
       }
 
       const { error } = await supabase.from("repro_protocolos").delete().eq("id", prot.id);
+      
       if (error) {
         toast.error("Protocolo em uso. Não é permitido apagar.");
         return;
       }
+      
       setProtocolos((prev) => prev.filter((p) => p.id !== prot.id));
+      await carregarProtocolos(); // Recarregar para atualizar performance
+      toast.success("Protocolo excluído!");
     } catch (e) {
       console.error(e);
       toast.error("Protocolo em uso. Não é permitido apagar.");
@@ -496,6 +727,8 @@ export default function Protocolos() {
       if (error) throw error;
 
       setProtocolos((prev) => [{ ...data, etapas: parseEtapas(data.etapas) }, ...prev]);
+      await carregarProtocolos(); // Recarregar para atualizar performance
+      toast.success("Protocolo duplicado!");
     } catch (e) {
       console.error(e);
       toast.error("Erro ao duplicar");
@@ -503,41 +736,51 @@ export default function Protocolos() {
   };
 
   const toggleExpand = (prot) => {
-    if (expandedId === prot.id) setExpandedId(null);
-    else setExpandedId(prot.id);
+    setExpandedId(expandedId === prot.id ? null : prot.id);
   };
 
-  const filtered = protocolos.filter((p) => {
-    const termoBusca = busca.trim().toLowerCase();
-    const matchBusca =
-      !termoBusca ||
-      String(p?.nome || "")
-        .toLowerCase()
-        .includes(termoBusca) ||
-      String(p?.descricao || "")
-        .toLowerCase()
-        .includes(termoBusca);
-    const matchTipo = filtroTipo === "TODOS" || normalizeTipo(p.tipo) === filtroTipo;
-    return matchBusca && matchTipo;
-  });
+  /* ========================= DADOS COMPUTADOS ========================= */
+  const filtered = useMemo(() => {
+    return protocolos.filter((p) => {
+      const termoBusca = busca.trim().toLowerCase();
+      const matchBusca =
+        !termoBusca ||
+        String(p?.nome || "")
+          .toLowerCase()
+          .includes(termoBusca) ||
+        String(p?.descricao || "")
+          .toLowerCase()
+          .includes(termoBusca);
+      const matchTipo = filtroTipo === "TODOS" || normalizeTipo(p.tipo) === filtroTipo;
+      return matchBusca && matchTipo;
+    });
+  }, [protocolos, busca, filtroTipo, normalizeTipo]);
 
   const stats = useMemo(() => {
+    const totalAtivos = Object.values(activeByProtocol).reduce((sum, list) => sum + list.length, 0);
+    
     return {
       total: protocolos.length,
       iatf: protocolos.filter((p) => normalizeTipo(p.tipo) === "IATF").length,
-      pre: protocolos.filter((p) => normalizeTipo(p.tipo) === "PRESYNC").length,
+      pre: protocolos.filter((p) => normalizeTipo(p.tipo) === "PRÉ-SINCRONIZAÇÃO").length,
+      vacasAtivas: totalAtivos,
     };
-  }, [protocolos]);
+  }, [protocolos, activeByProtocol, normalizeTipo]);
 
+  /* ========================= RENDER ========================= */
   return (
     <div style={{ minHeight: "100vh", background: TOKENS.colors.gray50, fontFamily: "Inter, system-ui, -apple-system, sans-serif" }}>
       {/* Header */}
       <div style={{ background: "#fff", borderBottom: `1px solid ${TOKENS.colors.gray200}` }}>
         <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "24px 32px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
             <div>
-              <h1 style={{ margin: "0 0 8px", fontSize: "28px", fontWeight: "800", color: TOKENS.colors.gray900 }}>Protocolos de Reprodução</h1>
-              <p style={{ margin: 0, color: TOKENS.colors.gray500, fontSize: "15px" }}>Gerencie os protocolos hormonais e acompanhamento de IATF</p>
+              <h1 style={{ margin: "0 0 6px", fontSize: "26px", fontWeight: "800", color: TOKENS.colors.gray900 }}>
+                Protocolos de Reprodução
+              </h1>
+              <p style={{ margin: 0, color: TOKENS.colors.gray500, fontSize: "14px" }}>
+                Gerencie protocolos e acompanhe resultados de IATF
+              </p>
             </div>
             <Button
               variant="primary"
@@ -580,7 +823,7 @@ export default function Protocolos() {
               {[
                 { id: "TODOS", label: "Todos", count: stats.total },
                 { id: "IATF", label: "IATF", count: stats.iatf },
-                { id: "PRESYNC", label: "Pré-sincronização", count: stats.pre },
+                { id: "PRÉ-SINCRONIZAÇÃO", label: "Pré-sincronização", count: stats.pre },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -598,6 +841,7 @@ export default function Protocolos() {
                     borderWidth: filtroTipo === f.id ? "0" : "1px",
                     borderStyle: "solid",
                     borderColor: TOKENS.colors.gray200,
+                    transition: "all .2s ease",
                   }}
                 >
                   {f.label} <span style={{ opacity: 0.8, marginLeft: "4px" }}>({f.count})</span>
@@ -608,10 +852,18 @@ export default function Protocolos() {
         </div>
       </div>
 
-      {/* Lista */}
-      <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "32px" }}>
+      {/* Conteúdo */}
+      <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "24px 32px" }}>
         {erro ? (
-          <div style={{ background: "#fff", border: `1px solid ${TOKENS.colors.gray200}`, borderRadius: TOKENS.radii.xl, padding: "16px", color: TOKENS.colors.danger }}>
+          <div
+            style={{
+              background: "#fff",
+              border: `1px solid ${TOKENS.colors.gray200}`,
+              borderRadius: TOKENS.radii.xl,
+              padding: "16px",
+              color: TOKENS.colors.danger,
+            }}
+          >
             {erro}
           </div>
         ) : carregando ? (
@@ -629,203 +881,327 @@ export default function Protocolos() {
             />
             Carregando protocolos...
           </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "60px" }}>
-            <div
-              style={{
-                width: "80px",
-                height: "80px",
-                background: TOKENS.colors.gray100,
-                borderRadius: TOKENS.radii.full,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 20px",
-              }}
-            >
-              <Icon name="flask" size={40} color={TOKENS.colors.gray300} />
-            </div>
-            <h3 style={{ margin: "0 0 8px", color: TOKENS.colors.gray700 }}>Nenhum protocolo encontrado</h3>
-            <p style={{ margin: "0 0 20px", color: TOKENS.colors.gray400 }}>Crie seu primeiro protocolo de reprodução</p>
-            <Button
-              variant="primary"
-              onClick={() => {
-                setEditando(null);
-                setModalAberto(true);
-              }}
-              icon="plus"
-            >
-              Criar Protocolo
-            </Button>
-          </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: "20px" }}>
-            {filtered.map((prot) => {
-              const maxDia = Math.max(...(prot.etapas || []).map((e) => e.dia || 0), 0);
-              const etapasCount = (prot.etapas || []).length;
-              const activeList = activeByProtocol[String(prot.id)] || [];
-              const hojeYmd = getLocalYmd();
+          <>
+            {/* Dashboard */}
+            {stats.iatf > 0 && <DashboardCompacto protocolos={protocolos} performanceData={performanceData} />}
 
-              return (
+            {/* Lista de Protocolos */}
+            {filtered.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px" }}>
                 <div
-                  key={prot.id}
                   style={{
-                    background: "#fff",
-                    borderRadius: TOKENS.radii.xl,
-                    boxShadow: TOKENS.shadows.sm,
-                    border: `1px solid ${TOKENS.colors.gray200}`,
-                    overflow: "hidden",
-                    transition: "all .2s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                    e.currentTarget.style.boxShadow = TOKENS.shadows.lg;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = TOKENS.shadows.sm;
+                    width: "80px",
+                    height: "80px",
+                    background: TOKENS.colors.gray100,
+                    borderRadius: TOKENS.radii.full,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    margin: "0 auto 20px",
                   }}
                 >
-                  <div style={{ padding: "24px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                      <Badge variant={prot.tipo === "IATF" ? "primary" : "purple"}>{prot.tipo}</Badge>
+                  <Icon name="flask" size={40} color={TOKENS.colors.gray300} />
+                </div>
+                <h3 style={{ margin: "0 0 8px", color: TOKENS.colors.gray700 }}>Nenhum protocolo encontrado</h3>
+                <p style={{ margin: "0 0 20px", color: TOKENS.colors.gray400 }}>Crie seu primeiro protocolo de reprodução</p>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setEditando(null);
+                    setModalAberto(true);
+                  }}
+                  icon="plus"
+                >
+                  Criar Protocolo
+                </Button>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: "20px" }}>
+                {filtered.map((prot) => {
+                  const maxDia = Math.max(...(prot.etapas || []).map((e) => e.dia || 0), 0);
+                  const etapasCount = (prot.etapas || []).length;
+                  const activeList = activeByProtocol[String(prot.id)] || [];
+                  const hojeYmd = getLocalYmd();
+                  const isIATF = normalizeTipo(prot.tipo) === "IATF";
 
-                      <div style={{ display: "flex", gap: "4px" }}>
-                        <button
-                          onClick={() => handleDuplicar(prot)}
-                          style={{ padding: "8px", borderRadius: TOKENS.radii.md, border: "none", background: "transparent", cursor: "pointer", color: TOKENS.colors.gray400 }}
-                          title="Duplicar"
-                        >
-                          <Icon name="duplicate" size={18} />
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setEditando(prot);
-                            setModalAberto(true);
-                          }}
-                          style={{ padding: "8px", borderRadius: TOKENS.radii.md, border: "none", background: "transparent", cursor: "pointer", color: TOKENS.colors.gray400 }}
-                          title="Editar"
-                        >
-                          <Icon name="edit" size={18} />
-                        </button>
-
-                        <button
-                          onClick={() => handleExcluir(prot)}
-                          style={{ padding: "8px", borderRadius: TOKENS.radii.md, border: "none", background: "transparent", cursor: "pointer", color: TOKENS.colors.gray400 }}
-                          title="Excluir"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = TOKENS.colors.danger)}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.colors.gray400)}
-                        >
-                          <Icon name="trash" size={18} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <h3 style={{ margin: "0 0 8px", fontSize: "18px", fontWeight: "800", color: TOKENS.colors.gray900 }}>{prot.nome}</h3>
-
-                    <p style={{ margin: "0 0 16px", fontSize: "14px", color: TOKENS.colors.gray500, minHeight: "20px" }}>
-                      {prot.descricao || "Sem descrição"}
-                    </p>
-
-                    <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
-                        <Icon name="calendar" size={16} />
-                        <span>{maxDia} dias</span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
-                        <Icon name="check" size={16} />
-                        <span>{etapasCount} etapas</span>
-                      </div>
-                    </div>
-
-                    {/* Mini timeline */}
-                    <div style={{ height: "4px", background: TOKENS.colors.gray100, borderRadius: TOKENS.radii.full, display: "flex", overflow: "hidden" }}>
-                      {Array.from({ length: Math.min(maxDia + 1, 10) }).map((_, i) => {
-                        const hasEtapa = (prot.etapas || []).some((e) => e.dia === i);
-                        return <div key={i} style={{ flex: 1, background: hasEtapa ? TOKENS.colors.primary : "transparent", borderRight: `1px solid ${TOKENS.colors.gray50}` }} />;
-                      })}
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px", fontSize: "11px", color: TOKENS.colors.gray400 }}>
-                      <span>D0</span>
-                      <span>D{maxDia}</span>
-                    </div>
-                  </div>
-
-                  <div style={{ borderTop: `1px solid ${TOKENS.colors.gray200}`, padding: "16px 24px", background: TOKENS.colors.gray50 }}>
-                    <button
-                      onClick={() => toggleExpand(prot)}
+                  return (
+                    <div
+                      key={prot.id}
                       style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: "8px",
-                        padding: "8px",
-                        border: "none",
-                        background: "transparent",
-                        color: TOKENS.colors.primary,
-                        fontWeight: "800",
-                        fontSize: "13px",
-                        cursor: "pointer",
-                        borderRadius: TOKENS.radii.md,
+                        background: "#fff",
+                        borderRadius: TOKENS.radii.xl,
+                        boxShadow: TOKENS.shadows.sm,
+                        border: `1px solid ${TOKENS.colors.gray200}`,
+                        overflow: "hidden",
+                        transition: "all .2s ease",
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#fff")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                        e.currentTarget.style.boxShadow = TOKENS.shadows.lg;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow = TOKENS.shadows.sm;
+                      }}
                     >
-                      <Icon name={expandedId === prot.id ? "chevronUp" : "chevronDown"} size={16} />
-                      {expandedId === prot.id ? "Ocultar detalhes" : "Ver vacas ativas"}
-                    </button>
-                  </div>
-
-                  {expandedId === prot.id && (
-                    <div style={{ padding: "0 24px 24px", background: TOKENS.colors.gray50 }}>
-                      <div style={{ background: "#fff", borderRadius: TOKENS.radii.lg, padding: "16px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
-                        {activeList.length === 0 ? (
-                          <div style={{ textAlign: "center", padding: "20px" }}>
-                            <Icon name="cow" size={32} color={TOKENS.colors.gray300} />
-                            <p style={{ margin: "10px 0 0" }}>Nenhuma vaca ativa neste protocolo</p>
+                      <div style={{ padding: "24px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                            <Badge variant={isIATF ? "primary" : "purple"}>{prot.tipo}</Badge>
+                            {activeList.length > 0 && (
+                              <Badge variant="success">
+                                <Icon name="users" size={12} />
+                                {activeList.length}
+                              </Badge>
+                            )}
                           </div>
-                        ) : (
-                          <div style={{ display: "grid", gap: "8px" }}>
-                            {activeList.map(({ aplicacao, animal, iaRegistradaHoje }) => {
-                              const numero = animal?.numero || "Sem número";
-                              const brinco = animal?.brinco ? ` ${animal.brinco}` : "";
-                              const dia = Math.max(diffInDays(aplicacao?.data_inicio, hojeYmd), 0);
-                              const acaoDoDia = resolveEtapaDoDia(prot.etapas, dia);
-                              const iaConcluidaHoje = acaoDoDia === "IA prevista hoje" && iaRegistradaHoje;
-                              const acaoDoDiaTexto = iaConcluidaHoje
-                                ? "✅ IA registrada hoje (concluído)"
-                                : acaoDoDia;
 
-                              return (
-                                <div key={aplicacao?.id} style={{ border: `1px solid ${TOKENS.colors.gray200}`, borderRadius: TOKENS.radii.md, padding: "10px 12px", fontWeight: 600, color: TOKENS.colors.gray700 }}>
-                                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                    <span>
-                                      {numero}
-                                      {brinco} — Dia {dia} do protocolo
-                                    </span>
-                                    <span
+                          <div style={{ display: "flex", gap: "4px" }}>
+                            <button
+                              onClick={() => handleDuplicar(prot)}
+                              style={{
+                                padding: "8px",
+                                borderRadius: TOKENS.radii.md,
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                color: TOKENS.colors.gray400,
+                                transition: "color .2s ease",
+                              }}
+                              title="Duplicar"
+                              onMouseEnter={(e) => (e.currentTarget.style.color = TOKENS.colors.primary)}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.colors.gray400)}
+                            >
+                              <Icon name="duplicate" size={18} />
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setEditando(prot);
+                                setModalAberto(true);
+                              }}
+                              style={{
+                                padding: "8px",
+                                borderRadius: TOKENS.radii.md,
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                color: TOKENS.colors.gray400,
+                                transition: "color .2s ease",
+                              }}
+                              title="Editar"
+                              onMouseEnter={(e) => (e.currentTarget.style.color = TOKENS.colors.primary)}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.colors.gray400)}
+                            >
+                              <Icon name="edit" size={18} />
+                            </button>
+
+                            <button
+                              onClick={() => handleExcluir(prot)}
+                              style={{
+                                padding: "8px",
+                                borderRadius: TOKENS.radii.md,
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                color: TOKENS.colors.gray400,
+                                transition: "color .2s ease",
+                              }}
+                              title="Excluir"
+                              onMouseEnter={(e) => (e.currentTarget.style.color = TOKENS.colors.danger)}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.colors.gray400)}
+                            >
+                              <Icon name="trash" size={18} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <h3 style={{ margin: "0 0 8px", fontSize: "18px", fontWeight: "800", color: TOKENS.colors.gray900 }}>
+                          {prot.nome}
+                        </h3>
+
+                        <p style={{ margin: "0 0 16px", fontSize: "14px", color: TOKENS.colors.gray500, minHeight: "20px" }}>
+                          {prot.descricao || "Sem descrição"}
+                        </p>
+
+                        <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
+                            <Icon name="calendar" size={16} />
+                            <span>{maxDia} dias</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: TOKENS.colors.gray600 }}>
+                            <Icon name="check" size={16} />
+                            <span>{etapasCount} etapas</span>
+                          </div>
+                        </div>
+
+                        {/* Mini timeline */}
+                        <div
+                          style={{
+                            height: "4px",
+                            background: TOKENS.colors.gray100,
+                            borderRadius: TOKENS.radii.full,
+                            display: "flex",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {Array.from({ length: Math.min(maxDia + 1, 10) }).map((_, i) => {
+                            const hasEtapa = (prot.etapas || []).some((e) => e.dia === i);
+                            return (
+                              <div
+                                key={i}
+                                style={{
+                                  flex: 1,
+                                  background: hasEtapa ? TOKENS.colors.primary : "transparent",
+                                  borderRight: `1px solid ${TOKENS.colors.gray50}`,
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginTop: "4px",
+                            fontSize: "11px",
+                            color: TOKENS.colors.gray400,
+                          }}
+                        >
+                          <span>D0</span>
+                          <span>D{maxDia}</span>
+                        </div>
+
+                        {/* Performance para IATF */}
+                        {isIATF && (() => {
+                          const perfData = performanceData.find(p => p.nome === prot.nome);
+                          if (!perfData) return null;
+
+                          return (
+                            <div style={{ marginTop: "20px", paddingTop: "20px", borderTop: `1px solid ${TOKENS.colors.gray200}` }}>
+                              <div style={{ fontSize: "12px", fontWeight: "700", color: TOKENS.colors.gray600, marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Performance
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+                                <div style={{ textAlign: "center", padding: "12px", background: TOKENS.colors.successLight, borderRadius: TOKENS.radii.md, border: `1px solid ${TOKENS.colors.success}30` }}>
+                                  <div style={{ fontSize: "24px", fontWeight: "800", color: TOKENS.colors.success }}>
+                                    {perfData.taxaPrenhez}%
+                                  </div>
+                                  <div style={{ fontSize: "11px", color: TOKENS.colors.gray600, marginTop: "4px" }}>Taxa Prenhez</div>
+                                </div>
+                                <div style={{ textAlign: "center", padding: "12px", background: TOKENS.colors.warningLight, borderRadius: TOKENS.radii.md, border: `1px solid ${TOKENS.colors.warning}30` }}>
+                                  <div style={{ fontSize: "24px", fontWeight: "800", color: TOKENS.colors.warning }}>
+                                    R$ {perfData.custoMedio}
+                                  </div>
+                                  <div style={{ fontSize: "11px", color: TOKENS.colors.gray600, marginTop: "4px" }}>Custo Médio</div>
+                                </div>
+                                <div style={{ textAlign: "center", padding: "12px", background: TOKENS.colors.primaryLight, borderRadius: TOKENS.radii.md, border: `1px solid ${TOKENS.colors.primary}30` }}>
+                                  <div style={{ fontSize: "24px", fontWeight: "800", color: TOKENS.colors.primary }}>
+                                    {perfData.totalAplicacoes}
+                                  </div>
+                                  <div style={{ fontSize: "11px", color: TOKENS.colors.gray600, marginTop: "4px" }}>Aplicações</div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Ações */}
+                      <div style={{ borderTop: `1px solid ${TOKENS.colors.gray200}`, padding: "12px 24px", background: TOKENS.colors.gray50 }}>
+                        <button
+                          onClick={() => toggleExpand(prot)}
+                          style={{
+                            width: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "6px",
+                            padding: "8px",
+                            border: "none",
+                            background: "transparent",
+                            color: TOKENS.colors.primary,
+                            fontWeight: "700",
+                            fontSize: "13px",
+                            cursor: "pointer",
+                            borderRadius: TOKENS.radii.md,
+                            transition: "background .2s ease",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "#fff")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                        >
+                          <Icon name={expandedId === prot.id ? "chevronUp" : "chevronDown"} size={16} />
+                          {expandedId === prot.id ? "Ocultar Vacas Ativas" : `Ver Vacas Ativas (${activeList.length})`}
+                        </button>
+                      </div>
+
+                      {/* Vacas Ativas */}
+                      {expandedId === prot.id && (
+                        <div style={{ padding: "0 24px 24px", background: TOKENS.colors.gray50 }}>
+                          <div
+                            style={{
+                              background: "#fff",
+                              borderRadius: TOKENS.radii.lg,
+                              padding: "16px",
+                              fontSize: "13px",
+                              color: TOKENS.colors.gray600,
+                            }}
+                          >
+                            {activeList.length === 0 ? (
+                              <div style={{ textAlign: "center", padding: "20px" }}>
+                                <Icon name="cow" size={32} color={TOKENS.colors.gray300} />
+                                <p style={{ margin: "10px 0 0" }}>Nenhuma vaca ativa neste protocolo</p>
+                              </div>
+                            ) : (
+                              <div style={{ display: "grid", gap: "8px" }}>
+                                {activeList.map(({ aplicacao, animal, iaRegistradaHoje }) => {
+                                  const numero = animal?.numero || "Sem número";
+                                  const brinco = animal?.brinco ? ` ${animal.brinco}` : "";
+                                  const dia = Math.max(diffInDays(aplicacao?.data_inicio, hojeYmd), 0);
+                                  const acaoDoDia = resolveEtapaDoDia(prot.etapas, dia);
+                                  const iaConcluidaHoje = acaoDoDia === "IA prevista hoje" && iaRegistradaHoje;
+                                  const acaoDoDiaTexto = iaConcluidaHoje ? "✅ IA registrada hoje (concluído)" : acaoDoDia;
+
+                                  return (
+                                    <div
+                                      key={aplicacao?.id}
                                       style={{
-                                        color: iaConcluidaHoje ? TOKENS.colors.gray400 : TOKENS.colors.gray500,
-                                        fontWeight: 500,
+                                        border: `1px solid ${TOKENS.colors.gray200}`,
+                                        borderRadius: TOKENS.radii.md,
+                                        padding: "10px 12px",
+                                        fontWeight: 600,
+                                        color: TOKENS.colors.gray700,
                                       }}
                                     >
-                                      {acaoDoDiaTexto}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                        <span>
+                                          {numero}
+                                          {brinco} — Dia {dia} do protocolo
+                                        </span>
+                                        <span
+                                          style={{
+                                            color: iaConcluidaHoje ? TOKENS.colors.gray400 : TOKENS.colors.gray500,
+                                            fontWeight: 500,
+                                          }}
+                                        >
+                                          {acaoDoDiaTexto}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -841,7 +1217,9 @@ export default function Protocolos() {
       )}
 
       <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes spin { 
+          to { transform: rotate(360deg); } 
+        }
       `}</style>
     </div>
   );
