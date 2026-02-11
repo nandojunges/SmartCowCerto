@@ -32,12 +32,14 @@ import AjustesNotificacoes from "./Pages/Ajustes/AjustesNotificacoes.jsx";
 import AjustesPerfil from "./Pages/Ajustes/AjustesPerfil.jsx";
 import Admin from "./Pages/Admin/Admin.jsx";
 import TecnicoHome from "./Pages/Tecnico/TecnicoHome.jsx";
+
 import SmartCowShell from "./app/routes/SmartCowShell";
+
+// Mobile
 import HomeMobile from "./features/home_mobile/HomeMobile";
 import OperacoesMobile from "./features/operacoes_mobile/OperacoesMobile";
 import AnimaisMobile from "./features/animais_mobile/AnimaisMobile";
-import NovoAnimalMobile from "./features/animais_mobile/NovoAnimalMobile";
-import AnimalMobileDetalhe from "./features/animais_mobile/AnimalMobileDetalhe";
+import CadastroAnimalMobile from "./features/animais_mobile/CadastroAnimalMobile";
 import LeiteMobile from "./features/leite_mobile/LeiteMobile";
 import LancarLeiteMobile from "./features/leite_mobile/LancarLeiteMobile";
 import ReproMobile from "./features/repro_mobile/ReproMobile";
@@ -57,6 +59,7 @@ export default function App() {
     profileLoading,
     fazendasLoading,
   } = useFazenda();
+
   const { pathname } = useLocation();
 
   useEffect(() => {
@@ -109,19 +112,23 @@ export default function App() {
             {/* redireciona "/" para /inicio por padrão */}
             <Route path="/" element={<Navigate to="/inicio" replace />} />
 
+            {/* ───────────────── MOBILE (/m) ───────────────── */}
             <Route element={<SmartCowShell />}>
               <Route path="/m" element={<Outlet />}>
                 <Route index element={<HomeMobile />} />
                 <Route path="operacoes" element={<OperacoesMobile />} />
+
                 <Route path="animais" element={<AnimaisMobile />} />
-                <Route path="animais/novo" element={<NovoAnimalMobile />} />
-                <Route path="animais/:id" element={<AnimalMobileDetalhe />} />
+                <Route path="animais/novo" element={<CadastroAnimalMobile />} />
+
                 <Route path="leite" element={<LeiteMobile />} />
                 <Route path="leite/lancar" element={<LancarLeiteMobile />} />
+
                 <Route path="repro" element={<ReproMobile />} />
                 <Route path="repro/ia" element={<RegistrarIAMobile />} />
                 <Route path="repro/dg" element={<RegistrarDGMobile />} />
                 <Route path="repro/protocolos" element={<ProtocolosMobile />} />
+
                 <Route path="calendario" element={<CalendarioMobile />} />
                 <Route path="mais" element={<MaisMobile />} />
               </Route>
@@ -146,45 +153,241 @@ export default function App() {
             {/* 🟦 DEMAIS PÁGINAS DENTRO DO SISTEMABASE (com menu azul) */}
             <Route element={<SmartCowShell />}>
               <Route element={<SistemaBase tipoConta={tipoConta} />}>
-              <Route
-                element={
-                <AssistenteGuard
-                  isAssistenteTecnico={isAssistenteTecnico}
-                  hasFazendaSelecionada={hasFazendaSelecionada}
-                  loading={profileLoading}
-                  isProdutor={isProdutor}
-                  selecionandoFazenda={fazendasLoading}
-                  isAdminPath={isAdminPath}
-                />
-              }
-            >
-                <Route path="/inicio" element={<RequireModuloAccess modulo="inicio"><Inicio /></RequireModuloAccess>} />
-                <Route path="/animais" element={<RequireModuloAccess modulo="animais"><Animais /></RequireModuloAccess>} />
-                <Route path="/bezerras" element={<RequireModuloAccess modulo="bezerras"><Bezerras /></RequireModuloAccess>} />
-                <Route path="/reproducao" element={<RequireModuloAccess modulo="reproducao"><Reproducao /></RequireModuloAccess>} />
-                <Route path="/leite" element={<RequireModuloAccess modulo="leite"><Leite /></RequireModuloAccess>} />
-                <Route path="/saude" element={<RequireModuloAccess modulo="saude"><Saude /></RequireModuloAccess>} />
-                <Route path="/consumo" element={<RequireModuloAccess modulo="consumo"><ConsumoReposicao /></RequireModuloAccess>} />
-                <Route path="/financeiro" element={<RequireModuloAccess modulo="financeiro"><Financeiro /></RequireModuloAccess>} />
-                <Route path="/calendario" element={<RequireModuloAccess modulo="calendario"><Calendario /></RequireModuloAccess>} />
-                <Route path="/ajustes" element={<RequireModuloAccess modulo="ajustes"><Ajustes /></RequireModuloAccess>} />
-                <Route path="/ajustes/acessos" element={<RequireModuloAccess modulo="ajustes"><AjustesAcessos /></RequireModuloAccess>} />
-                <Route path="/ajustes/perfil" element={<RequireModuloAccess modulo="ajustes"><AjustesPerfil /></RequireModuloAccess>} />
-                <Route path="/ajustes/fazendas" element={<RequireModuloAccess modulo="ajustes"><AjustesFazendas /></RequireModuloAccess>} />
-                <Route path="/ajustes/aparencia" element={<RequireModuloAccess modulo="ajustes"><AjustesAparencia /></RequireModuloAccess>} />
-                <Route path="/ajustes/idioma" element={<RequireModuloAccess modulo="ajustes"><AjustesIdioma /></RequireModuloAccess>} />
-                <Route path="/ajustes/notificacoes" element={<RequireModuloAccess modulo="ajustes"><AjustesNotificacoes /></RequireModuloAccess>} />
-              </Route>
-              <Route path="/tecnico" element={<TecnicoHome />} />
+                <Route
+                  element={
+                    <AssistenteGuard
+                      isAssistenteTecnico={isAssistenteTecnico}
+                      hasFazendaSelecionada={hasFazendaSelecionada}
+                      loading={profileLoading}
+                      isProdutor={isProdutor}
+                      selecionandoFazenda={fazendasLoading}
+                      isAdminPath={isAdminPath}
+                    />
+                  }
+                >
+                  <Route
+                    path="/inicio"
+                    element={
+                      <RequireModuloAccess
+                        modulo="inicio"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Inicio />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/animais"
+                    element={
+                      <RequireModuloAccess
+                        modulo="animais"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Animais />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/bezerras"
+                    element={
+                      <RequireModuloAccess
+                        modulo="bezerras"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Bezerras />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/reproducao"
+                    element={
+                      <RequireModuloAccess
+                        modulo="reproducao"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Reproducao />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/leite"
+                    element={
+                      <RequireModuloAccess
+                        modulo="leite"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Leite />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/saude"
+                    element={
+                      <RequireModuloAccess
+                        modulo="saude"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Saude />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/consumo"
+                    element={
+                      <RequireModuloAccess
+                        modulo="consumo"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <ConsumoReposicao />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/financeiro"
+                    element={
+                      <RequireModuloAccess
+                        modulo="financeiro"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Financeiro />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/calendario"
+                    element={
+                      <RequireModuloAccess
+                        modulo="calendario"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Calendario />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/ajustes"
+                    element={
+                      <RequireModuloAccess
+                        modulo="ajustes"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <Ajustes />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/ajustes/acessos"
+                    element={
+                      <RequireModuloAccess
+                        modulo="ajustes"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <AjustesAcessos />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/ajustes/perfil"
+                    element={
+                      <RequireModuloAccess
+                        modulo="ajustes"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <AjustesPerfil />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/ajustes/fazendas"
+                    element={
+                      <RequireModuloAccess
+                        modulo="ajustes"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <AjustesFazendas />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/ajustes/aparencia"
+                    element={
+                      <RequireModuloAccess
+                        modulo="ajustes"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <AjustesAparencia />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/ajustes/idioma"
+                    element={
+                      <RequireModuloAccess
+                        modulo="ajustes"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <AjustesIdioma />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/ajustes/notificacoes"
+                    element={
+                      <RequireModuloAccess
+                        modulo="ajustes"
+                        isAssistenteTecnico={isAssistenteTecnico}
+                        permissoesModulo={permissoesModulo}
+                        permissoesLoading={permissoesLoading}
+                      >
+                        <AjustesNotificacoes />
+                      </RequireModuloAccess>
+                    }
+                  />
+                </Route>
 
-              {/* qualquer rota desconhecida volta para /inicio */}
-              <Route path="*" element={<Navigate to={isAdminPath ? "/admin" : "/inicio"} replace />} />
+                <Route path="/tecnico" element={<TecnicoHome />} />
+
+                {/* qualquer rota desconhecida volta para /inicio */}
+                <Route
+                  path="*"
+                  element={<Navigate to={isAdminPath ? "/admin" : "/inicio"} replace />}
+                />
               </Route>
             </Route>
           </>
         )}
       </Routes>
-      <style>{`.modulo-readonly button{display:none!important;} .modulo-readonly [role="button"]{pointer-events:none!important;} .modulo-readonly input,.modulo-readonly textarea,.modulo-readonly select{pointer-events:none!important;}`}</style>
+
       <ToastContainer position="top-right" autoClose={3500} pauseOnFocusLoss={false} />
     </>
   );
@@ -199,21 +402,16 @@ function AssistenteGuard({
   isAdminPath,
 }) {
   useEffect(() => {
-    if (loading || isAdminPath) {
-      return;
-    }
+    if (loading || isAdminPath) return;
+
     if (isAssistenteTecnico && !hasFazendaSelecionada) {
       toast.info("Selecione uma fazenda para acessar.");
     }
   }, [hasFazendaSelecionada, isAssistenteTecnico, loading, isAdminPath]);
 
-  if (isAdminPath) {
-    return <Outlet />;
-  }
+  if (isAdminPath) return <Outlet />;
 
-  if (loading || (isProdutor && selecionandoFazenda)) {
-    return null;
-  }
+  if (loading || (isProdutor && selecionandoFazenda)) return null;
 
   if (isAssistenteTecnico && !hasFazendaSelecionada) {
     return <Navigate to="/tecnico" replace />;
@@ -223,9 +421,7 @@ function AssistenteGuard({
 }
 
 function AdminGuard({ role, tipoConta, loading, fallbackPath }) {
-  if (loading) {
-    return null;
-  }
+  if (loading) return null;
 
   const roleNormalizada = role ? String(role).trim().toUpperCase() : "";
   const tipoContaNormalizada = tipoConta ? String(tipoConta).trim().toUpperCase() : "";
@@ -238,28 +434,15 @@ function AdminGuard({ role, tipoConta, loading, fallbackPath }) {
   return <Outlet />;
 }
 
-
-function RequireModuloAccess({ modulo, children }) {
-  const { tipoConta, canView, canEdit, permissoesLoading } = useFazenda();
-
-  const isAssistenteTecnico =
-    tipoConta && String(tipoConta).trim().toUpperCase() === "ASSISTENTE_TECNICO";
-
-  if (!isAssistenteTecnico) {
-    return children;
-  }
-
-  if (permissoesLoading) {
-    return null;
-  }
-
-  if (!canView(modulo)) {
-    return <Navigate to="/inicio" replace />;
-  }
-
-  if (canEdit(modulo)) {
-    return children;
-  }
-
-  return <div className="modulo-readonly">{children}</div>;
+function RequireModuloAccess({
+  modulo,
+  isAssistenteTecnico,
+  permissoesModulo,
+  permissoesLoading,
+  children,
+}) {
+  if (!isAssistenteTecnico) return children;
+  if (permissoesLoading) return null;
+  if (!permissoesModulo?.[modulo]?.pode_ver) return <Navigate to="/inicio" replace />;
+  return children;
 }
