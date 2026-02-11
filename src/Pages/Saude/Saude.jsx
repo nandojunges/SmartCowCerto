@@ -67,16 +67,6 @@ function isoToBR(iso) {
   if (Number.isNaN(dt.getTime())) return "";
   return `${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}/${dt.getFullYear()}`;
 }
-function startOfDayISO(dateInputYYYYMMDD) {
-  const d = new Date(`${dateInputYYYYMMDD}T00:00:00`);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-function endOfDayISO(dateInputYYYYMMDD) {
-  const d = new Date(`${dateInputYYYYMMDD}T00:00:00`);
-  d.setHours(23, 59, 59, 999);
-  return d.toISOString();
-}
 
 export default function Saude() {
   const { fazendaAtualId } = useFazenda();
@@ -148,15 +138,15 @@ export default function Saude() {
       return;
     }
 
-    const iniISO = startOfDayISO(dtIni);
-    const fimISO = endOfDayISO(dtFim);
+    const iniDate = dtIni;
+    const fimDate = dtFim;
 
     // 1) animais
     let animaisData = [];
     try {
       const { data, error } = await supabase
         .from("animais")
-        .select("id, numero, brinco, raca_id, categoria, situacao_produtiva, ativo")
+        .select("id, numero, brinco, raca_id, ativo, lote_id, fazenda_id")
         .eq("fazenda_id", fazendaAtualId)
         .order("numero", { ascending: true });
 
@@ -172,8 +162,8 @@ export default function Saude() {
           "id, animal_id, doenca, protocolo_id, status, data_inicio, data_fim, responsavel_id, observacao, created_at"
         )
         .eq("fazenda_id", fazendaAtualId)
-        .gte("data_inicio", iniISO)
-        .lte("data_inicio", fimISO)
+        .gte("data_inicio", iniDate)
+        .lte("data_inicio", fimDate)
         .order("data_inicio", { ascending: false });
 
       if (!error && Array.isArray(data)) tratData = data;
@@ -184,10 +174,12 @@ export default function Saude() {
     try {
       const { data, error } = await supabase
         .from("saude_aplicacoes")
-        .select("id, tratamento_id, animal_id, data_prevista, data_real, produto, dose, via, status")
+        .select(
+          "id, tratamento_id, animal_id, data_prevista, data_real, produto_id, produto_nome_snapshot, quantidade, unidade, via, status"
+        )
         .eq("fazenda_id", fazendaAtualId)
-        .gte("data_prevista", iniISO)
-        .lte("data_prevista", fimISO)
+        .gte("data_prevista", iniDate)
+        .lte("data_prevista", fimDate)
         .order("data_prevista", { ascending: true });
 
       if (!error && Array.isArray(data)) aplData = data;
@@ -310,7 +302,7 @@ export default function Saude() {
         animalBrinco: a?.brinco ?? "-",
         protocoloNome: prot?.nome ?? (t.protocolo_id ? "Protocolo" : "-"),
         proximaData: proxima?.data_prevista || null,
-        proximoProduto: proxima?.produto || "-",
+        proximoProduto: proxima?.produto_nome_snapshot || "-",
         proximaVia: proxima?.via || "-",
         isAtrasado: atrasado,
         fimCarenciaISO: null,
@@ -319,11 +311,11 @@ export default function Saude() {
   }, [tratamentosFiltrados, animaisMap, protocolosMap, aplicacoesPorTrat, agora]);
 
   const agendaProximas = useMemo(() => {
-    const hojeISO = startOfDayISO(toISODateInput(new Date()));
+    const hojeDate = toISODateInput(new Date());
     const future = aplicacoes
       .filter((ap) => {
         const done = ap.data_real || ap.status === "realizado";
-        return !done && new Date(ap.data_prevista).toISOString() >= hojeISO;
+        return !done && (ap.data_prevista || "") >= hojeDate;
       })
       .sort((a, b) => new Date(a.data_prevista) - new Date(b.data_prevista))
       .slice(0, 20)
