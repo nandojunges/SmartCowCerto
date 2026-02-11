@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
-import CreatableSelect from "react-select/creatable";
 import { supabase } from "../../../lib/supabaseClient";
 import { useFazenda } from "../../../context/FazendaContext";
 import ModalTratamentoPadrao from "../../Saude/ModalTratamentoPadrao";
@@ -11,108 +10,77 @@ import ModalTratamentoPadrao from "../../Saude/ModalTratamentoPadrao";
 const theme = {
   colors: {
     slate: { 50: "#f8fafc", 100: "#f1f5f9", 200: "#e2e8f0", 300: "#cbd5e1", 400: "#94a3b8", 500: "#64748b", 600: "#475569", 700: "#334155", 800: "#1e293b" },
-    primary: { 50: "#eff6ff", 100: "#dbeafe", 500: "#3b82f6", 600: "#2563eb", 700: "#1d4ed8" },
-    danger: { 50: "#fef2f2", 100: "#fee2e2", 500: "#ef4444", 600: "#dc2626" },
-    success: { 50: "#f0fdf4", 500: "#22c55e" },
-    warning: { 50: "#fffbeb", 500: "#f59e0b" },
+    primary: { 50: "#eff6ff", 100: "#dbeafe", 200: "#bfdbfe", 500: "#3b82f6", 600: "#2563eb", 700: "#1d4ed8" },
+    danger: { 50: "#fef2f2", 100: "#fee2e2", 200: "#fecaca", 600: "#dc2626", 700: "#b91c1c" },
+    success: { 50: "#f0fdf4", 100: "#dcfce7", 600: "#16a34a" },
+    warning: { 50: "#fffbeb", 100: "#fef3c7", 600: "#d97706" },
   },
-  shadows: { sm: "0 1px 2px 0 rgb(0 0 0 / 0.05)", md: "0 4px 6px -1px rgb(0 0 0 / 0.1)", lg: "0 10px 15px -3px rgb(0 0 0 / 0.1)" },
-  radius: { sm: "6px", md: "8px", lg: "12px", xl: "16px" },
+  shadows: {
+    sm: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+    md: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+    lg: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
+  },
+  radius: { sm: "6px", md: "8px", lg: "12px", xl: "16px", full: "999px" },
 };
 
 const Icons = {
-  close: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
-  plus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>,
-  pill: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>,
-  calendar: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
-  clock: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
-  alert: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
-  check: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
-  trash: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>,
-  chart: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>,
+  alert: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  ),
+  calendar: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  ),
 };
 
 /* =========================================================
-   HELPERS (mantidos do original)
+   HELPERS
    ========================================================= */
-const todayBR = () => new Date().toLocaleDateString("pt-BR");
 const pad = (n) => String(n).padStart(2, "0");
-const toISODate = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+const todayBR = () => new Date().toLocaleDateString("pt-BR");
 const parseBR = (str) => {
   if (!str) return null;
-  const [d, m, y] = str.split("/").map(Number);
-  const dt = new Date(y, (m || 1) - 1, d || 1);
+  const [d, m, y] = String(str).split("/").map(Number);
+  if (!d || !m || !y) return null;
+  const dt = new Date(y, m - 1, d);
   return Number.isFinite(dt.getTime()) ? dt : null;
 };
-const addHours = (dt, h) => { const d = new Date(dt.getTime()); d.setHours(d.getHours() + h); return d; };
-const addDays = (dt, days) => { const d = new Date(dt.getTime()); d.setDate(d.getDate() + days); return d; };
 const toBRDate = (dt) => `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`;
-const duracaoTotalTexto = (reps, gapH) => {
-  const r = Number(reps), gap = Number(gapH);
-  if (!Number.isFinite(r) || !Number.isFinite(gap) || r <= 0 || gap <= 0) return "";
-  const totalH = r * gap;
-  const d = Math.floor(totalH / 24), hh = totalH % 24;
-  if (d && hh) return `${d}d ${hh}h`;
-  if (d) return `${d}d`;
-  return `${hh}h`;
+const toISODate = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+const addDays = (dt, days) => {
+  const d = new Date(dt.getTime());
+  d.setDate(d.getDate() + days);
+  return d;
 };
-
-/* ===== normalização de produtos ===== */
-const ascii = (t) => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
-const pickFirst = (...vals) => vals.find(v => v !== undefined && v !== null && `${v}`.trim() !== "");
-const normalizeProduto = (p) => {
-  const id = pickFirst(p.id, p.produto_id, p.produtoId, p.sku, p.codigo, p.uuid, p._id, null);
-  const nome = pickFirst(p.nome, p.nome_comercial, p.nomeComercial, p.descricao, p.descr, p.titulo, p.label, p.nomeProduto, p.produto?.nome, p.produto?.descricao, p.item?.nome);
-  const unidade = pickFirst(p.unidade, p.unidade_sigla, p.unidadeSigla, p.medida?.sigla, p.unidade?.sigla, p.produto?.unidade, p.un);
-  const categoria = pickFirst(p.categoria, p.categoria_nome, p.categoriaNome, p.categoria?.nome, p.grupo, p.grupo?.nome, p.setor, p.tipo, p.classe, p.departamento, p.produto?.categoria, "");
-  const tagsArr = pickFirst(p.tags, p.etiquetas, p.labels, p.rotulos, p.marcadores, []) || [];
-  const saldoRaw = pickFirst(p.saldo, p.qtd, p.quantidade, p.estoque, p.qtd_disponivel, p.saldoAtual);
-  const saldo = Number.isFinite(+saldoRaw) ? +saldoRaw : undefined;
-  return { id, nome, unidade, categoria, saldo, tags: Array.isArray(tagsArr) ? tagsArr : [] };
+const ensureBRMask = (v) => {
+  const digits = String(v || "").replace(/\D/g, "").slice(0, 8);
+  const d = digits.slice(0, 2);
+  const m = digits.slice(2, 4);
+  const y = digits.slice(4, 8);
+  if (digits.length <= 2) return d;
+  if (digits.length <= 4) return `${d}/${m}`;
+  return `${d}/${m}/${y}`;
 };
-
-const isFarmaciaOuRepro = (cat) => { const s = ascii(cat); return s.includes("farmac") || s.includes("reproduc") || s.includes("repro") || s.includes("vet"); };
-const isSemen = (p) => { const n = ascii(p.nome), c = ascii(p.categoria), t = ascii((p.tags || []).join(" ")); return n.includes("semen") || c.includes("semen") || t.includes("semen"); };
-const dedupBy = (arr, keyFn) => { const m=new Map(); for(const it of arr){ const k=keyFn(it); if(!m.has(k)) m.set(k,it);} return [...m.values()]; };
-const nameFromOptionLabel = (label) => String(label).split(" (")[0].split(" • ")[0];
 
 /* =========================================================
-   SUB-COMPONENTES UI
+   UI
    ========================================================= */
-
 const InputGroup = ({ label, children, icon: Icon, help }) => (
   <div style={{ marginBottom: "4px" }}>
-    <label
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        fontSize: "11px",
-        fontWeight: 700,
-        color: theme.colors.slate[500],
-      }}
-    >
-      {Icon && (
-        <span style={{ color: theme.colors.slate[400] }}>
-          <Icon />
-        </span>
-      )}
+    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 800, color: theme.colors.slate[500] }}>
+      {Icon && <span style={{ color: theme.colors.slate[400] }}><Icon /></span>}
       {label}
     </label>
-
     {children}
-
-    {help && (
-      <div
-        style={{
-          marginTop: "4px",
-          fontSize: "11px",
-          color: theme.colors.slate[500],
-        }}
-      >
-        {help}
-      </div>
-    )}
+    {help && <div style={{ marginTop: "4px", fontSize: "11px", color: theme.colors.slate[500] }}>{help}</div>}
   </div>
 );
 
@@ -120,234 +88,13 @@ const Toggle = ({ checked, onChange, label, disabled }) => (
   <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>
     <div style={{ position: "relative", width: "40px", height: "22px" }}>
       <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} style={{ opacity: 0, width: 0, height: 0 }} />
-      <div style={{
-        position: "absolute", inset: 0,
-        backgroundColor: checked ? theme.colors.primary[600] : theme.colors.slate[200],
-        borderRadius: "22px", transition: "0.3s",
-      }}>
-        <div style={{
-          position: "absolute", height: "18px", width: "18px",
-          left: checked ? "20px" : "2px", bottom: "2px",
-          backgroundColor: "white", borderRadius: "50%", transition: "0.3s",
-          boxShadow: theme.shadows.sm,
-        }} />
+      <div style={{ position: "absolute", inset: 0, backgroundColor: checked ? theme.colors.primary[600] : theme.colors.slate[200], borderRadius: "22px", transition: "0.3s" }}>
+        <div style={{ position: "absolute", height: "18px", width: "18px", left: checked ? "20px" : "2px", bottom: "2px", backgroundColor: "white", borderRadius: "50%", transition: "0.3s", boxShadow: theme.shadows.sm }} />
       </div>
     </div>
-    <span style={{ fontSize: "13px", fontWeight: 600, color: theme.colors.slate[700] }}>{label}</span>
+    <span style={{ fontSize: "13px", fontWeight: 700, color: theme.colors.slate[700] }}>{label}</span>
   </label>
 );
-
-const CardTratamento = ({ item, index, produtos, produtoOptions, onUpdate, onRemove, isLast }) => {
-  const calcBaixa = () => {
-    const dose = Number(item.dose), reps = Number(item.repeticoes);
-    if (!Number.isFinite(dose) || !Number.isFinite(reps)) return 0;
-    return Math.max(0, dose * reps);
-  };
-
-  const duracao = duracaoTotalTexto(item.repeticoes, item.intervaloHoras);
-  const baixa = calcBaixa();
-  
-  const selectedProd = item.produtoId?.startsWith("custom:") || item.produtoId?.startsWith("name:")
-    ? { value: item.produtoId, label: item.produtoNome || nameFromOptionLabel(item._optLabel || "") || item.produtoId.slice(item.produtoId.indexOf(":")+1) }
-    : produtoOptions.find(o => o.value === item.produtoId) || null;
-
-  return (
-    <div style={{
-      background: "#fff", borderRadius: theme.radius.xl,
-      border: `1px solid ${theme.colors.slate[200]}`,
-      boxShadow: theme.shadows.sm,
-      overflow: "hidden",
-      marginBottom: isLast ? 0 : "16px",
-    }}>
-      {/* HEADER DO CARD */}
-      <div style={{
-        background: theme.colors.slate[50], padding: "12px 16px",
-        borderBottom: `1px solid ${theme.colors.slate[200]}`,
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{
-            width: "32px", height: "32px", borderRadius: "50%",
-            background: theme.colors.primary[100], color: theme.colors.primary[600],
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "14px", fontWeight: 800,
-          }}>
-            {index + 1}
-          </div>
-          <span style={{ fontSize: "14px", fontWeight: 700, color: theme.colors.slate[700] }}>
-            Tratamento #{index + 1}
-          </span>
-          {duracao && (
-            <span style={{
-              fontSize: "11px", padding: "2px 8px", borderRadius: theme.radius.full,
-              background: theme.colors.warning[50], color: theme.colors.warning[600],
-              fontWeight: 700,
-            }}>
-              Duração: {duracao}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={onRemove}
-          style={{
-            display: "flex", alignItems: "center", gap: "6px",
-            padding: "6px 12px", fontSize: "12px", fontWeight: 600,
-            color: theme.colors.danger[600], background: theme.colors.danger[50],
-            border: `1px solid ${theme.colors.danger[200]}`, borderRadius: theme.radius.md,
-            cursor: "pointer", transition: "all 0.2s",
-          }}
-        >
-          <Icons.trash /> Remover
-        </button>
-      </div>
-
-      {/* CONTEÚDO DO CARD */}
-      <div style={{ padding: "20px" }}>
-        {/* LINHA 1: Produto */}
-        <div style={{ marginBottom: "16px" }}>
-          <InputGroup label="Produto/Medicamento" icon={Icons.pill} help="Selecione do estoque ou digite um nome personalizado">
-            <CreatableSelect
-              styles={{
-                control: (base, s) => ({ ...base, minHeight: 44, borderRadius: theme.radius.md, borderColor: s.isFocused ? theme.colors.primary[500] : theme.colors.slate[200], boxShadow: s.isFocused ? `0 0 0 3px ${theme.colors.primary[100]}` : "none" }),
-                valueContainer: (b) => ({ ...b, padding: "0 12px" }),
-                menuPortal: (b) => ({ ...b, zIndex: 9999 }),
-              }}
-              options={produtoOptions}
-              value={selectedProd}
-              onChange={(opt) => {
-                if (!opt) { onUpdate({ produtoId:"", produtoNome:"", _optLabel:"" }); return; }
-                const val = String(opt.value);
-                if (val.startsWith("name:")) {
-                  onUpdate({ produtoId: val, produtoNome: nameFromOptionLabel(opt.label), _optLabel: opt.label });
-                  return;
-                }
-                const p = produtos.find(x => (x.id ?? `name:${x.nome}`) === val);
-                onUpdate({ produtoId: val, produtoNome:"", _optLabel: opt.label, unidade: p?.unidade || item.unidade });
-              }}
-              onCreateOption={(input) => { const id=`custom:${input}`; onUpdate({produtoId:id, produtoNome:input, _optLabel:input}); }}
-              placeholder="Buscar produto no estoque ou digitar nome..."
-              formatCreateLabel={(input) => `✏️ Usar "${input}" (personalizado)`}
-              noOptionsMessage={() => "Digite para criar novo ou aguarde carregar estoque..."}
-              menuPortalTarget={document.body}
-              isSearchable
-            />
-          </InputGroup>
-        </div>
-
-        {/* LINHA 2: Dosagem e Via */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "16px", marginBottom: "16px" }}>
-          <InputGroup label="Quantidade" icon={() => <span>💊</span>}>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <input
-                type="number"
-                step="0.1"
-                value={item.dose}
-                onChange={(e) => onUpdate({dose: e.target.value.replace(",",".")})}
-                placeholder="Ex: 20"
-                style={{ flex: 1, padding: "10px", borderRadius: theme.radius.md, border: `1px solid ${theme.colors.slate[200]}`, fontSize: "14px" }}
-              />
-              <Select
-                styles={{ control: (b,s) => ({ ...b, minHeight: 40, borderRadius: theme.radius.md, borderColor: s.isFocused ? theme.colors.primary[500] : theme.colors.slate[200] }), menuPortal: (b) => ({ ...b, zIndex: 9999 }) }}
-                options={[
-                  { value: "mL", label: "mL" }, { value: "g", label: "g" }, { value: "UI", label: "UI" },
-                  { value: "mg/kg", label: "mg/kg" }, { value: "mL/quarter", label: "mL/quarter" },
-                ]}
-                value={item.unidade ? { value: item.unidade, label: item.unidade } : null}
-                onChange={(opt) => onUpdate({ unidade: opt?.value || "" })}
-                placeholder="Unid."
-                menuPortalTarget={document.body}
-              />
-            </div>
-          </InputGroup>
-
-          <InputGroup label="Via" icon={() => <span>💉</span>}>
-            <Select
-              styles={{ control: (b,s) => ({ ...b, minHeight: 40, borderRadius: theme.radius.md, borderColor: s.isFocused ? theme.colors.primary[500] : theme.colors.slate[200] }), menuPortal: (b) => ({ ...b, zIndex: 9999 }) }}
-              options={["IM","IV","SC","PO","Intramamário","Intrauterino"].map(v => ({ value: v, label: v }))}
-              value={item.via ? { value: item.via, label: item.via } : null}
-              onChange={(opt) => onUpdate({ via: opt?.value || "" })}
-              placeholder="Via..."
-              isClearable
-              menuPortalTarget={document.body}
-            />
-          </InputGroup>
-
-          <InputGroup label="Total a Baixar" icon={() => <span>📦</span>} help="Calculado automaticamente">
-            <div style={{
-              padding: "10px", borderRadius: theme.radius.md, background: theme.colors.slate[50],
-              border: `1px solid ${theme.colors.slate[200]}`, textAlign: "center",
-              fontWeight: 800, color: theme.colors.slate[700], fontSize: "14px",
-            }}>
-              {baixa} {item.unidade || "un"}
-            </div>
-          </InputGroup>
-        </div>
-
-        {/* LINHA 3: Esquema (Repetições e Intervalo) */}
-        <div style={{ 
-          display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "16px", 
-          padding: "16px", background: theme.colors.primary[50], borderRadius: theme.radius.lg,
-          marginBottom: "16px",
-        }}>
-          <InputGroup label="Repetições" icon={() => <span>🔁</span>} help="Quantas aplicações">
-            <input
-              type="number"
-              min="1"
-              value={item.repeticoes}
-              onChange={(e) => onUpdate({repeticoes: e.target.value})}
-              placeholder="Ex: 3"
-              style={{ width: "100%", padding: "10px", borderRadius: theme.radius.md, border: `1px solid ${theme.colors.primary[200]}`, background: "#fff", fontSize: "14px" }}
-            />
-          </InputGroup>
-
-          <InputGroup label="Intervalo" icon={Icons.clock} help="Horas entre cada dose">
-            <input
-              type="number"
-              min="1"
-              value={item.intervaloHoras}
-              onChange={(e) => onUpdate({intervaloHoras: e.target.value})}
-              placeholder="Ex: 24"
-              style={{ width: "100%", padding: "10px", borderRadius: theme.radius.md, border: `1px solid ${theme.colors.primary[200]}`, background: "#fff", fontSize: "14px" }}
-            />
-          </InputGroup>
-
-          <InputGroup label="Data Início" icon={Icons.calendar}>
-            <input
-              value={item.inicioData}
-              onChange={(e) => onUpdate({inicioData: e.target.value})}
-              placeholder="dd/mm/aaaa"
-              style={{ width: "100%", padding: "10px", borderRadius: theme.radius.md, border: `1px solid ${theme.colors.primary[200]}`, background: "#fff", fontSize: "14px", fontFamily: "monospace" }}
-            />
-          </InputGroup>
-
-          <InputGroup label="Hora" icon={Icons.clock}>
-            <input
-              value={item.inicioHora}
-              onChange={(e) => onUpdate({inicioHora: e.target.value})}
-              placeholder="hh:mm"
-              style={{ width: "100%", padding: "10px", borderRadius: theme.radius.md, border: `1px solid ${theme.colors.primary[200]}`, background: "#fff", fontSize: "14px", fontFamily: "monospace" }}
-            />
-          </InputGroup>
-        </div>
-
-        {/* LINHA 4: Observação específica */}
-        <InputGroup label="Observações do Tratamento" icon={() => <span>📝</span>}>
-          <input
-            value={item.obs}
-            onChange={(e) => onUpdate({obs: e.target.value})}
-            placeholder="Detalhes específicos: temperatura de armazenamento, cuidados especiais, etc."
-            style={{ width: "100%", padding: "10px", borderRadius: theme.radius.md, border: `1px solid ${theme.colors.slate[200]}`, fontSize: "14px" }}
-          />
-        </InputGroup>
-      </div>
-    </div>
-  );
-};
-
-/* =========================================================
-   COMPONENTE PRINCIPAL
-   ========================================================= */
 
 const OCORRENCIAS = [
   "Metrite","Endometrite","Retenção de placenta","Mastite clínica","Mastite subclínica",
@@ -362,72 +109,37 @@ export default function OcorrenciaClinica({
   onShowNovoProtChange,
 }) {
   const { fazendaAtualId } = useFazenda();
+
+  // controle do modal de criar protocolo (controlado ou local)
   const [localShowNovoProt, setLocalShowNovoProt] = useState(false);
   const isShowNovoProtControlled = typeof showNovoProtProp === "boolean";
   const showNovoProt = isShowNovoProtControlled ? showNovoProtProp : localShowNovoProt;
   const setShowNovoProt = (value) => {
-    if (!isShowNovoProtControlled) {
-      setLocalShowNovoProt(value);
-    }
+    if (!isShowNovoProtControlled) setLocalShowNovoProt(value);
     onShowNovoProtChange?.(value);
   };
+
+  // ocorrência
   const [oc, setOc] = useState("Metrite");
   const [obs, setObs] = useState("");
-  const [produtos, setProdutos] = useState([]);
-  const fetchedOnce = useRef(false);
-  const [showTrat, setShowTrat] = useState(false);
-  const [items, setItems] = useState([]);
-  const [agendar, setAgendar] = useState(true);
-  const [baixarEstoque, setBaixarEstoque] = useState(true);
+
+  // data de início (base do protocolo)
+  const [dataInicioBR, setDataInicioBR] = useState(todayBR());
+
+  // protocolos saúde
   const [protocolosSaude, setProtocolosSaude] = useState([]);
   const [protocoloSelId, setProtocoloSelId] = useState("");
   const [carregandoProt, setCarregandoProt] = useState(false);
 
-  // Fetch produtos (mantido igual)
-  useEffect(() => {
-    if (fetchedOnce.current) return;
-    fetchedOnce.current = true;
-    (async () => {
-      try {
-        const qsFarmRepro = new URLSearchParams({ categorias: "Farmácia,Reprodução", limit: "1000" }).toString();
-        const tries = [
-          `/api/v1/consumo/estoque?${qsFarmRepro}`,
-          "/api/v1/estoque/produtos?categoria=vet&limit=1000",
-          "/api/v1/estoque/produtos?limit=1000",
-          "/api/estoque/produtos?categoria=vet&limit=1000",
-          "/api/estoque/produtos?limit=1000",
-        ];
-        let results = [];
-        for (const url of tries) {
-          try {
-            const r = await fetch(url, { headers: { Accept: "application/json" } });
-            if (!r.ok) continue;
-            const j = await r.json();
-            const arr = Array.isArray(j?.items) ? j.items : (Array.isArray(j) ? j : []);
-            if (arr.length) { results = arr; break; }
-          } catch (e) { /* ignore */ }
-        }
-        const normalizados = results.map(normalizeProduto).filter(p => p.nome);
-        const anyFarmRepro = normalizados.some(p => { const s = ascii(p.categoria); return s.includes("farmac") || s.includes("reproduc") || s.includes("repro"); });
-        let filtrados = anyFarmRepro ? normalizados.filter(p => isFarmaciaOuRepro(p.categoria)) : normalizados;
-        filtrados = filtrados.filter(p => !isSemen(p));
-        setProdutos(dedupBy(filtrados, (p) => `${p.id ?? "noid"}::${p.nome}`));
-      } catch (e) {
-        setProdutos([]);
-      }
-    })();
-  }, []);
+  // itens do protocolo selecionado
+  const [itensProtocolo, setItensProtocolo] = useState([]);
+  const [carregandoItens, setCarregandoItens] = useState(false);
 
-  const produtoOptions = useMemo(() => {
-    if (!Array.isArray(produtos) || produtos.length === 0) return [];
-    return produtos.map((p) => {
-      const nome = p.nome || "(sem nome)";
-      const un = p.unidade ? ` (${p.unidade})` : "";
-      const saldo = Number.isFinite(p.saldo) ? ` • estoque: ${p.saldo}` : "";
-      const value = p.id ?? `name:${nome}`;
-      return { value, label: `${nome}${un}${saldo}`, raw: p };
-    });
-  }, [produtos]);
+  // flags: só fazem sentido com protocolo selecionado
+  const [agendar, setAgendar] = useState(true);
+  const [baixarEstoque, setBaixarEstoque] = useState(true);
+
+  const fetchedOnce = useRef(false);
 
   const protocoloOptions = useMemo(() => {
     return (protocolosSaude || []).map((p) => ({
@@ -442,51 +154,11 @@ export default function OcorrenciaClinica({
     [protocolosSaude, protocoloSelId]
   );
 
-  const novaLinha = () => ({
-    id: crypto.randomUUID(),
-    produtoId: "", produtoNome: "", _optLabel: "",
-    dose: "", unidade: "", via: "",
-    inicioData: todayBR(), inicioHora: "08:00",
-    intervaloHoras: "", repeticoes: "",
-    obs: "",
-  });
-
-  const add = () => { if (!showTrat) setShowTrat(true); setItems(prev => [...prev, novaLinha()]); };
-  const upd = (id, patch) => setItems(prev => prev.map(it => (it.id === id ? { ...it, ...patch } : it)));
-  const del = (id) => setItems(prev => prev.filter(it => it.id !== id));
-
-  const aplicarProtocolo = useCallback((protocolo) => {
-    if (!protocolo) return;
-    const itensProto = Array.isArray(protocolo.itens) ? protocolo.itens : [];
-    const novos = itensProto.map((it) => {
-      const dia = Number(it.dia) || 0;
-      const base = parseBR(todayBR()) ?? new Date();
-      const inicio = toBRDate(addDays(base, dia));
-      const produtoNome = it.produto_nome ?? "";
-      const produtoId = it.produto_id ?? `name:${it.produto_nome ?? ""}`;
-      return {
-        id: crypto.randomUUID(),
-        produtoId,
-        produtoNome,
-        _optLabel: produtoNome,
-        dose: String(it.quantidade ?? it.dose ?? ""),
-        unidade: it.unidade ?? "",
-        via: it.via ?? "",
-        inicioData: inicio,
-        inicioHora: "08:00",
-        repeticoes: "1",
-        intervaloHoras: "24",
-        obs: it.obs ?? "",
-      };
-    });
-    setItems(novos);
-    setShowTrat(true);
-  }, []);
-
   const carregarProtocolos = useCallback(async (selecionarRecente = false) => {
     if (!fazendaAtualId) {
       setProtocolosSaude([]);
       setProtocoloSelId("");
+      setItensProtocolo([]);
       return;
     }
     setCarregandoProt(true);
@@ -501,8 +173,8 @@ export default function OcorrenciaClinica({
       if (!error && Array.isArray(data)) {
         setProtocolosSaude(data);
         if (selecionarRecente && data.length > 0) {
-          setProtocoloSelId(String(data[0].id));
-          aplicarProtocolo(data[0]);
+          const id = String(data[0].id);
+          setProtocoloSelId(id);
         }
       } else {
         setProtocolosSaude([]);
@@ -510,81 +182,132 @@ export default function OcorrenciaClinica({
     } finally {
       setCarregandoProt(false);
     }
-  }, [fazendaAtualId, aplicarProtocolo]);
+  }, [fazendaAtualId]);
+
+  const carregarItensDoProtocolo = useCallback(async (protId) => {
+    if (!fazendaAtualId || !protId) {
+      setItensProtocolo([]);
+      return;
+    }
+    setCarregandoItens(true);
+    try {
+      const { data, error } = await supabase
+        .from("saude_protocolo_itens")
+        .select("*")
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("protocolo_id", protId)
+        .order("dia", { ascending: true })
+        .order("ordem", { ascending: true });
+
+      if (!error && Array.isArray(data)) setItensProtocolo(data);
+      else setItensProtocolo([]);
+    } finally {
+      setCarregandoItens(false);
+    }
+  }, [fazendaAtualId]);
 
   useEffect(() => {
+    if (fetchedOnce.current) return;
+    fetchedOnce.current = true;
     carregarProtocolos();
   }, [carregarProtocolos]);
 
+  // quando muda protocolo, busca itens
+  useEffect(() => {
+    if (!protocoloSelId) {
+      setItensProtocolo([]);
+      return;
+    }
+    carregarItensDoProtocolo(protocoloSelId);
+  }, [protocoloSelId, carregarItensDoProtocolo]);
+
   const handleProtocoloChange = (opt) => {
     const selecionado = opt?.meta || null;
-    setProtocoloSelId(selecionado?.id ? String(selecionado.id) : "");
-    if (selecionado) aplicarProtocolo(selecionado);
-  };
-
-  const makeAgendaLabel = (it) => {
-    const nome = it.produtoId?.startsWith("custom:") || it.produtoId?.startsWith("name:")
-      ? it.produtoNome || nameFromOptionLabel(it._optLabel || "") || it.produtoId.slice(it.produtoId.indexOf(":")+1)
-      : produtos.find(p => (p.id ?? `name:${p.nome}`) === it.produtoId)?.nome || it.produtoNome || "";
-    const qtd = [it.dose, it.unidade].filter(Boolean).join(" ");
-    const viaTxt = it.via ? ` via ${it.via}` : "";
-    return `Aplicar ${qtd} de ${nome}${viaTxt}`;
-  };
-
-  const gerarAgendaDoItem = (it) => {
-    const baseDate = parseBR(it.inicioData) ?? new Date();
-    const [hh = 8, mm = 0] = String(it.inicioHora || "08:00").split(":").map(n => +n);
-    baseDate.setHours(hh, mm, 0, 0);
-    const reps = Math.max(1, Number(it.repeticoes) || 1);
-    const gap = Math.max(1, Number(it.intervaloHoras) || 24);
-    const eventos = [];
-    for (let i = 0; i < reps; i++) {
-      const d = addHours(baseDate, i * gap);
-      const whenISO = `${toISODate(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
-      eventos.push({ whenISO, title: makeAgendaLabel(it), notes: it.obs || "" });
+    const id = selecionado?.id ? String(selecionado.id) : "";
+    setProtocoloSelId(id);
+    // se limpou seleção, desliga efeitos
+    if (!id) {
+      setItensProtocolo([]);
     }
-    return { eventos, iso_list: eventos.map(e => e.whenISO) };
   };
+
+  // monta o “cronograma previsto” a partir da dataInicioBR + itens (dia)
+  const cronograma = useMemo(() => {
+    if (!protocoloSelId || !itensProtocolo?.length) return [];
+    const base = parseBR(dataInicioBR) || new Date();
+
+    return itensProtocolo.map((it, idx) => {
+      const diaRaw = Number(it.dia);
+      // regra prática: no seu exemplo, dia=1 deve virar D0 (mesmo dia da data início)
+      const offset = Number.isFinite(diaRaw) ? Math.max(0, diaRaw - 1) : 0;
+
+      const dataPrev = addDays(base, offset);
+      const dataPrevBR = toBRDate(dataPrev);
+
+      const produto = it.produto_nome_snapshot || "Produto";
+      const qtd = (it.quantidade != null ? String(it.quantidade) : "").replace(".", ",");
+      const un = it.unidade || "";
+      const via = it.via ? ` • ${it.via}` : "";
+
+      return {
+        idx,
+        protocolo_item_id: it.id,
+        produto_id: it.produto_id || null,
+        produto_nome_snapshot: it.produto_nome_snapshot || null,
+        via: it.via || null,
+        quantidade: it.quantidade != null ? Number(it.quantidade) : null,
+        unidade: it.unidade || null,
+        data_prevista_date: toISODate(dataPrev),
+        data_prevista_br: dataPrevBR,
+        label: `${produto}${qtd ? ` • ${qtd} ${un}` : ""}${via}`,
+        diaOffset: offset,
+      };
+    });
+  }, [protocoloSelId, itensProtocolo, dataInicioBR]);
+
+  // se não tem protocolo, força regras: não agenda e não baixa
+  useEffect(() => {
+    if (!protocoloSelId) {
+      setAgendar(false);
+      setBaixarEstoque(false);
+    } else {
+      // quando seleciona um protocolo, liga por padrão (você pode mudar isso aqui se quiser)
+      setAgendar(true);
+      setBaixarEstoque(true);
+    }
+  }, [protocoloSelId]);
 
   const salvar = () => {
     if (!oc) return alert("Escolha a ocorrência.");
-    if (showTrat && !items.length) return alert("Adicione ao menos 1 tratamento ou oculte a seção.");
-    for (const it of items) {
-      if (!it.produtoId) return alert(`Tratamento #${items.indexOf(it) + 1}: Selecione o produto.`);
-      if (!it.dose) return alert(`Tratamento #${items.indexOf(it) + 1}: Informe a quantidade.`);
-      if (!it.unidade) return alert(`Tratamento #${items.indexOf(it) + 1}: Selecione a unidade.`);
-      if (!it.repeticoes || !it.intervaloHoras) return alert(`Tratamento #${items.indexOf(it) + 1}: Preencha Nº de aplicações e Intervalo.`);
-    }
+    const base = parseBR(dataInicioBR);
+    if (!base) return alert("Informe a Data de início (dd/mm/aaaa).");
 
-    const tratamentos = items.map((it) => {
-      const { eventos, iso_list } = gerarAgendaDoItem(it);
-      const isIdless = String(it.produtoId).startsWith("custom:") || String(it.produtoId).startsWith("name:");
-      const resolvedNome = it.produtoNome || nameFromOptionLabel(it._optLabel || "") || produtos.find(p => (p.id ?? `name:${p.nome}`) === it.produtoId)?.nome || "";
-      return {
-        produto_id: isIdless ? null : it.produtoId,
-        produto_nome: isIdless ? resolvedNome : undefined,
-        dose: Number(it.dose),
-        unidade: it.unidade || "",
-        via: it.via || "",
-        repeticoes: Number(it.repeticoes),
-        intervalo_horas: Number(it.intervaloHoras),
-        inicio_iso: iso_list[0]?.slice(0,10) || toISODate(parseBR(it.inicioData) ?? new Date()),
-        agenda_execucoes: showTrat && agendar ? iso_list : [],
-        agenda_eventos: showTrat && agendar ? eventos : [],
-        obs: it.obs || "",
-        baixa_total: showTrat && baixarEstoque ? (Number(it.dose) * Number(it.repeticoes)) : 0,
-      };
-    });
-
-    onSubmit?.({
+    // payload “limpo” pro pai gravar nas tabelas novas
+    const payload = {
       kind: "CLINICA",
-      clin: oc,
-      obs,
-      tratamentos,
-      criarAgenda: !!(showTrat && agendar),
-      baixarEstoque: !!(showTrat && baixarEstoque),
-      ...(protocoloSelId ? { protocolo_saude_id: protocoloSelId } : {}),
-    });
+      animal_id: animal?.id,
+      doenca: oc,
+      observacao: obs || null,
+      data_inicio: toISODate(base), // -> saude_tratamentos.data_inicio
+      protocolo_id: protocoloSelId || null, // -> saude_tratamentos.protocolo_id
+      criarAgenda: !!(protocoloSelId && agendar),
+      baixarEstoque: !!(protocoloSelId && baixarEstoque),
+      // -> saude_aplicacoes (somente se tiver protocolo)
+      aplicacoes: protocoloSelId
+        ? cronograma.map((c) => ({
+            data_prevista: c.data_prevista_date,
+            protocolo_item_id: c.protocolo_item_id,
+            produto_id: c.produto_id,
+            produto_nome_snapshot: c.produto_nome_snapshot,
+            via: c.via,
+            quantidade: c.quantidade,
+            unidade: c.unidade,
+            status: "pendente",
+          }))
+        : [],
+    };
+
+    onSubmit?.(payload);
   };
 
   return (
@@ -596,27 +319,66 @@ export default function OcorrenciaClinica({
       }}
       style={{ display: "flex", flexDirection: "column", gap: "24px" }}
     >
-      
-      {/* SEÇÃO 1: OCORRÊNCIA */}
-      <div style={{
-        padding: "24px", background: "#fff", borderRadius: theme.radius.xl,
-        border: `1px solid ${theme.colors.slate[200]}`, boxShadow: theme.shadows.sm,
-      }}>
-        <h3 style={{ margin: "0 0 16px 0", fontSize: "12px", fontWeight: 800, color: theme.colors.slate[600], textTransform: "uppercase", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: "8px" }}>
+      {/* SEÇÃO 1: DADOS DA OCORRÊNCIA */}
+      <div
+        style={{
+          padding: "24px",
+          background: "#fff",
+          borderRadius: theme.radius.xl,
+          border: `1px solid ${theme.colors.slate[200]}`,
+          boxShadow: theme.shadows.sm,
+        }}
+      >
+        <h3
+          style={{
+            margin: "0 0 16px 0",
+            fontSize: "12px",
+            fontWeight: 900,
+            color: theme.colors.slate[600],
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
           <Icons.alert /> Dados da Ocorrência
         </h3>
-        
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "20px" }}>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: "20px" }}>
           <InputGroup label="Tipo de Ocorrência" icon={() => <span>🏥</span>}>
             <Select
               styles={{
-                control: (b,s) => ({ ...b, minHeight: 44, borderRadius: theme.radius.md, borderColor: s.isFocused ? theme.colors.primary[500] : theme.colors.slate[200], boxShadow: s.isFocused ? `0 0 0 3px ${theme.colors.primary[100]}` : "none" }),
+                control: (b, s) => ({
+                  ...b,
+                  minHeight: 44,
+                  borderRadius: theme.radius.md,
+                  borderColor: s.isFocused ? theme.colors.primary[500] : theme.colors.slate[200],
+                  boxShadow: s.isFocused ? `0 0 0 3px ${theme.colors.primary[100]}` : "none",
+                }),
                 menuPortal: (b) => ({ ...b, zIndex: 9999 }),
               }}
-              options={OCORRENCIAS.map(o => ({ value: o, label: o }))}
+              options={OCORRENCIAS.map((o) => ({ value: o, label: o }))}
               value={{ value: oc, label: oc }}
               onChange={(opt) => setOc(opt?.value || "Metrite")}
               menuPortalTarget={document.body}
+            />
+          </InputGroup>
+
+          <InputGroup label="Data de início" icon={Icons.calendar} help="Base do protocolo (D0). Sem protocolo, é a data do registro.">
+            <input
+              value={dataInicioBR}
+              onChange={(e) => setDataInicioBR(ensureBRMask(e.target.value))}
+              placeholder="dd/mm/aaaa"
+              inputMode="numeric"
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: theme.radius.md,
+                border: `1px solid ${theme.colors.slate[200]}`,
+                fontSize: "14px",
+                fontFamily: "monospace",
+              }}
             />
           </InputGroup>
 
@@ -625,7 +387,13 @@ export default function OcorrenciaClinica({
               value={obs}
               onChange={(e) => setObs(e.target.value)}
               placeholder="Descreva os sintomas observados, histórico clínico recente..."
-              style={{ width: "100%", padding: "12px", borderRadius: theme.radius.md, border: `1px solid ${theme.colors.slate[200]}`, fontSize: "14px" }}
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: theme.radius.md,
+                border: `1px solid ${theme.colors.slate[200]}`,
+                fontSize: "14px",
+              }}
             />
           </InputGroup>
         </div>
@@ -638,15 +406,29 @@ export default function OcorrenciaClinica({
             <InputGroup
               label="Protocolo terapêutico (opcional)"
               icon={() => <span>📋</span>}
-              help="Selecione para preencher automaticamente D0/D7 etc. (você pode editar depois)."
+              help="Selecione para gerar automaticamente o cronograma (sem seleção, não agenda e não baixa estoque)."
             >
               <Select
                 styles={{
-                  control: (b,s) => ({ ...b, minHeight: 44, borderRadius: theme.radius.md, borderColor: s.isFocused ? theme.colors.primary[500] : theme.colors.slate[200], boxShadow: s.isFocused ? `0 0 0 3px ${theme.colors.primary[100]}` : "none" }),
+                  control: (b, s) => ({
+                    ...b,
+                    minHeight: 44,
+                    borderRadius: theme.radius.md,
+                    borderColor: s.isFocused ? theme.colors.primary[500] : theme.colors.slate[200],
+                    boxShadow: s.isFocused ? `0 0 0 3px ${theme.colors.primary[100]}` : "none",
+                  }),
                   menuPortal: (b) => ({ ...b, zIndex: 9999 }),
                 }}
                 options={protocoloOptions}
-                value={protocoloSelecionado ? { value: protocoloSelecionado.id, label: `${protocoloSelecionado.nome || "Protocolo"}${protocoloSelecionado.doenca ? ` (${protocoloSelecionado.doenca})` : ""}`, meta: protocoloSelecionado } : null}
+                value={
+                  protocoloSelecionado
+                    ? {
+                        value: protocoloSelecionado.id,
+                        label: `${protocoloSelecionado.nome || "Protocolo"}${protocoloSelecionado.doenca ? ` (${protocoloSelecionado.doenca})` : ""}`,
+                        meta: protocoloSelecionado,
+                      }
+                    : null
+                }
                 onChange={handleProtocoloChange}
                 placeholder={carregandoProt ? "Carregando protocolos..." : "Selecione um protocolo"}
                 isClearable
@@ -664,7 +446,7 @@ export default function OcorrenciaClinica({
               style={{
                 padding: "10px 14px",
                 fontSize: "12px",
-                fontWeight: 700,
+                fontWeight: 800,
                 color: theme.colors.primary[700],
                 background: theme.colors.primary[50],
                 border: `1px solid ${theme.colors.primary[200]}`,
@@ -679,95 +461,146 @@ export default function OcorrenciaClinica({
         </div>
       </div>
 
-      {/* SEÇÃO 3: TRATAMENTOS */}
-      <div>
+      {/* SEÇÃO 3: CRONOGRAMA (apenas se selecionou protocolo) */}
+      {protocoloSelId ? (
+        <div
+          style={{
+            padding: "24px",
+            background: "#fff",
+            borderRadius: theme.radius.xl,
+            border: `1px solid ${theme.colors.slate[200]}`,
+            boxShadow: theme.shadows.sm,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: theme.colors.slate[800] }}>Cronograma Previsto</div>
+              <div style={{ fontSize: 12, color: theme.colors.slate[500], marginTop: 4 }}>
+                {carregandoItens ? "Carregando etapas..." : `${cronograma.length} etapa(s) a partir de ${dataInicioBR}`}
+              </div>
+            </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h3 style={{ margin: 0, fontSize: "12px", fontWeight: 800, color: theme.colors.slate[600], textTransform: "uppercase", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: "8px" }}>
-            <Icons.pill /> Protocolo de Tratamento
-          </h3>
-          <div style={{ display: "flex", gap: "8px" }}>
-            {!showTrat && items.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowTrat(true)}
-                style={{ padding: "8px 16px", fontSize: "13px", fontWeight: 600, color: theme.colors.slate[600], background: "transparent", border: `1px solid ${theme.colors.slate[200]}`, borderRadius: theme.radius.md, cursor: "pointer" }}
-              >
-                Mostrar Tratamentos
-              </button>
-            )}
-            {showTrat && items.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowTrat(false)}
-                style={{ padding: "8px 16px", fontSize: "13px", fontWeight: 600, color: theme.colors.slate[600], background: "transparent", border: `1px solid ${theme.colors.slate[200]}`, borderRadius: theme.radius.md, cursor: "pointer" }}
-              >
-                Ocultar Tratamentos
-              </button>
-            )}
-          </div>
-        </div>
-
-        {showTrat && items.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {items.map((item, idx) => (
-              <CardTratamento
-                key={item.id}
-                item={item}
-                index={idx}
-                produtos={produtos}
-                produtoOptions={produtoOptions}
-                onUpdate={(patch) => upd(item.id, patch)}
-                onRemove={() => del(item.id)}
-                isLast={idx === items.length - 1}
-              />
-            ))}
-          </div>
-        )}
-
-        {items.length === 0 && (
-          <div style={{ padding: "40px", textAlign: "center", background: theme.colors.slate[50], borderRadius: theme.radius.xl, border: `2px dashed ${theme.colors.slate[200]}`, color: theme.colors.slate[400] }}>
-            <div style={{ fontSize: "32px", marginBottom: "8px" }}>💊</div>
-            <div style={{ fontSize: "14px", fontWeight: 600 }}>Nenhum tratamento adicionado</div>
-            <div style={{ fontSize: "13px", marginTop: "4px" }}>Você pode preencher automaticamente com um protocolo ou adicionar manualmente.</div>
-            <button
-              type="button"
-              onClick={add}
+            <div
               style={{
-                marginTop: "10px",
-                background: "transparent",
-                border: "none",
+                padding: "6px 12px",
+                borderRadius: theme.radius.full,
+                background: theme.colors.primary[50],
+                border: `1px solid ${theme.colors.primary[200]}`,
                 color: theme.colors.primary[700],
-                fontSize: "12px",
-                fontWeight: 700,
-                cursor: "pointer",
-                textDecoration: "underline",
+                fontSize: 12,
+                fontWeight: 900,
               }}
             >
-              Adicionar tratamento manual
-            </button>
+              Protocolo: {protocoloSelecionado?.nome || "—"}
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* SEÇÃO 3: FLAGS E AÇÃO */}
-      {showTrat && items.length > 0 && (
-        <div style={{
-          padding: "20px 24px", background: theme.colors.slate[50], borderRadius: theme.radius.xl,
-          border: `1px solid ${theme.colors.slate[200]}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px",
-        }}>
-          <div style={{ display: "flex", gap: "24px" }}>
-            <Toggle checked={agendar} onChange={(e) => setAgendar(e.target.checked)} label="Criar tarefas no calendário" />
-            <Toggle checked={baixarEstoque} onChange={(e) => setBaixarEstoque(e.target.checked)} label="Baixar do estoque automaticamente" />
+          {carregandoItens ? (
+            <div style={{ padding: 16, color: theme.colors.slate[500] }}>Carregando itens do protocolo…</div>
+          ) : cronograma.length === 0 ? (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: theme.radius.lg,
+                background: theme.colors.warning[50],
+                border: `1px solid ${theme.colors.warning[100]}`,
+                color: theme.colors.warning[600],
+                fontWeight: 800,
+              }}
+            >
+              Esse protocolo não tem itens cadastrados em <code>saude_protocolo_itens</code>.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {cronograma.map((c) => (
+                <div
+                  key={c.protocolo_item_id}
+                  style={{
+                    borderRadius: theme.radius.lg,
+                    border: `1px solid ${theme.colors.slate[200]}`,
+                    background: theme.colors.slate[50],
+                    padding: "14px 16px",
+                    display: "flex",
+                    gap: 14,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: "50%",
+                      background: theme.colors.primary[600],
+                      color: "white",
+                      fontWeight: 900,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {c.idx + 1}
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: theme.colors.slate[800] }}>
+                      Etapa {c.idx + 1} <span style={{ fontWeight: 700, color: theme.colors.slate[500] }}>(D+{c.diaOffset})</span>
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: theme.colors.slate[700] }}>{c.label}</div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: theme.colors.slate[500] }}>
+                      📅 {c.data_prevista_br}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* FLAGS */}
+          <div
+            style={{
+              marginTop: 16,
+              padding: "16px",
+              borderRadius: theme.radius.xl,
+              background: theme.colors.slate[50],
+              border: `1px solid ${theme.colors.slate[200]}`,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "16px",
+            }}
+          >
+            <div style={{ display: "flex", gap: "24px" }}>
+              <Toggle checked={agendar} onChange={(e) => setAgendar(e.target.checked)} label="Criar tarefas no calendário" />
+              <Toggle checked={baixarEstoque} onChange={(e) => setBaixarEstoque(e.target.checked)} label="Baixar do estoque automaticamente" />
+            </div>
           </div>
+        </div>
+      ) : (
+        // sem protocolo: mantém visual “ok”, mas deixa claro o comportamento
+        <div
+          style={{
+            padding: "20px 24px",
+            background: theme.colors.slate[50],
+            borderRadius: theme.radius.xl,
+            border: `1px solid ${theme.colors.slate[200]}`,
+            color: theme.colors.slate[600],
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+        >
+          Sem protocolo selecionado: <span style={{ color: theme.colors.slate[800] }}>não</span> será criado cronograma, <span style={{ color: theme.colors.slate[800] }}>não</span> agenda e <span style={{ color: theme.colors.slate[800] }}>não</span> baixa estoque. A ocorrência será registrada mesmo assim.
         </div>
       )}
 
+      {/* MODAL CRIAR PROTOCOLO (Saúde) */}
       <ModalTratamentoPadrao
         open={showNovoProt}
         onClose={() => setShowNovoProt(false)}
         onSaved={() => {
           setShowNovoProt(false);
+          // recarrega e seleciona o mais recente
           carregarProtocolos(true);
         }}
         initialDoenca={oc}
