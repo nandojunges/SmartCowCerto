@@ -171,6 +171,10 @@ function toInt(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function isUuid(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || "").trim());
+}
+
 function isFarmaciaCategoria(cat) {
   const s = String(cat || "").toLowerCase();
   return (
@@ -569,39 +573,89 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
     if (!nomeLimpo) return setErro("Informe um nome para o protocolo.");
     if (!doencaSel?.value) return setErro("Selecione a doença/condição.");
 
+    const viasPermitidas = new Set(["IMM", "IM", "SC", "IV", "VO", "TOP"]);
     const itensValidos = [];
+    const errosItens = [];
     const ordemPorDia = {};
-    for (const d of dias) {
-      const diaNum = toInt(d.dia, 1);
-      for (const ap of (d.aplicacoes || [])) {
-        const produto = ap?.produtoSel?.meta;
-        if (!produto?.id) continue;
 
-        const quantidadeNum = Number.parseFloat(
-          String(ap.quantidade || "")
-            .replace(",", ".")
-            .trim()
-        );
-        if (!Number.isFinite(quantidadeNum) || quantidadeNum <= 0) continue;
+    dias.forEach((d, dIdx) => {
+      const diaNum = toInt(d?.dia, 0);
+      const diaLabel = dIdx + 1;
+
+      if (!Number.isInteger(diaNum) || diaNum < 1) {
+        errosItens.push(`Dia inválido no bloco ${diaLabel}. Informe um valor inteiro maior ou igual a 1.`);
+        return;
+      }
+
+      const aplicacoes = d?.aplicacoes || [];
+      aplicacoes.forEach((ap, aIdx) => {
+        const idxAplicacao = aIdx + 1;
+        const itemLabel = `Dia ${diaNum}, aplicação ${idxAplicacao}`;
+
+        const produtoId = String(ap?.produtoSel?.value || ap?.produtoSel?.meta?.id || "").trim();
+        if (!isUuid(produtoId)) {
+          errosItens.push(`${itemLabel}: produto inválido. Selecione um produto válido do estoque.`);
+          return;
+        }
+
+        const via = String(ap?.viaSel?.value || "").trim().toUpperCase();
+        if (!viasPermitidas.has(via)) {
+          errosItens.push(`${itemLabel}: via inválida. Use apenas IMM, IM, SC, IV, VO ou TOP.`);
+          return;
+        }
+
+        const quantidadeNum = Number.parseFloat(String(ap?.quantidade || "").replace(",", ".").trim());
+        if (!Number.isFinite(quantidadeNum) || quantidadeNum <= 0) {
+          errosItens.push(`${itemLabel}: quantidade inválida. Informe um número maior que zero.`);
+          return;
+        }
+
+        const unidade = String(ap?.unidadeSel?.value || "").trim();
+        if (!unidade) {
+          errosItens.push(`${itemLabel}: unidade obrigatória.`);
+          return;
+        }
+
+        const produtoNomeSnapshot = String(
+          ap?.produtoSel?.meta?.nome || ap?.produtoSel?.label || ""
+        ).trim();
+        if (!produtoNomeSnapshot) {
+          errosItens.push(`${itemLabel}: nome do produto inválido.`);
+          return;
+        }
+
+        const carenciaLeite = toInt(ap?.produtoSel?.meta?.carencia_leite_dias, 0);
+        const carenciaCarne = toInt(ap?.produtoSel?.meta?.carencia_carne_dias, 0);
 
         ordemPorDia[diaNum] = (ordemPorDia[diaNum] || 0) + 1;
+        const ordem = ordemPorDia[diaNum];
+
+        if (!Number.isInteger(ordem) || ordem < 1) {
+          errosItens.push(`${itemLabel}: ordem inválida para o dia ${diaNum}.`);
+          return;
+        }
 
         itensValidos.push({
+          fazenda_id: fazendaAtualId,
           dia: diaNum,
-          ordem: ordemPorDia[diaNum],
-          produto_id: produto.id,
-          produto_nome_snapshot: produto.nome || null,
-          via: ap.viaSel?.value || "IMM",
+          ordem,
+          produto_id: produtoId,
+          produto_nome_snapshot: produtoNomeSnapshot,
+          via,
           quantidade: quantidadeNum,
-          unidade: ap.unidadeSel?.value || "mL",
-          carencia_leite_dias: produto.carencia_leite_dias ?? null,
-          carencia_carne_dias: produto.carencia_carne_dias ?? null,
+          unidade,
+          carencia_leite_dias: carenciaLeite,
+          carencia_carne_dias: carenciaCarne,
         });
-      }
-    }
+      });
+    });
 
     if (itensValidos.length === 0) {
-      return setErro("Adicione ao menos 1 produto do estoque (categoria Farmácia/Medicamentos).");
+      return setErro("Adicione ao menos 1 item válido ao tratamento antes de salvar.");
+    }
+
+    if (errosItens.length > 0) {
+      return setErro(`Existem itens inválidos no tratamento: ${errosItens[0]}`);
     }
 
     setSalvando(true);
@@ -632,7 +686,7 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
       }
 
       const itensPayload = itensValidos.map((item) => ({
-        fazenda_id: fazendaAtualId,
+        fazenda_id: item.fazenda_id,
         user_id: userId,
         protocolo_id: protocoloInserido.id,
         dia: item.dia,
