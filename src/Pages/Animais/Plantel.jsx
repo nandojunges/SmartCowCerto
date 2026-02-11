@@ -9,6 +9,7 @@ import FichaAnimal from "./FichaAnimal/FichaAnimal";
 import ManejosPendentes from "./ManejosPendentes";
 import RegistrarSecagem from "./RegistrarSecagem";
 import RegistrarParto from "./RegistrarParto";
+import { toast } from "react-toastify";
 
 let MEMO_PLANTEL = { data: null, lastAt: 0 };
 
@@ -70,7 +71,8 @@ function obterValor(obj, chaves, fallback = null) {
    Componente Principal
 ========================= */
 export default function Plantel({ isOnline = navigator.onLine }) {
-  const { fazendaAtualId, session } = useFazenda();
+  const { fazendaAtualId, session, canEdit } = useFazenda();
+  const canEditAnimais = canEdit("animais");
 
   const CACHE_ANIMAIS = "cache:animais:list";
   const CACHE_FALLBACK = "cache:animais:plantel:v1";
@@ -123,6 +125,12 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const fecharFichaAnimal = () => setAnimalSelecionado(null);
   const [secagemSelecionada, setSecagemSelecionada] = useState(null);
   const [partoSelecionado, setPartoSelecionado] = useState(null);
+
+  const bloquearSemEdicao = useCallback(() => {
+    if (canEditAnimais) return false;
+    toast.warn("Sem permissão para editar nesta fazenda");
+    return true;
+  }, [canEditAnimais]);
 
   /* =========================
      Loaders (mantidos)
@@ -375,6 +383,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
 
   const handleSetLote = useCallback(
     async (animal, option) => {
+      if (bloquearSemEdicao()) return;
       if (!animal?.id) return;
       if (!fazendaAtualId) {
         setLoteAviso("Selecione uma fazenda antes de alterar o lote.");
@@ -415,7 +424,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         setLoteAviso("Não foi possível atualizar o lote. Tente novamente.");
       }
     },
-    [fazendaAtualId, closeLoteEdit]
+    [bloquearSemEdicao, fazendaAtualId, closeLoteEdit]
   );
 
   /* =========================
@@ -814,12 +823,14 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   const handleTogglePopover = useCallback((key) => { setOpenPopoverKey((prev) => (prev === key ? null : key)); }, []);
 
   const abrirSecagem = useCallback((animal) => {
+    if (bloquearSemEdicao()) return;
     setSecagemSelecionada(animal);
-  }, []);
+  }, [bloquearSemEdicao]);
 
   const abrirParto = useCallback((animal) => {
+    if (bloquearSemEdicao()) return;
     setPartoSelecionado(animal);
-  }, []);
+  }, [bloquearSemEdicao]);
 
   const handleManejoAction = useCallback(({ tipo, animal }) => {
     if (!animal) return;
@@ -1054,6 +1065,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     actionStack: { display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" },
     actionBtnSecagem: { backgroundColor: "#2563eb" },
     actionBtnParto: { backgroundColor: "#16a34a" },
+    actionBtnDisabled: { opacity: 0.6, cursor: "not-allowed" },
     summaryRow: { backgroundColor: "#f8fafc", borderTop: "2px solid #e2e8f0" },
     summaryContent: { display: "flex", gap: "32px", padding: "16px", fontSize: "13px", color: "#475569", fontWeight: 500 },
     summaryHighlight: { color: "#0f172a", fontWeight: 700 },
@@ -1093,6 +1105,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
             hasDpp={hasDpp}
             animais={linhas}
             onParamsSaved={carregarPendencias}
+            canEditAnimais={canEditAnimais}
           />
         </section>
 
@@ -1261,10 +1274,10 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                       >
                         {editingLoteId === a.id ? (
                           <div onKeyDown={(e) => { if (e.key === "Escape") closeLoteEdit(); }}>
-                            <Select autoFocus menuIsOpen menuPortalTarget={portalTarget} menuPosition="fixed" menuShouldBlockScroll styles={selectStylesCompact} options={loteOptions} value={resolveSelectedLote(a)} placeholder="Selecionar lote…" onChange={(opt) => handleSetLote(a, opt)} onBlur={handleLoteBlur} isClearable />
+                            <Select autoFocus menuIsOpen menuPortalTarget={portalTarget} menuPosition="fixed" menuShouldBlockScroll styles={selectStylesCompact} options={loteOptions} value={resolveSelectedLote(a)} placeholder="Selecionar lote…" onChange={(opt) => handleSetLote(a, opt)} onBlur={handleLoteBlur} isClearable isDisabled={!canEditAnimais} />
                           </div>
                         ) : (
-                          <button type="button" onClick={() => setEditingLoteId(a.id)} title="Clique para alterar" style={{...styles.pill, ...getPillStyle("prod", isSemLote ? "seca" : "lact"), ...styles.loteBtn}}>
+                          <button type="button" onClick={() => { if (bloquearSemEdicao()) return; setEditingLoteId(a.id); }} title={!canEditAnimais ? "Sem permissão para editar nesta fazenda" : "Clique para alterar"} disabled={!canEditAnimais} style={{...styles.pill, ...getPillStyle("prod", isSemLote ? "seca" : "lact"), ...styles.loteBtn, ...(!canEditAnimais ? styles.actionBtnDisabled : {})}}>
                             {loteLabel}
                           </button>
                         )}
@@ -1315,7 +1328,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                       >
                         <div style={styles.actionStack}>
                           <button onClick={() => abrirFichaAnimal(a)} style={styles.actionBtn}>Ficha</button>
-                          {pendenciaTipo === "secagem" && (
+                          {pendenciaTipo === "secagem" && canEditAnimais && (
                             <button
                               onClick={() => abrirSecagem(a)}
                               style={{ ...styles.actionBtn, ...styles.actionBtnSecagem }}
@@ -1323,7 +1336,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                               Registrar Secagem
                             </button>
                           )}
-                          {pendenciaTipo === "parto" && (
+                          {pendenciaTipo === "parto" && canEditAnimais && (
                             <button
                               onClick={() => abrirParto(a)}
                               style={{ ...styles.actionBtn, ...styles.actionBtnParto }}
@@ -1359,10 +1372,11 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         </section>
       </div>
 
-      {animalSelecionado && <FichaAnimal animal={animalSelecionado} onClose={fecharFichaAnimal} />}
+      {animalSelecionado && <FichaAnimal animal={animalSelecionado} onClose={fecharFichaAnimal} canEditAnimais={canEditAnimais} />}
       {secagemSelecionada && (
         <RegistrarSecagem
           animal={secagemSelecionada}
+          canEditAnimais={canEditAnimais}
           onClose={() => setSecagemSelecionada(null)}
           onSave={() => setSecagemSelecionada(null)}
         />
@@ -1370,6 +1384,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       {partoSelecionado && (
         <RegistrarParto
           animal={partoSelecionado}
+          canEditAnimais={canEditAnimais}
           onClose={() => setPartoSelecionado(null)}
           onSave={() => setPartoSelecionado(null)}
         />

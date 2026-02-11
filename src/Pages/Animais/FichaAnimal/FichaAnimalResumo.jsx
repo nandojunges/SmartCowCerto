@@ -466,7 +466,7 @@ const TimelineEvent = ({ type, date, result, isLast }) => {
    COMPONENTE PRINCIPAL - V2 PROFISSIONAL
    ========================================================= */
 
-export default function FichaAnimalResumo({ animal }) {
+export default function FichaAnimalResumo({ animal, canEditAnimais = true }) {
   const [reproEvents, setReproEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -610,7 +610,10 @@ export default function FichaAnimalResumo({ animal }) {
         </div>
 
         <div style={{ display: "flex", gap: tokens.space[2] }}>
-          <button style={{
+          <button
+            disabled={!canEditAnimais}
+            title={!canEditAnimais ? "Sem permissão para editar nesta fazenda" : undefined}
+            style={{
             padding: "10px 20px",
             background: "white",
             border: `1px solid ${tokens.colors.slate[200]}`,
@@ -624,7 +627,10 @@ export default function FichaAnimalResumo({ animal }) {
           }}>
             Editar Ficha
           </button>
-          <button style={{
+          <button
+            disabled={!canEditAnimais}
+            title={!canEditAnimais ? "Sem permissão para editar nesta fazenda" : undefined}
+            style={{
             padding: "10px 20px",
             background: tokens.colors.primary[600],
             border: "none",

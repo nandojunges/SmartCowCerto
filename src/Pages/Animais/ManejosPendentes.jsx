@@ -3,6 +3,7 @@ import RegistrarParto from "./RegistrarParto";
 import RegistrarSecagem from "./RegistrarSecagem";
 import ModalParametrosRepro from "./ModalParametrosRepro";
 import { useFazenda } from "../../context/FazendaContext";
+import { toast } from "react-toastify";
 
 const MAX_ROWS = 8;
 
@@ -76,6 +77,7 @@ export default function ManejosPendentes({
   hasDpp = false,
   animais = [],
   onParamsSaved,
+  canEditAnimais = true,
 }) {
   const { fazendaAtualId } = useFazenda();
   const [pendTabAtiva, setPendTabAtiva] = useState("secagem");
@@ -87,6 +89,12 @@ export default function ManejosPendentes({
   const [prePartoSelecionado, setPrePartoSelecionado] = useState(null);
   const [hoveredRowId, setHoveredRowId] = useState(null);
   const [hoveredColKey, setHoveredColKey] = useState(null);
+
+  const bloquearSemEdicao = () => {
+    if (canEditAnimais) return false;
+    toast.warn("Sem permissão para editar nesta fazenda");
+    return true;
+  };
 
   useEffect(() => {
     if (!CONFIGS[pendTabAtiva]) {
@@ -135,6 +143,7 @@ export default function ManejosPendentes({
 
   const handleAction = (tipo, animal, item) => {
     if (!animal) return;
+    if (bloquearSemEdicao()) return;
 
     if (tipo === "secagem") {
       setSecagemContext(buildContext(item, animal));
@@ -362,6 +371,7 @@ export default function ManejosPendentes({
                         }}
                       >
                         <div style={styles.actionStack}>
+                          {canEditAnimais && (
                           <button
                             type="button"
                             style={{
@@ -373,6 +383,7 @@ export default function ManejosPendentes({
                           >
                             {CONFIGS[tipo].action}
                           </button>
+                        )}
                         </div>
                       </td>
                     </tr>
@@ -419,7 +430,11 @@ export default function ManejosPendentes({
           style={styles.gearButton}
           title="Parâmetros reprodutivos"
           aria-label="Parâmetros reprodutivos"
-          onClick={() => setOpenParamsModal(true)}
+          onClick={() => {
+            if (bloquearSemEdicao()) return;
+            setOpenParamsModal(true);
+          }}
+          disabled={!canEditAnimais}
         >
           ⚙️
         </button>
@@ -445,6 +460,7 @@ export default function ManejosPendentes({
           fazendaId={secagemContext?.fazendaId}
           iaId={secagemContext?.iaId}
           assumidoCadastro={secagemContext?.assumidoCadastro}
+          canEditAnimais={canEditAnimais}
           onSaved={() => {
             setModalSecagemOpen(false);
             setSecagemContext(null);
@@ -467,6 +483,7 @@ export default function ManejosPendentes({
           assumidoCadastro={partoContext?.assumidoCadastro}
           semSecagem={partoContext?.semSecagem}
           previsaoParto={partoContext?.previsaoParto}
+          canEditAnimais={canEditAnimais}
           onRegistrarSecagemAntes={() => {
             if (!partoContext?.animal) return;
             setModalPartoOpen(false);
@@ -480,6 +497,7 @@ export default function ManejosPendentes({
         />
       )}
 
+      {canEditAnimais && (
       <ModalParametrosRepro
         open={openParamsModal}
         onClose={() => setOpenParamsModal(false)}
@@ -488,6 +506,7 @@ export default function ManejosPendentes({
           onParamsSaved?.();
         }}
       />
+      )}
     </div>
   );
 }
@@ -511,6 +530,7 @@ const styles = {
     flexWrap: "wrap",
   },
   gearButton: {
+    opacity: 1,
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",

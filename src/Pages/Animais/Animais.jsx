@@ -1,5 +1,5 @@
 // src/Pages/Animais/Animais.jsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   ListChecks,
   PlusCircle,
@@ -51,7 +51,7 @@ const botoesBarra = [
 // =========================
 //   BARRA LATERAL FIXA (PRO)
 // =========================
-function BarraLateral({ abaAtiva, setAbaAtiva }) {
+function BarraLateral({ abaAtiva, setAbaAtiva, botoes = botoesBarra }) {
   // Paleta alinhada ao TopBar novo
   const NAVY = "#0B1F3A";
   const NAVY_2 = "#0A1A33";
@@ -78,7 +78,7 @@ function BarraLateral({ abaAtiva, setAbaAtiva }) {
         zIndex: 20,
       }}
     >
-      {botoesBarra.map((btn) => {
+      {botoes.map((btn) => {
         const ativo = abaAtiva === btn.id;
         const Icon = btn.icon;
 
@@ -151,7 +151,9 @@ function BarraLateral({ abaAtiva, setAbaAtiva }) {
 //   COMPONENTE PRINCIPAL
 // =========================
 export default function Animais() {
-  const { fazendaAtualId } = useFazenda();
+  const { fazendaAtualId, canView, canEdit } = useFazenda();
+  const canViewAnimais = canView("animais");
+  const canEditAnimais = canEdit("animais");
   const memoData = MEMO_ANIMAIS.data || {};
 
   const [abaAtiva, setAbaAtiva] = useState(() => {
@@ -163,6 +165,12 @@ export default function Animais() {
       return "todos";
     }
   });
+
+  const abasBloqueadasSemEdicao = useMemo(() => new Set(["entrada", "saida", "importar"]), []);
+  const botoesVisiveis = useMemo(
+    () => botoesBarra.filter((btn) => canEditAnimais || !abasBloqueadasSemEdicao.has(btn.id)),
+    [canEditAnimais, abasBloqueadasSemEdicao]
+  );
 
   const [isOnline, setIsOnline] = useState(() =>
     typeof memoData.isOnline === "boolean" ? memoData.isOnline : navigator.onLine
@@ -214,9 +222,13 @@ export default function Animais() {
 
   useEffect(() => {
     try {
+      if (!botoesVisiveis.some((btn) => btn.id === abaAtiva)) {
+        setAbaAtiva("todos");
+        return;
+      }
       localStorage.setItem("animais:abaAtiva", abaAtiva);
     } catch {}
-  }, [abaAtiva]);
+  }, [abaAtiva, botoesVisiveis]);
 
   // =========================
   //   CARREGAR ANIMAL COMPLETO
@@ -591,7 +603,9 @@ export default function Animais() {
 
   return (
     <div style={{ minHeight: "100vh", overflow: "hidden" }}>
-      <BarraLateral abaAtiva={abaAtiva} setAbaAtiva={setAbaAtiva} />
+      {canViewAnimais && (
+        <BarraLateral abaAtiva={abaAtiva} setAbaAtiva={setAbaAtiva} botoes={botoesVisiveis} />
+      )}
 
       <div
         style={{
@@ -687,6 +701,7 @@ export default function Animais() {
       {fichaOpen && animalFicha && (
         <FichaAnimal
           animal={animalFicha}
+          canEditAnimais={canEditAnimais}
           onClose={() => {
             setFichaOpen(false);
             setAnimalFicha(null);
