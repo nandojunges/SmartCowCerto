@@ -570,18 +570,29 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
     if (!doencaSel?.value) return setErro("Selecione a doença/condição.");
 
     const itensValidos = [];
+    const ordemPorDia = {};
     for (const d of dias) {
       const diaNum = toInt(d.dia, 1);
       for (const ap of (d.aplicacoes || [])) {
         const produto = ap?.produtoSel?.meta;
         if (!produto?.id) continue;
 
+        const quantidadeNum = Number.parseFloat(
+          String(ap.quantidade || "")
+            .replace(",", ".")
+            .trim()
+        );
+        if (!Number.isFinite(quantidadeNum) || quantidadeNum <= 0) continue;
+
+        ordemPorDia[diaNum] = (ordemPorDia[diaNum] || 0) + 1;
+
         itensValidos.push({
           dia: diaNum,
+          ordem: ordemPorDia[diaNum],
           produto_id: produto.id,
-          produto_nome: produto.nome || null,
+          produto_nome_snapshot: produto.nome || null,
           via: ap.viaSel?.value || "IMM",
-          quantidade: String(ap.quantidade || "").trim(),
+          quantidade: quantidadeNum,
           unidade: ap.unidadeSel?.value || "mL",
           carencia_leite_dias: produto.carencia_leite_dias ?? null,
           carencia_carne_dias: produto.carencia_carne_dias ?? null,
@@ -599,23 +610,53 @@ export default function ModalTratamentoPadrao({ open, onClose, onSaved, sugestoe
       const userId = userData?.user?.id ?? null;
 
       const payload = {
+        fazenda_id: fazendaAtualId,
+        user_id: userId,
         nome: nomeLimpo,
         doenca: doencaSel.value,
-        itens: itensValidos,
         ultimo_dia: maiorDia,
         duracao_dias: duracaoCalculada,
         carencia_leite_dias_max: resumoCarencia.maxLeite,
         carencia_carne_dias_max: resumoCarencia.maxCarne,
-        fazenda_id: fazendaAtualId,
-        user_id: userId,
       };
 
-      const { error } = await supabase.from("saude_protocolos").insert([payload]);
-      if (error) {
+      const { data: protocoloInserido, error: protocoloError } = await supabase
+        .from("saude_protocolos")
+        .insert([payload])
+        .select("id")
+        .single();
+
+      if (protocoloError || !protocoloInserido?.id) {
         setErro("Não foi possível salvar. Verifique se a tabela 'saude_protocolos' existe e se o RLS permite insert.");
         return;
       }
+
+      const itensPayload = itensValidos.map((item) => ({
+        fazenda_id: fazendaAtualId,
+        user_id: userId,
+        protocolo_id: protocoloInserido.id,
+        dia: item.dia,
+        ordem: item.ordem,
+        produto_id: item.produto_id,
+        produto_nome_snapshot: item.produto_nome_snapshot,
+        via: item.via,
+        quantidade: item.quantidade,
+        unidade: item.unidade,
+        carencia_leite_dias: item.carencia_leite_dias,
+        carencia_carne_dias: item.carencia_carne_dias,
+      }));
+
+      const { error: itensError } = await supabase
+        .from("saude_protocolo_itens")
+        .insert(itensPayload);
+
+      if (itensError) {
+        setErro("Protocolo criado, mas houve erro ao salvar os itens do tratamento.");
+        return;
+      }
+
       onSaved?.();
+      onClose?.();
     } catch {
       setErro("Falha ao salvar. Verifique conexão e estrutura das tabelas.");
     } finally {
