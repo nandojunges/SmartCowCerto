@@ -58,6 +58,9 @@ export default function App() {
     hasFazendaAtual,
     profileLoading,
     fazendasLoading,
+    canView,
+    canEdit,
+    permissoesLoading,
   } = useFazenda();
 
   const { pathname } = useLocation();
@@ -168,12 +171,7 @@ export default function App() {
                   <Route
                     path="/inicio"
                     element={
-                      <RequireModuloAccess
-                        modulo="inicio"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="inicio" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Inicio />
                       </RequireModuloAccess>
                     }
@@ -181,12 +179,7 @@ export default function App() {
                   <Route
                     path="/animais"
                     element={
-                      <RequireModuloAccess
-                        modulo="animais"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="animais" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Animais />
                       </RequireModuloAccess>
                     }
@@ -194,12 +187,7 @@ export default function App() {
                   <Route
                     path="/bezerras"
                     element={
-                      <RequireModuloAccess
-                        modulo="bezerras"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="bezerras" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Bezerras />
                       </RequireModuloAccess>
                     }
@@ -207,12 +195,7 @@ export default function App() {
                   <Route
                     path="/reproducao"
                     element={
-                      <RequireModuloAccess
-                        modulo="reproducao"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="reproducao" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Reproducao />
                       </RequireModuloAccess>
                     }
@@ -220,12 +203,7 @@ export default function App() {
                   <Route
                     path="/leite"
                     element={
-                      <RequireModuloAccess
-                        modulo="leite"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="leite" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Leite />
                       </RequireModuloAccess>
                     }
@@ -233,12 +211,7 @@ export default function App() {
                   <Route
                     path="/saude"
                     element={
-                      <RequireModuloAccess
-                        modulo="saude"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="saude" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Saude />
                       </RequireModuloAccess>
                     }
@@ -246,12 +219,7 @@ export default function App() {
                   <Route
                     path="/consumo"
                     element={
-                      <RequireModuloAccess
-                        modulo="consumo"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="consumo" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <ConsumoReposicao />
                       </RequireModuloAccess>
                     }
@@ -259,12 +227,7 @@ export default function App() {
                   <Route
                     path="/financeiro"
                     element={
-                      <RequireModuloAccess
-                        modulo="financeiro"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="financeiro" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Financeiro />
                       </RequireModuloAccess>
                     }
@@ -272,12 +235,7 @@ export default function App() {
                   <Route
                     path="/calendario"
                     element={
-                      <RequireModuloAccess
-                        modulo="calendario"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="calendario" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Calendario />
                       </RequireModuloAccess>
                     }
@@ -285,12 +243,7 @@ export default function App() {
                   <Route
                     path="/ajustes"
                     element={
-                      <RequireModuloAccess
-                        modulo="ajustes"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Ajustes />
                       </RequireModuloAccess>
                     }
@@ -298,12 +251,7 @@ export default function App() {
                   <Route
                     path="/ajustes/acessos"
                     element={
-                      <RequireModuloAccess
-                        modulo="ajustes"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <AjustesAcessos />
                       </RequireModuloAccess>
                     }
@@ -311,12 +259,7 @@ export default function App() {
                   <Route
                     path="/ajustes/perfil"
                     element={
-                      <RequireModuloAccess
-                        modulo="ajustes"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <AjustesPerfil />
                       </RequireModuloAccess>
                     }
@@ -324,12 +267,7 @@ export default function App() {
                   <Route
                     path="/ajustes/fazendas"
                     element={
-                      <RequireModuloAccess
-                        modulo="ajustes"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <AjustesFazendas />
                       </RequireModuloAccess>
                     }
@@ -337,12 +275,7 @@ export default function App() {
                   <Route
                     path="/ajustes/aparencia"
                     element={
-                      <RequireModuloAccess
-                        modulo="ajustes"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <AjustesAparencia />
                       </RequireModuloAccess>
                     }
@@ -350,12 +283,7 @@ export default function App() {
                   <Route
                     path="/ajustes/idioma"
                     element={
-                      <RequireModuloAccess
-                        modulo="ajustes"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <AjustesIdioma />
                       </RequireModuloAccess>
                     }
@@ -363,12 +291,7 @@ export default function App() {
                   <Route
                     path="/ajustes/notificacoes"
                     element={
-                      <RequireModuloAccess
-                        modulo="ajustes"
-                        isAssistenteTecnico={isAssistenteTecnico}
-                        permissoesModulo={permissoesModulo}
-                        permissoesLoading={permissoesLoading}
-                      >
+                      <RequireModuloAccess modulo="ajustes" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <AjustesNotificacoes />
                       </RequireModuloAccess>
                     }
@@ -437,12 +360,43 @@ function AdminGuard({ role, tipoConta, loading, fallbackPath }) {
 function RequireModuloAccess({
   modulo,
   isAssistenteTecnico,
-  permissoesModulo,
+  canView,
+  canEdit,
   permissoesLoading,
   children,
 }) {
   if (!isAssistenteTecnico) return children;
   if (permissoesLoading) return null;
-  if (!permissoesModulo?.[modulo]?.pode_ver) return <Navigate to="/inicio" replace />;
+  if (!canView(modulo)) return <Navigate to="/inicio" replace />;
+
+  if (!canEdit(modulo)) {
+    const blockEditInteraction = (event) => {
+      const editableTarget = event.target.closest(
+        "button, [role='button'], input:not([type='hidden']), select, textarea, form"
+      );
+
+      if (!editableTarget) {
+        return;
+      }
+
+      if (
+        editableTarget.closest(
+          "[data-allow-readonly='true'], [aria-label='Abrir menu'], [aria-label='Fechar menu']"
+        )
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    return (
+      <div onClickCapture={blockEditInteraction} onSubmitCapture={blockEditInteraction}>
+        {children}
+      </div>
+    );
+  }
+
   return children;
 }
