@@ -361,42 +361,12 @@ function RequireModuloAccess({
   modulo,
   isAssistenteTecnico,
   canView,
-  canEdit,
   permissoesLoading,
   children,
 }) {
   if (!isAssistenteTecnico) return children;
   if (permissoesLoading) return null;
   if (!canView(modulo)) return <Navigate to="/inicio" replace />;
-
-  if (!canEdit(modulo)) {
-    const blockEditInteraction = (event) => {
-      const editableTarget = event.target.closest(
-        "button, [role='button'], input:not([type='hidden']), select, textarea, form"
-      );
-
-      if (!editableTarget) {
-        return;
-      }
-
-      if (
-        editableTarget.closest(
-          "[data-allow-readonly='true'], [aria-label='Abrir menu'], [aria-label='Fechar menu']"
-        )
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-    return (
-      <div onClickCapture={blockEditInteraction} onSubmitCapture={blockEditInteraction}>
-        {children}
-      </div>
-    );
-  }
 
   return children;
 }

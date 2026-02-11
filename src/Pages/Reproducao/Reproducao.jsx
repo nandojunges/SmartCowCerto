@@ -8,7 +8,7 @@ import Protocolos from "./Protocolos";
 import Inseminador from "./Inseminador";
 
 export default function Reproducao() {
-  const { fazendaAtualId } = useFazenda();
+  const { fazendaAtualId, canView, canEdit } = useFazenda();
 
   const [registros, setRegistros] = useState([]);
   const [previsoesMap, setPrevisoesMap] = useState(new Map());
@@ -21,6 +21,8 @@ export default function Reproducao() {
   const [carregandoEventos, setCarregandoEventos] = useState(false);
   const [aplicacoesAtivasMap, setAplicacoesAtivasMap] = useState({});
   const [bulkManejoOpen, setBulkManejoOpen] = useState(false);
+  const canViewReproducao = canView("reproducao");
+  const canEditReproducao = canEdit("reproducao");
 
   // =========================
   // Estilos (otimizado p/ caber + reduzir margens)
@@ -602,7 +604,10 @@ export default function Reproducao() {
                       type="button"
                       className="repro-action"
                       style={styles.actionBtn}
+                      title={canViewReproducao ? "" : "Sem permissão"}
+                      disabled={!canViewReproducao}
                       onClick={() => {
+                        if (!canViewReproducao) return;
                         const animalDaLinha = {
                           ...(linha.raw || {}),
                           id: linha.raw?.id ?? linha.animalId ?? null,
@@ -653,21 +658,22 @@ export default function Reproducao() {
         <div style={styles.statusBarActions}>
           <button
             type="button"
+            title={canEditReproducao ? "" : "Sem permissão"}
             style={{
               ...styles.bulkBtn,
-              ...((!fazendaAtualId || linhas.length === 0) ? styles.bulkBtnDisabled : null),
+              ...((!fazendaAtualId || linhas.length === 0 || !canEditReproducao) ? styles.bulkBtnDisabled : null),
             }}
             onClick={() => {
-              if (!fazendaAtualId || linhas.length === 0) return;
+              if (!fazendaAtualId || linhas.length === 0 || !canEditReproducao) return;
               setBulkManejoOpen(true);
             }}
             onMouseEnter={(e) => {
-              if (!fazendaAtualId || linhas.length === 0) return;
+              if (!fazendaAtualId || linhas.length === 0 || !canEditReproducao) return;
               e.currentTarget.style.background = "#f8fafc";
               e.currentTarget.style.borderColor = "#94a3b8";
             }}
             onMouseLeave={(e) => {
-              if (!fazendaAtualId || linhas.length === 0) return;
+              if (!fazendaAtualId || linhas.length === 0 || !canEditReproducao) return;
               e.currentTarget.style.background = "#ffffff";
               e.currentTarget.style.borderColor = "#cbd5e1";
             }}
@@ -719,6 +725,7 @@ export default function Reproducao() {
 
       <Manejo
         open={!!animalSelecionado || bulkManejoOpen}
+        canEdit={canEditReproducao}
         animal={animalSelecionado}
         bulkMode={bulkManejoOpen}
         bulkAnimals={linhas.map((linha) => ({
