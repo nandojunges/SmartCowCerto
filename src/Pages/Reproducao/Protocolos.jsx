@@ -99,7 +99,7 @@ const Badge = ({ children, variant = "default" }) => {
   );
 };
 
-const Button = ({ children, onClick, variant = "primary", icon = null, disabled = false }) => {
+const Button = ({ children, onClick, variant = "primary", icon = null, disabled = false, title }) => {
   const styles =
     variant === "primary"
       ? { background: `linear-gradient(135deg, ${TOKENS.colors.primary}, ${TOKENS.colors.primaryDark})`, color: "#fff", border: "none", boxShadow: TOKENS.shadows.md }
@@ -111,6 +111,7 @@ const Button = ({ children, onClick, variant = "primary", icon = null, disabled 
     <button
       onClick={onClick}
       disabled={disabled}
+      title={title}
       style={{
         height: "40px",
         padding: "0 16px",
@@ -279,7 +280,8 @@ const DashboardCompacto = ({ protocolos, performanceData }) => {
 
 /* ========================= COMPONENTE PRINCIPAL ========================= */
 export default function Protocolos() {
-  const { fazendaAtualId } = useFazenda();
+  const { fazendaAtualId, canEdit } = useFazenda();
+  const canEditReproducao = canEdit("reproducao");
 
   const [protocolos, setProtocolos] = useState([]);
   const [performanceData, setPerformanceData] = useState([]);
@@ -784,11 +786,14 @@ export default function Protocolos() {
             </div>
             <Button
               variant="primary"
+              disabled={!canEditReproducao}
               onClick={() => {
+                if (!canEditReproducao) return;
                 setEditando(null);
                 setModalAberto(true);
               }}
               icon="plus"
+              title={!canEditReproducao ? "Sem permissão" : undefined}
             >
               Novo Protocolo
             </Button>
@@ -907,11 +912,14 @@ export default function Protocolos() {
                 <p style={{ margin: "0 0 20px", color: TOKENS.colors.gray400 }}>Crie seu primeiro protocolo de reprodução</p>
                 <Button
                   variant="primary"
+                  disabled={!canEditReproducao}
                   onClick={() => {
+                    if (!canEditReproducao) return;
                     setEditando(null);
                     setModalAberto(true);
                   }}
                   icon="plus"
+                  title={!canEditReproducao ? "Sem permissão" : undefined}
                 >
                   Criar Protocolo
                 </Button>
@@ -959,7 +967,8 @@ export default function Protocolos() {
 
                           <div style={{ display: "flex", gap: "4px" }}>
                             <button
-                              onClick={() => handleDuplicar(prot)}
+                              onClick={() => canEditReproducao && handleDuplicar(prot)}
+                              disabled={!canEditReproducao}
                               style={{
                                 padding: "8px",
                                 borderRadius: TOKENS.radii.md,
@@ -969,7 +978,7 @@ export default function Protocolos() {
                                 color: TOKENS.colors.gray400,
                                 transition: "color .2s ease",
                               }}
-                              title="Duplicar"
+                              title={!canEditReproducao ? "Sem permissão" : "Duplicar"}
                               onMouseEnter={(e) => (e.currentTarget.style.color = TOKENS.colors.primary)}
                               onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.colors.gray400)}
                             >
@@ -978,9 +987,11 @@ export default function Protocolos() {
 
                             <button
                               onClick={() => {
+                                if (!canEditReproducao) return;
                                 setEditando(prot);
                                 setModalAberto(true);
                               }}
+                              disabled={!canEditReproducao}
                               style={{
                                 padding: "8px",
                                 borderRadius: TOKENS.radii.md,
@@ -990,7 +1001,7 @@ export default function Protocolos() {
                                 color: TOKENS.colors.gray400,
                                 transition: "color .2s ease",
                               }}
-                              title="Editar"
+                              title={!canEditReproducao ? "Sem permissão" : "Editar"}
                               onMouseEnter={(e) => (e.currentTarget.style.color = TOKENS.colors.primary)}
                               onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.colors.gray400)}
                             >
@@ -998,7 +1009,8 @@ export default function Protocolos() {
                             </button>
 
                             <button
-                              onClick={() => handleExcluir(prot)}
+                              onClick={() => canEditReproducao && handleExcluir(prot)}
+                              disabled={!canEditReproducao}
                               style={{
                                 padding: "8px",
                                 borderRadius: TOKENS.radii.md,
@@ -1008,7 +1020,7 @@ export default function Protocolos() {
                                 color: TOKENS.colors.gray400,
                                 transition: "color .2s ease",
                               }}
-                              title="Excluir"
+                              title={!canEditReproducao ? "Sem permissão" : "Excluir"}
                               onMouseEnter={(e) => (e.currentTarget.style.color = TOKENS.colors.danger)}
                               onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.colors.gray400)}
                             >

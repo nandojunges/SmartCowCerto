@@ -175,7 +175,7 @@ const Icon = ({ name, size = 16, color = "currentColor", style = {} }) => {
   );
 };
 
-const Button = ({ children, variant = "primary", onClick, icon = null, style = {}, disabled = false }) => {
+const Button = ({ children, variant = "primary", onClick, icon = null, style = {}, disabled = false, title }) => {
   const base = {
     display: "inline-flex",
     alignItems: "center",
@@ -195,7 +195,7 @@ const Button = ({ children, variant = "primary", onClick, icon = null, style = {
     ghost: { background: "transparent", color: TOKENS.colors.gray600, ...style },
   };
   return (
-    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{ ...base, ...variants[variant] }}>
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} title={title} style={{ ...base, ...variants[variant] }}>
       {icon && <Icon name={icon} size={14} />}
       {children}
     </button>
@@ -603,7 +603,7 @@ const GraficoPerformance = ({ dados, titulo, subtitulo, destaque = false }) => {
 };
 
 /* ========================= COMPONENTES ========================= */
-const InseminadorItem = ({ data, onClick, onEdit }) => {
+const InseminadorItem = ({ data, onClick, onEdit, canEditReproducao }) => {
   const iniciais = data.nome?.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase();
   const tipoColors = {
     Veterinário: TOKENS.colors.purple,
@@ -697,11 +697,14 @@ const InseminadorItem = ({ data, onClick, onEdit }) => {
         </div>
         <Button
           variant="ghost"
+          disabled={!canEditReproducao}
           onClick={(e) => {
             e.stopPropagation();
+            if (!canEditReproducao) return;
             onEdit(data);
           }}
           style={{ padding: "8px" }}
+          title={!canEditReproducao ? "Sem permissão" : undefined}
         >
           ✏️
         </Button>
@@ -711,7 +714,7 @@ const InseminadorItem = ({ data, onClick, onEdit }) => {
 };
 
 /* ========================= MODAIS ========================= */
-const ModalInseminador = ({ isOpen, onClose, onSave, initialData = null }) => {
+const ModalInseminador = ({ isOpen, onClose, onSave, initialData = null, canEdit = true }) => {
   const [form, setForm] = useState({ nome: "", tipo: "Inseminador", registro: "", ativo: true, observacoes: "" });
 
   useEffect(() => {
@@ -754,6 +757,7 @@ const ModalInseminador = ({ isOpen, onClose, onSave, initialData = null }) => {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (!canEdit) return;
             onSave(form);
           }}
           style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}
@@ -815,7 +819,7 @@ const ModalInseminador = ({ isOpen, onClose, onSave, initialData = null }) => {
             <Button variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" disabled={!form.nome.trim()}>
+            <Button variant="primary" disabled={!canEdit || !form.nome.trim()} title={!canEdit ? "Sem permissão" : undefined}>
               Salvar
             </Button>
           </div>
@@ -939,7 +943,8 @@ const ModalDetalhes = ({ isOpen, onClose, inseminador, dadosIndividuais, resumo,
 
 /* ========================= PÁGINA PRINCIPAL ========================= */
 export default function Inseminador() {
-  const { fazendaAtualId } = useFazenda();
+  const { fazendaAtualId, canEdit } = useFazenda();
+  const canEditReproducao = canEdit("reproducao");
   const [lista, setLista] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -1297,12 +1302,15 @@ export default function Inseminador() {
           <Button
             variant="primary"
             icon="plus"
+            disabled={!canEditReproducao}
             onClick={() => {
+              if (!canEditReproducao) return;
               setEditando(null);
               setModalOpen(true);
             }}
+            title={!canEditReproducao ? "Sem permissão" : undefined}
           >
-            Novo Profissional
+            Novo Inseminador
           </Button>
         </div>
       </div>
@@ -1408,6 +1416,7 @@ export default function Inseminador() {
             ) : (
               filtered.map((item) => (
                 <InseminadorItem
+                  canEditReproducao={canEditReproducao}
                   key={item.id}
                   data={item}
                   onClick={(data) => {
@@ -1427,6 +1436,7 @@ export default function Inseminador() {
 
       <ModalInseminador
         isOpen={modalOpen}
+        canEdit={canEditReproducao}
         onClose={() => {
           setModalOpen(false);
           setEditando(null);

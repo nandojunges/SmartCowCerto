@@ -150,18 +150,23 @@ export function FazendaProvider({ children }) {
     let isMounted = true;
 
     async function carregarPermissoesModulo() {
-      if (!session?.user?.id) {
-        if (isMounted) {
-          setPermissoesModulo({});
-          setPermissoesLoading(false);
-        }
-        return;
-      }
-
       const permissoesTotais = MODULOS_MENU.reduce((acc, modulo) => {
         acc[modulo.id] = { pode_ver: true, pode_editar: true };
         return acc;
       }, {});
+
+      const permissoesNegadas = MODULOS_MENU.reduce((acc, modulo) => {
+        acc[modulo.id] = { pode_ver: false, pode_editar: false };
+        return acc;
+      }, {});
+
+      if (!session?.user?.id) {
+        if (isMounted) {
+          setPermissoesModulo(permissoesNegadas);
+          setPermissoesLoading(false);
+        }
+        return;
+      }
 
       if (tipoConta !== "ASSISTENTE_TECNICO" || !fazendaAtualId) {
         if (isMounted) {
@@ -201,7 +206,7 @@ export function FazendaProvider({ children }) {
         }
 
         if (isMounted) {
-          setPermissoesModulo({});
+          setPermissoesModulo(permissoesNegadas);
         }
       } finally {
         if (isMounted) {

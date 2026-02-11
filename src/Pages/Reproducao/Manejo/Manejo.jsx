@@ -332,6 +332,7 @@ export default function VisaoGeral({
   bulkAnimals = [],
   onClose,
   onSaved,
+  canEdit = true,
 }) {
   const { fazendaAtualId } = useFazenda();
   const animalId = animal?.id || animal?.animal_id;
@@ -1764,7 +1765,11 @@ if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
                 </div>
               )
             ) : (
-              <FormComponent 
+              <fieldset
+                disabled={!canEdit}
+                style={{ border: "none", padding: 0, margin: 0, minWidth: 0 }}
+              >
+                <FormComponent 
                 animal={bulkActive ? bulkPreviewAnimal : animal}
                 inseminadores={inseminadores}
                 touros={touros}
@@ -1780,6 +1785,7 @@ if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
                 onShowNovoProtChange={setShowNovoProt}
                 key={selectedType} // Força remount ao trocar de aba
               />
+              </fieldset>
             )}
             {selectedType === "IA" && bulkActive && bulkProtocolConflicts.length > 0 && (
               <div style={{
@@ -1801,6 +1807,7 @@ if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
                           {label}
                         </div>
                         <select
+                          disabled={!canEdit}
                           value={bulkProtocolSelections[conflict.animalId] || ""}
                           onChange={(e) => {
                             const value = e.target.value;
@@ -1925,32 +1932,33 @@ if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
               </button>
               
               <button
+                title={canEdit ? "" : "Sem permissão"}
                 onClick={handleSalvarRegistro}
-                disabled={salvando || Boolean(iaBlockMessage) || Boolean(bulkIABlockMessage)}
+                disabled={!canEdit || salvando || Boolean(iaBlockMessage) || Boolean(bulkIABlockMessage)}
                 style={{
                   padding: "8px 20px",
                   fontSize: "13px",
                   fontWeight: 600,
                   color: "#fff",
-                  background: (salvando || iaBlockMessage || bulkIABlockMessage) ? theme.colors.slate[300] : theme.colors.accent[600],
+                  background: (!canEdit || salvando || iaBlockMessage || bulkIABlockMessage) ? theme.colors.slate[300] : theme.colors.accent[600],
                   border: "none",
                   borderRadius: theme.radius.md,
-                  cursor: (salvando || iaBlockMessage || bulkIABlockMessage) ? "not-allowed" : "pointer",
+                  cursor: (!canEdit || salvando || iaBlockMessage || bulkIABlockMessage) ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: "8px",
                   boxShadow: "0 1px 2px 0 rgba(0,0,0,0.1)",
                   transition: "all 0.15s",
-                  opacity: (salvando || iaBlockMessage || bulkIABlockMessage) ? 0.7 : 1,
+                  opacity: (!canEdit || salvando || iaBlockMessage || bulkIABlockMessage) ? 0.7 : 1,
                 }}
                 onMouseEnter={(e) => {
-                  if (salvando || iaBlockMessage || bulkIABlockMessage) return;
+                  if (!canEdit || salvando || iaBlockMessage || bulkIABlockMessage) return;
                   e.currentTarget.style.background = theme.colors.accent[700];
                   e.currentTarget.style.transform = "translateY(-1px)";
                   e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0,0,0,0.1)";
                 }}
                 onMouseLeave={(e) => {
-                  if (salvando || iaBlockMessage || bulkIABlockMessage) return;
+                  if (!canEdit || salvando || iaBlockMessage || bulkIABlockMessage) return;
                   e.currentTarget.style.background = theme.colors.accent[600];
                   e.currentTarget.style.transform = "translateY(0)";
                   e.currentTarget.style.boxShadow = "0 1px 2px 0 rgba(0,0,0,0.1)";
