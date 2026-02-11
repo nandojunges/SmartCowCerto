@@ -218,7 +218,7 @@ export function FazendaProvider({ children }) {
   }, [fazendaAtualId, session?.user?.id, tipoConta]);
 
 
-  const canViewModulo = useCallback(
+  const canView = useCallback(
     (modulo) => {
       if (tipoConta !== "ASSISTENTE_TECNICO") {
         return true;
@@ -228,7 +228,7 @@ export function FazendaProvider({ children }) {
     [tipoConta, permissoesModulo]
   );
 
-  const canEditModulo = useCallback(
+  const canEdit = useCallback(
     (modulo) => {
       if (tipoConta !== "ASSISTENTE_TECNICO") {
         return true;
@@ -253,8 +253,10 @@ export function FazendaProvider({ children }) {
       ready,
       permissoesModulo,
       permissoesLoading,
-      canViewModulo,
-      canEditModulo,
+      canView,
+      canEdit,
+      canViewModulo: canView,
+      canEditModulo: canEdit,
     }),
     [
       fazendaAtualId,
@@ -269,8 +271,8 @@ export function FazendaProvider({ children }) {
       ready,
       permissoesModulo,
       permissoesLoading,
-      canViewModulo,
-      canEditModulo,
+      canView,
+      canEdit,
     ]
   );
 

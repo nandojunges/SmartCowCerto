@@ -18,7 +18,7 @@ function useAbaAtiva(pathname, abas) {
 export default function NavegacaoPrincipal() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { fazendaAtualId, clearFazendaAtualId, tipoConta, ready, permissoesModulo } = useFazenda();
+  const { fazendaAtualId, clearFazendaAtualId, tipoConta, ready, canView } = useFazenda();
 
   const consultorStorageKeys = [
     "modo",
@@ -53,9 +53,9 @@ export default function NavegacaoPrincipal() {
     // CONSULTOR dentro da fazenda -> filtra por pode_ver e remove Ajustes
     return ABAS_BASE.filter((a) => {
       if (a.id === "ajustes") return false;
-      return Boolean(permissoesModulo?.[a.id]?.pode_ver);
+      return canView(a.id);
     });
-  }, [isAssistenteTecnico, fazendaAtualId, permissoesModulo]);
+  }, [isAssistenteTecnico, fazendaAtualId, canView]);
 
   const abaAtiva = useAbaAtiva(pathname, abas);
 
