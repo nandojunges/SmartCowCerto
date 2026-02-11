@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Select from "react-select";
+import { toast } from "react-toastify";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 
@@ -15,6 +16,7 @@ export default function RegistrarParto(props) {
   const assumidoCadastro = props.assumidoCadastro === true;
   const semSecagem = props.semSecagem === true;
   const onRegistrarSecagemAntes = props.onRegistrarSecagemAntes;
+  const canEditAnimais = props.canEditAnimais ?? true;
 
   // ✅ Blindagem: garante objeto seguro
   const vacaSafe = useMemo(
@@ -404,6 +406,10 @@ export default function RegistrarParto(props) {
   };
 
   const salvar = async () => {
+    if (!canEditAnimais) {
+      toast.warn("Sem permissão para editar nesta fazenda");
+      return;
+    }
     if (!validarFormulario()) return;
 
     const dataISO = brToISODate(dataParto);
@@ -1443,7 +1449,7 @@ export default function RegistrarParto(props) {
             <button onClick={() => onClose?.()} className="botao-cancelar">
               Cancelar
             </button>
-            <button onClick={salvar} className="botao-acao" disabled={!vacaSafe}>
+            <button onClick={salvar} className="botao-acao" disabled={!vacaSafe || !canEditAnimais} title={!canEditAnimais ? "Sem permissão para editar nesta fazenda" : undefined}>
               💾 Salvar Parto
             </button>
           </div>

@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Select from "react-select";
+import { toast } from "react-toastify";
 import { supabase } from "../../lib/supabaseClient";
 import { useFazenda } from "../../context/FazendaContext";
 
@@ -12,6 +13,7 @@ export default function RegistrarSecagem(props) {
   const fazendaIdProp = props.fazendaId ?? props.fazenda_id ?? null;
   const iaIdProp = props.iaId ?? props.ia_id ?? null;
   const animalIdProp = props.animalId ?? props.animal_id ?? null;
+  const canEditAnimais = props.canEditAnimais ?? true;
 
   // ✅ Blindagem: garante objeto
   const animalSafe = useMemo(
@@ -192,6 +194,10 @@ export default function RegistrarSecagem(props) {
 
   // ===================== Salvar =====================
   const salvar = async () => {
+    if (!canEditAnimais) {
+      toast.warn("Sem permissão para editar nesta fazenda");
+      return;
+    }
     setErro("");
 
     const animalId = animalIdProp ?? animalSafe?.id ?? animalSafe?.animal_id ?? null;
@@ -465,7 +471,7 @@ export default function RegistrarSecagem(props) {
           <button onClick={() => onClose?.()} className="botao-cancelar">
             Cancelar
           </button>
-          <button onClick={salvar} className="botao-acao" disabled={!animalSafe}>
+          <button onClick={salvar} className="botao-acao" disabled={!animalSafe || !canEditAnimais} title={!canEditAnimais ? "Sem permissão para editar nesta fazenda" : undefined}>
             💾 Salvar Secagem
           </button>
         </div>

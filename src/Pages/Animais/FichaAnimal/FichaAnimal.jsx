@@ -21,7 +21,7 @@ function calcularDias(dataInicio, dataFim) {
 }
 
 /** Modal principal da Ficha do Animal (com abas) */
-export default function FichaAnimal({ animal, onClose }) {
+export default function FichaAnimal({ animal, onClose, canEditAnimais = true }) {
   // >>> NOVO: estado com o animal completo vindo do banco
   const [animalDetalhado, setAnimalDetalhado] = useState(animal);
   const [resumoRepro, setResumoRepro] = useState(null);
@@ -275,7 +275,7 @@ export default function FichaAnimal({ animal, onClose }) {
         >
           {abaAtiva === "resumo" && (
             // >>> AQUI USAMOS O OBJETO COMPLETO
-            <FichaAnimalResumo animal={animalParaResumo} />
+            <FichaAnimalResumo animal={animalParaResumo} canEditAnimais={canEditAnimais} />
           )}
 
           {abaAtiva === "leite" && (
