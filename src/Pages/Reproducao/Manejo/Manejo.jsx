@@ -257,7 +257,7 @@ async function insertReproEvento(payload) {
    ========================================================= */
 
 // Navegação lateral tipo "Rail" - muito usada em software profissional (Linear, Figma, etc)
-const NavItem = ({ icon: Icon, label, description, active, onClick, disabled }) => (
+const NavItem = ({ icon, label, description, active, onClick, disabled }) => (
   <button
     onClick={disabled ? undefined : onClick}
     style={{
@@ -292,7 +292,7 @@ const NavItem = ({ icon: Icon, label, description, active, onClick, disabled }) 
       width: "20px",
       height: "20px"
     }}>
-      <Icon />
+      {icon ? icon() : null}
     </div>
     
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -361,7 +361,7 @@ export default function VisaoGeral({
   const [iaBanner, setIaBanner] = useState(null);
   const [iaBlockMessage, setIaBlockMessage] = useState("");
   const [bulkIABlockMessage, setBulkIABlockMessage] = useState("");
-  const [bulkIAMatches, setBulkIAMatches] = useState({});
+  const [_bulkIAMatches, setBulkIAMatches] = useState({});
   const [showNovoProt, setShowNovoProt] = useState(false);
 
   const bulkActive = Boolean(bulkMode);
@@ -870,6 +870,73 @@ export default function VisaoGeral({
     };
   };
 
+  const salvarOcorrenciaClinica = async (payload) => {
+    if (!fazendaAtualId || !animal?.id) {
+      throw new Error("Não foi possível salvar ocorrência clínica: fazenda ou animal não identificado.");
+    }
+
+    const dataInicio = normalizePayloadDate(payload?.data_inicio);
+    if (!dataInicio) {
+      throw new Error("Data de início inválida para ocorrência clínica.");
+    }
+
+    const { data: tratamento, error: tratamentoError } = await supabase
+      .from("saude_tratamentos")
+      .insert({
+        fazenda_id: fazendaAtualId,
+        animal_id: animal.id,
+        doenca: payload?.doenca,
+        protocolo_id: payload?.protocolo_id || null,
+        data_inicio: dataInicio,
+        observacao: payload?.obs || null,
+        status: "ativo",
+      })
+      .select("id")
+      .single();
+
+    if (tratamentoError) throw tratamentoError;
+
+    if (!payload?.protocolo_id) return;
+
+    const { data: itens, error: itensError } = await supabase
+      .from("saude_protocolo_itens")
+      .select("id,dia,ordem,produto_id,produto_nome_snapshot,via,quantidade,unidade")
+      .eq("fazenda_id", fazendaAtualId)
+      .eq("protocolo_id", payload.protocolo_id)
+      .order("dia", { ascending: true })
+      .order("ordem", { ascending: true });
+
+    if (itensError) throw itensError;
+    if (!Array.isArray(itens) || itens.length === 0) return;
+
+    const baseDate = parseISODate(dataInicio);
+    if (!baseDate) throw new Error("Data base inválida para agenda clínica.");
+
+    const aplicacoes = itens.map((item) => {
+      const dia = Number(item?.dia) || 1;
+      const dataPrevistaDate = addDays(baseDate, Math.max(0, dia - 1));
+      return {
+        fazenda_id: fazendaAtualId,
+        tratamento_id: tratamento.id,
+        animal_id: animal.id,
+        data_prevista: toISODate(dataPrevistaDate),
+        protocolo_item_id: item.id,
+        produto_id: item.produto_id || null,
+        produto_nome_snapshot: item.produto_nome_snapshot || null,
+        via: item.via || null,
+        quantidade: item.quantidade,
+        unidade: item.unidade,
+        status: "pendente",
+      };
+    });
+
+    const { error: aplicacoesError } = await supabase
+      .from("saude_aplicacoes")
+      .insert(aplicacoes);
+
+    if (aplicacoesError) throw aplicacoesError;
+  };
+
   const handleSubmit = async (payload) => {
     const hasBulkSelection = bulkActive && bulkReady && bulkSelectedAnimals.length > 0;
     const baseAnimalId = animalId;
@@ -893,6 +960,13 @@ export default function VisaoGeral({
       const legacyAuthUser = typeof supabase.auth.user === "function" ? supabase.auth.user() : null;
       const userId = authData?.user?.id || legacyAuthUser?.id;
       if (!userId) throw new Error("Sessão inválida (auth.uid vazio)");
+
+      if (payload.kind === "CLINICA") {
+        await salvarOcorrenciaClinica(payload);
+        toast.success("Ocorrência clínica salva com sucesso");
+        await handleSaved();
+        return;
+      }
 
       if (payload.kind === "IA") {
         const dataEvento = normalizePayloadDate(payload.data);
@@ -995,7 +1069,7 @@ const baseEvento = {
           }
 
           await insertReproEventos(
-            itens.map(({ item, animalId: targetId, aplicacao }) => ({
+            itens.map(({ animalId: targetId, aplicacao }) => ({
               ...baseEvento,
               animal_id: targetId,
               protocolo_aplicacao_id: aplicacao?.id || null,
@@ -1146,16 +1220,26 @@ const baseEvento = {
       return;
     }
 
+    if (selectedType === "CLINICA") {
+      const formClinica = document.getElementById("form-CLINICA");
+      if (!formClinica) {
+        setErroSalvar("Formulário de ocorrência clínica não encontrado.");
+        return;
+      }
+      formClinica.requestSubmit();
+      return;
+    }
+
     const acaoAtiva = typeof selectedType === "string" ? selectedType.toLowerCase() : selectedType;
-const tipoEventoResolved = resolveTipoEvento(acaoAtiva);
+    const tipoEventoResolved = resolveTipoEvento(acaoAtiva);
 
-// NORMALIZA e GARANTE enum aqui (antes de qualquer insert)
-const tipoEvento = ensureTipoReproEvento({ tipo: tipoEventoResolved }, "handleSalvarRegistro").tipo;
+    // NORMALIZA e GARANTE enum aqui (antes de qualquer insert)
+    const tipoEvento = ensureTipoReproEvento({ tipo: tipoEventoResolved }, "handleSalvarRegistro").tipo;
 
-if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
-  console.error("Tipo inválido p/ repro_eventos.tipo", { acaoAtiva, tipoEvento });
-  throw new Error(`Tipo inválido: "${tipoEvento}". Use IA/DG/PARTO/SECAGEM/PROTOCOLO.`);
-}
+    if (!TIPO_ENUM_VALIDO.has(tipoEvento)) {
+      console.error("Tipo inválido p/ repro_eventos.tipo", { acaoAtiva, tipoEvento });
+      throw new Error(`Tipo inválido: "${tipoEvento}". Use IA/DG/PARTO/SECAGEM/PROTOCOLO.`);
+    }
     if (selectedType === "IA") {
       if (!draftIA) {
         setErroSalvar("Preencha os dados da inseminação antes de salvar.");

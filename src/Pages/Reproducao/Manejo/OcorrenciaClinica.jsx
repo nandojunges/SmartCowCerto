@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import { supabase } from "../../../lib/supabaseClient";
 import { useFazenda } from "../../../context/FazendaContext";
@@ -84,18 +84,6 @@ const InputGroup = ({ label, children, icon: Icon, help }) => (
   </div>
 );
 
-const Toggle = ({ checked, onChange, label, disabled }) => (
-  <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>
-    <div style={{ position: "relative", width: "40px", height: "22px" }}>
-      <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} style={{ opacity: 0, width: 0, height: 0 }} />
-      <div style={{ position: "absolute", inset: 0, backgroundColor: checked ? theme.colors.primary[600] : theme.colors.slate[200], borderRadius: "22px", transition: "0.3s" }}>
-        <div style={{ position: "absolute", height: "18px", width: "18px", left: checked ? "20px" : "2px", bottom: "2px", backgroundColor: "white", borderRadius: "50%", transition: "0.3s", boxShadow: theme.shadows.sm }} />
-      </div>
-    </div>
-    <span style={{ fontSize: "13px", fontWeight: 700, color: theme.colors.slate[700] }}>{label}</span>
-  </label>
-);
-
 const OCORRENCIAS = [
   "Metrite","Endometrite","Retenção de placenta","Mastite clínica","Mastite subclínica",
   "Cetose","Hipocalcemia (paresia pós-parto)","Deslocamento de abomaso","Acidose/Indigestão",
@@ -103,7 +91,6 @@ const OCORRENCIAS = [
 ];
 
 export default function OcorrenciaClinica({
-  animal,
   onSubmit,
   showNovoProt: showNovoProtProp,
   onShowNovoProtChange,
@@ -124,7 +111,7 @@ export default function OcorrenciaClinica({
   const [obs, setObs] = useState("");
 
   // data de início (base do protocolo)
-  const [dataInicioBR, setDataInicioBR] = useState(todayBR());
+  const [dataInicio, setDataInicio] = useState(todayBR());
 
   // protocolos saúde
   const [protocolosSaude, setProtocolosSaude] = useState([]);
@@ -132,14 +119,8 @@ export default function OcorrenciaClinica({
   const [carregandoProt, setCarregandoProt] = useState(false);
 
   // itens do protocolo selecionado
-  const [itensProtocolo, setItensProtocolo] = useState([]);
+  const [itensProto, setItensProto] = useState([]);
   const [carregandoItens, setCarregandoItens] = useState(false);
-
-  // flags: só fazem sentido com protocolo selecionado
-  const [agendar, setAgendar] = useState(true);
-  const [baixarEstoque, setBaixarEstoque] = useState(true);
-
-  const fetchedOnce = useRef(false);
 
   const protocoloOptions = useMemo(() => {
     return (protocolosSaude || []).map((p) => ({
@@ -154,11 +135,33 @@ export default function OcorrenciaClinica({
     [protocolosSaude, protocoloSelId]
   );
 
+  const carregarItensDoProtocolo = useCallback(async (protId) => {
+    if (!fazendaAtualId || !protId) {
+      setItensProto([]);
+      return;
+    }
+    setCarregandoItens(true);
+    try {
+      const { data, error } = await supabase
+        .from("saude_protocolo_itens")
+        .select("id,dia,ordem,produto_id,produto_nome_snapshot,via,quantidade,unidade,carencia_leite_dias,carencia_carne_dias")
+        .eq("fazenda_id", fazendaAtualId)
+        .eq("protocolo_id", protId)
+        .order("dia", { ascending: true })
+        .order("ordem", { ascending: true });
+
+      if (!error && Array.isArray(data)) setItensProto(data);
+      else setItensProto([]);
+    } finally {
+      setCarregandoItens(false);
+    }
+  }, [fazendaAtualId]);
+
   const carregarProtocolos = useCallback(async (selecionarRecente = false) => {
     if (!fazendaAtualId) {
       setProtocolosSaude([]);
       setProtocoloSelId("");
-      setItensProtocolo([]);
+      setItensProto([]);
       return;
     }
     setCarregandoProt(true);
@@ -175,6 +178,7 @@ export default function OcorrenciaClinica({
         if (selecionarRecente && data.length > 0) {
           const id = String(data[0].id);
           setProtocoloSelId(id);
+          carregarItensDoProtocolo(id);
         }
       } else {
         setProtocolosSaude([]);
@@ -182,132 +186,66 @@ export default function OcorrenciaClinica({
     } finally {
       setCarregandoProt(false);
     }
-  }, [fazendaAtualId]);
-
-  const carregarItensDoProtocolo = useCallback(async (protId) => {
-    if (!fazendaAtualId || !protId) {
-      setItensProtocolo([]);
-      return;
-    }
-    setCarregandoItens(true);
-    try {
-      const { data, error } = await supabase
-        .from("saude_protocolo_itens")
-        .select("*")
-        .eq("fazenda_id", fazendaAtualId)
-        .eq("protocolo_id", protId)
-        .order("dia", { ascending: true })
-        .order("ordem", { ascending: true });
-
-      if (!error && Array.isArray(data)) setItensProtocolo(data);
-      else setItensProtocolo([]);
-    } finally {
-      setCarregandoItens(false);
-    }
-  }, [fazendaAtualId]);
+  }, [carregarItensDoProtocolo, fazendaAtualId]);
 
   useEffect(() => {
-    if (fetchedOnce.current) return;
-    fetchedOnce.current = true;
     carregarProtocolos();
   }, [carregarProtocolos]);
 
-  // quando muda protocolo, busca itens
-  useEffect(() => {
-    if (!protocoloSelId) {
-      setItensProtocolo([]);
-      return;
-    }
-    carregarItensDoProtocolo(protocoloSelId);
-  }, [protocoloSelId, carregarItensDoProtocolo]);
-
-  const handleProtocoloChange = (opt) => {
+  const handleProtocoloChange = async (opt) => {
     const selecionado = opt?.meta || null;
     const id = selecionado?.id ? String(selecionado.id) : "";
     setProtocoloSelId(id);
-    // se limpou seleção, desliga efeitos
+
     if (!id) {
-      setItensProtocolo([]);
+      setItensProto([]);
+      return;
     }
+
+    await carregarItensDoProtocolo(id);
   };
 
-  // monta o “cronograma previsto” a partir da dataInicioBR + itens (dia)
-  const cronograma = useMemo(() => {
-    if (!protocoloSelId || !itensProtocolo?.length) return [];
-    const base = parseBR(dataInicioBR) || new Date();
+  const agendaPreview = useMemo(() => {
+    if (!protocoloSelId || !itensProto?.length) return [];
+    const base = parseBR(dataInicio);
+    if (!base) return [];
 
-    return itensProtocolo.map((it, idx) => {
-      const diaRaw = Number(it.dia);
-      // regra prática: no seu exemplo, dia=1 deve virar D0 (mesmo dia da data início)
-      const offset = Number.isFinite(diaRaw) ? Math.max(0, diaRaw - 1) : 0;
+    const grouped = itensProto.reduce((acc, item) => {
+      const dia = Number(item?.dia) || 1;
+      const dataPrevista = addDays(base, Math.max(0, dia - 1));
+      const chave = toISODate(dataPrevista);
+      if (!acc[chave]) {
+        acc[chave] = { data: chave, dataBR: toBRDate(dataPrevista), itens: [] };
+      }
 
-      const dataPrev = addDays(base, offset);
-      const dataPrevBR = toBRDate(dataPrev);
+      acc[chave].itens.push({
+        id: item.id,
+        produto_nome_snapshot: item.produto_nome_snapshot || "Produto",
+        quantidade: item.quantidade,
+        unidade: item.unidade,
+        via: item.via,
+      });
 
-      const produto = it.produto_nome_snapshot || "Produto";
-      const qtd = (it.quantidade != null ? String(it.quantidade) : "").replace(".", ",");
-      const un = it.unidade || "";
-      const via = it.via ? ` • ${it.via}` : "";
+      return acc;
+    }, {});
 
-      return {
-        idx,
-        protocolo_item_id: it.id,
-        produto_id: it.produto_id || null,
-        produto_nome_snapshot: it.produto_nome_snapshot || null,
-        via: it.via || null,
-        quantidade: it.quantidade != null ? Number(it.quantidade) : null,
-        unidade: it.unidade || null,
-        data_prevista_date: toISODate(dataPrev),
-        data_prevista_br: dataPrevBR,
-        label: `${produto}${qtd ? ` • ${qtd} ${un}` : ""}${via}`,
-        diaOffset: offset,
-      };
-    });
-  }, [protocoloSelId, itensProtocolo, dataInicioBR]);
-
-  // se não tem protocolo, força regras: não agenda e não baixa
-  useEffect(() => {
-    if (!protocoloSelId) {
-      setAgendar(false);
-      setBaixarEstoque(false);
-    } else {
-      // quando seleciona um protocolo, liga por padrão (você pode mudar isso aqui se quiser)
-      setAgendar(true);
-      setBaixarEstoque(true);
-    }
-  }, [protocoloSelId]);
+    return Object.values(grouped).sort((a, b) => a.data.localeCompare(b.data));
+  }, [protocoloSelId, itensProto, dataInicio]);
 
   const salvar = () => {
     if (!oc) return alert("Escolha a ocorrência.");
-    const base = parseBR(dataInicioBR);
-    if (!base) return alert("Informe a Data de início (dd/mm/aaaa).");
+    const base = parseBR(dataInicio);
+    if (!base) return alert("Informe a Data do evento / Início (dd/mm/aaaa).");
 
-    // payload “limpo” pro pai gravar nas tabelas novas
-    const payload = {
+    onSubmit?.({
       kind: "CLINICA",
-      animal_id: animal?.id,
+      data_inicio: toISODate(base),
       doenca: oc,
-      observacao: obs || null,
-      data_inicio: toISODate(base), // -> saude_tratamentos.data_inicio
-      protocolo_id: protocoloSelId || null, // -> saude_tratamentos.protocolo_id
-      criarAgenda: !!(protocoloSelId && agendar),
-      baixarEstoque: !!(protocoloSelId && baixarEstoque),
-      // -> saude_aplicacoes (somente se tiver protocolo)
-      aplicacoes: protocoloSelId
-        ? cronograma.map((c) => ({
-            data_prevista: c.data_prevista_date,
-            protocolo_item_id: c.protocolo_item_id,
-            produto_id: c.produto_id,
-            produto_nome_snapshot: c.produto_nome_snapshot,
-            via: c.via,
-            quantidade: c.quantidade,
-            unidade: c.unidade,
-            status: "pendente",
-          }))
-        : [],
-    };
-
-    onSubmit?.(payload);
+      obs,
+      protocolo_id: protocoloSelId || null,
+      criarAgenda: !!protocoloSelId,
+      baixarEstoque: false,
+    });
   };
 
   return (
@@ -365,10 +303,10 @@ export default function OcorrenciaClinica({
             />
           </InputGroup>
 
-          <InputGroup label="Data de início" icon={Icons.calendar} help="Base do protocolo (D0). Sem protocolo, é a data do registro.">
+          <InputGroup label="Data do evento / Início" icon={Icons.calendar} help="Obrigatória. Base para cálculo da agenda do protocolo.">
             <input
-              value={dataInicioBR}
-              onChange={(e) => setDataInicioBR(ensureBRMask(e.target.value))}
+              value={dataInicio}
+              onChange={(e) => setDataInicio(ensureBRMask(e.target.value))}
               placeholder="dd/mm/aaaa"
               inputMode="numeric"
               style={{
@@ -406,7 +344,7 @@ export default function OcorrenciaClinica({
             <InputGroup
               label="Protocolo terapêutico (opcional)"
               icon={() => <span>📋</span>}
-              help="Selecione para gerar automaticamente o cronograma (sem seleção, não agenda e não baixa estoque)."
+              help="Selecione para gerar automaticamente a agenda de aplicações."
             >
               <Select
                 styles={{
@@ -461,7 +399,7 @@ export default function OcorrenciaClinica({
         </div>
       </div>
 
-      {/* SEÇÃO 3: CRONOGRAMA (apenas se selecionou protocolo) */}
+      {/* SEÇÃO 3: PRÉVIA DE AGENDA (apenas se selecionou protocolo) */}
       {protocoloSelId ? (
         <div
           style={{
@@ -476,7 +414,7 @@ export default function OcorrenciaClinica({
             <div>
               <div style={{ fontSize: 16, fontWeight: 900, color: theme.colors.slate[800] }}>Cronograma Previsto</div>
               <div style={{ fontSize: 12, color: theme.colors.slate[500], marginTop: 4 }}>
-                {carregandoItens ? "Carregando etapas..." : `${cronograma.length} etapa(s) a partir de ${dataInicioBR}`}
+                {carregandoItens ? "Carregando etapas..." : `${agendaPreview.reduce((acc, dia) => acc + dia.itens.length, 0)} item(ns) a partir de ${dataInicio}`}
               </div>
             </div>
 
@@ -497,7 +435,7 @@ export default function OcorrenciaClinica({
 
           {carregandoItens ? (
             <div style={{ padding: 16, color: theme.colors.slate[500] }}>Carregando itens do protocolo…</div>
-          ) : cronograma.length === 0 ? (
+          ) : agendaPreview.length === 0 ? (
             <div
               style={{
                 padding: 16,
@@ -508,13 +446,15 @@ export default function OcorrenciaClinica({
                 fontWeight: 800,
               }}
             >
-              Esse protocolo não tem itens cadastrados em <code>saude_protocolo_itens</code>.
+              {!itensProto.length
+                ? <>Esse protocolo não tem itens cadastrados em <code>saude_protocolo_itens</code>.</>
+                : <>Informe uma data de início válida para visualizar a agenda prevista.</>}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {cronograma.map((c) => (
+              {agendaPreview.map((dia) => (
                 <div
-                  key={c.protocolo_item_id}
+                  key={dia.data}
                   style={{
                     borderRadius: theme.radius.lg,
                     border: `1px solid ${theme.colors.slate[200]}`,
@@ -525,74 +465,29 @@ export default function OcorrenciaClinica({
                     alignItems: "flex-start",
                   }}
                 >
-                  <div
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: "50%",
-                      background: theme.colors.primary[600],
-                      color: "white",
-                      fontWeight: 900,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {c.idx + 1}
-                  </div>
-
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 900, color: theme.colors.slate[800] }}>
-                      Etapa {c.idx + 1} <span style={{ fontWeight: 700, color: theme.colors.slate[500] }}>(D+{c.diaOffset})</span>
+                      📅 {dia.dataBR}
                     </div>
-                    <div style={{ marginTop: 4, fontSize: 13, color: theme.colors.slate[700] }}>{c.label}</div>
-                    <div style={{ marginTop: 6, fontSize: 12, color: theme.colors.slate[500] }}>
-                      📅 {c.data_prevista_br}
-                    </div>
+                    <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: theme.colors.slate[700], fontSize: 13 }}>
+                      {dia.itens.map((item) => {
+                        const qtd = item.quantidade != null ? String(item.quantidade).replace(".", ",") : "";
+                        const un = item.unidade ? ` ${item.unidade}` : "";
+                        const via = item.via ? ` • ${item.via}` : "";
+                        return (
+                          <li key={item.id}>
+                            {item.produto_nome_snapshot}{qtd ? ` • ${qtd}${un}` : ""}{via}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 </div>
               ))}
             </div>
           )}
-
-          {/* FLAGS */}
-          <div
-            style={{
-              marginTop: 16,
-              padding: "16px",
-              borderRadius: theme.radius.xl,
-              background: theme.colors.slate[50],
-              border: `1px solid ${theme.colors.slate[200]}`,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "16px",
-            }}
-          >
-            <div style={{ display: "flex", gap: "24px" }}>
-              <Toggle checked={agendar} onChange={(e) => setAgendar(e.target.checked)} label="Criar tarefas no calendário" />
-              <Toggle checked={baixarEstoque} onChange={(e) => setBaixarEstoque(e.target.checked)} label="Baixar do estoque automaticamente" />
-            </div>
-          </div>
         </div>
-      ) : (
-        // sem protocolo: mantém visual “ok”, mas deixa claro o comportamento
-        <div
-          style={{
-            padding: "20px 24px",
-            background: theme.colors.slate[50],
-            borderRadius: theme.radius.xl,
-            border: `1px solid ${theme.colors.slate[200]}`,
-            color: theme.colors.slate[600],
-            fontSize: 13,
-            fontWeight: 700,
-          }}
-        >
-          Sem protocolo selecionado: <span style={{ color: theme.colors.slate[800] }}>não</span> será criado cronograma, <span style={{ color: theme.colors.slate[800] }}>não</span> agenda e <span style={{ color: theme.colors.slate[800] }}>não</span> baixa estoque. A ocorrência será registrada mesmo assim.
-        </div>
-      )}
+      ) : null}
 
       {/* MODAL CRIAR PROTOCOLO (Saúde) */}
       <ModalTratamentoPadrao
