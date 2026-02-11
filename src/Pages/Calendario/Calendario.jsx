@@ -48,8 +48,8 @@ export default function Calendario() {
   } = useCalendar();
 
   const { permissao, solicitarPermissao, notificarTarefa } = useNotifications();
-  const { canEditModulo } = useFazenda();
-  const podeEditar = canEditModulo("calendario");
+  const { canEdit } = useFazenda();
+  const podeEditar = canEdit("calendario");
   const toast = useToast();
 
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
