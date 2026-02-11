@@ -75,6 +75,82 @@ function normalizePayloadTime(value) {
   return null;
 }
 
+const VIA_ALLOWED = new Set(["IMM", "IM", "SC", "IV", "VO", "TOP"]);
+
+function isUUID(str) {
+  if (!str || typeof str !== "string") return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str.trim());
+}
+
+function toDateOnly(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? toISODate(value) : null;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return brToISO(raw);
+
+  const dt = new Date(raw);
+  if (!Number.isFinite(dt.getTime())) return null;
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+function normalizeVia(via) {
+  if (!via && via !== 0) return null;
+  const raw = String(via).trim();
+  if (!raw) return null;
+  const normalized = normalizeTexto(raw);
+  const map = {
+    imm: "IMM",
+    intramamario: "IMM",
+    intramuscular: "IM",
+    im: "IM",
+    subcutanea: "SC",
+    subcutaneo: "SC",
+    sc: "SC",
+    intravenosa: "IV",
+    iv: "IV",
+    oral: "VO",
+    vo: "VO",
+    topica: "TOP",
+    top: "TOP",
+  };
+  const candidate = map[normalized] || raw.toUpperCase();
+  return VIA_ALLOWED.has(candidate) ? candidate : null;
+}
+
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const sanitized = raw.replace(/\s/g, "");
+  const hasComma = sanitized.includes(",");
+  const hasDot = sanitized.includes(".");
+
+  let normalized = sanitized;
+  if (hasComma && hasDot) {
+    const lastComma = sanitized.lastIndexOf(",");
+    const lastDot = sanitized.lastIndexOf(".");
+    if (lastComma > lastDot) {
+      normalized = sanitized.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = sanitized.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    normalized = sanitized.replace(/\./g, "").replace(",", ".");
+  } else {
+    normalized = sanitized.replace(/,/g, "");
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 const RAZOES_VINCULO_AUTOMATICO = new Set(["IATF", "RESSINC"]);
 const normalizeTexto = (valor) => {
   if (!valor) return "";
@@ -919,22 +995,65 @@ export default function VisaoGeral({
         fazenda_id: fazendaAtualId,
         tratamento_id: tratamento.id,
         animal_id: animal.id,
-        data_prevista: toISODate(dataPrevistaDate),
+        data_prevista: toDateOnly(dataPrevistaDate),
+        data_real: null,
         protocolo_item_id: item.id,
         produto_id: item.produto_id || null,
-        produto_nome_snapshot: item.produto_nome_snapshot || null,
-        via: item.via || null,
+        produto_nome_snapshot: item.produto_nome_snapshot || "Produto",
+        via: normalizeVia(item.via),
         quantidade: item.quantidade,
         unidade: item.unidade,
         status: "pendente",
       };
     });
 
-    const { error: aplicacoesError } = await supabase
-      .from("saude_aplicacoes")
-      .insert(aplicacoes);
+    const rowsNorm = aplicacoes.map((r) => ({
+      fazenda_id: r.fazenda_id,
+      tratamento_id: r.tratamento_id,
+      animal_id: r.animal_id,
+      data_prevista: toDateOnly(r.data_prevista),
+      data_real: r.data_real ?? null,
+      protocolo_item_id: isUUID(r.protocolo_item_id) ? r.protocolo_item_id : null,
+      produto_id: isUUID(r.produto_id) ? r.produto_id : null,
+      produto_nome_snapshot: (r.produto_nome_snapshot && String(r.produto_nome_snapshot).trim()) ? r.produto_nome_snapshot : "Produto",
+      via: normalizeVia(r.via),
+      quantidade: toNumber(r.quantidade),
+      unidade: r.unidade ? String(r.unidade) : null,
+      status: r.status ? String(r.status) : "pendente",
+    }));
 
-    if (aplicacoesError) throw aplicacoesError;
+    const { error: errBatch } = await supabase
+      .from("saude_aplicacoes")
+      .insert(rowsNorm);
+
+    if (errBatch) {
+      console.error("[saude_aplicacoes] BATCH ERROR:", errBatch);
+      console.error("[saude_aplicacoes] BATCH ERROR JSON:", JSON.stringify(errBatch, null, 2));
+      console.error("[saude_aplicacoes] BATCH ERROR DETAILS:", {
+        code: errBatch?.code,
+        message: errBatch?.message,
+        details: errBatch?.details,
+        hint: errBatch?.hint,
+      });
+      console.error("[saude_aplicacoes] rowsNorm sample:", rowsNorm?.[0]);
+
+      for (let i = 0; i < rowsNorm.length; i += 1) {
+        const one = rowsNorm[i];
+        const { error: errOne } = await supabase.from("saude_aplicacoes").insert([one]);
+        if (errOne) {
+          console.error(`[saude_aplicacoes] FAIL row #${i}:`, one);
+          console.error("[saude_aplicacoes] FAIL ERROR:", errOne);
+          console.error("[saude_aplicacoes] FAIL ERROR JSON:", JSON.stringify(errOne, null, 2));
+          console.error("[saude_aplicacoes] FAIL ERROR DETAILS:", {
+            code: errOne?.code,
+            message: errOne?.message,
+            details: errOne?.details,
+            hint: errOne?.hint,
+          });
+          throw errOne;
+        }
+      }
+    }
   };
 
   const handleSubmit = async (payload) => {
