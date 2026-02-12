@@ -69,18 +69,20 @@ export async function listConvitesDaFazenda(fazendaId) {
   }));
 }
 
-export async function listAcessosDaFazenda(fazendaId) {
+export async function listAcessosDaFazenda(fazendaId, statusList = ["ATIVO"]) {
   if (!fazendaId) {
     throw new Error("Fazenda inválida para carregar acessos.");
   }
 
+  const statuses = Array.isArray(statusList) && statusList.length ? statusList : ["ATIVO"];
+
   const { data, error } = await supabase
     .from("fazenda_acessos")
     .select(
-      "id, user_id, created_at, status, permissoes, tipo_profissional, nome_profissional, profiles (id, email, full_name, tipo_conta)"
+      "id, user_id, created_at, status, permissoes, tipo_profissional, nome_profissional, registro_profissional, profiles (id, email, full_name, tipo_conta)"
     )
     .eq("fazenda_id", fazendaId)
-    .eq("status", "ATIVO")
+    .in("status", statuses)
     .order("created_at", { ascending: false });
 
   if (error) {
