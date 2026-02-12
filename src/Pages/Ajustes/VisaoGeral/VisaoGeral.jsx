@@ -36,15 +36,27 @@ export default function VisaoGeral() {
         // Buscar perfil completo
         const { data: profile } = await supabase
           .from("profiles")
-          .select("id, full_name, avatar_url, telefone, cidade, estado, bio, phone")
+          .select("id, full_name, avatar_url, telefone, phone, cidade, estado, bio")
           .eq("id", user.id)
           .maybeSingle();
+
+        let avatar = null;
+
+        if (profile?.avatar_url?.startsWith("avatars/")) {
+          const { data, error } = await supabase.storage
+            .from("profiles")
+            .createSignedUrl(profile.avatar_url, 3600);
+
+          avatar = error ? null : (data?.signedUrl || null);
+        } else {
+          avatar = profile?.avatar_url || null;
+        }
 
         setUserData({
           id: user.id,
           email: user.email,
           nome: profile?.full_name || user.user_metadata?.full_name || "",
-          avatar: profile?.avatar_url || null,
+          avatar,
           telefone: profile?.telefone || profile?.phone || "",
           cidade: profile?.cidade || "",
           estado: profile?.estado || "",

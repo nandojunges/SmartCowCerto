@@ -44,7 +44,13 @@ export default function PerfilUsuario({ userData, onUpdate }) {
     setLoading(true);
 
     try {
-      let avatarUrl = userData.avatar;
+      const { data: currentProfile } = await supabase
+        .from("profiles")
+        .select("avatar_url")
+        .eq("id", userData.id)
+        .maybeSingle();
+
+      let avatarUrl = currentProfile?.avatar_url || null;
 
       // Upload do avatar se houver arquivo novo
       if (avatarFile) {
@@ -53,15 +59,12 @@ export default function PerfilUsuario({ userData, onUpdate }) {
         
         const { error: uploadError } = await supabase.storage
           .from("profiles")
-          .upload(fileName, avatarFile);
+          .upload(fileName, avatarFile, { upsert: true });
 
         if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
-          .from("profiles")
-          .getPublicUrl(fileName);
-        
-        avatarUrl = publicUrl;
+
+        avatarUrl = fileName;
       }
 
       // Atualizar perfil no banco
@@ -80,15 +83,25 @@ export default function PerfilUsuario({ userData, onUpdate }) {
 
       if (error) throw error;
 
+      let signedAvatar = avatarUrl || null;
+      if (avatarUrl?.startsWith("avatars/")) {
+        const { data } = await supabase.storage
+          .from("profiles")
+          .createSignedUrl(avatarUrl, 3600);
+
+        signedAvatar = data?.signedUrl || null;
+      }
+
       onUpdate({
         nome: formData.nome,
         telefone: formData.telefone,
         cidade: formData.cidade,
         estado: formData.estado,
         bio: formData.bio,
-        avatar: avatarUrl,
+        avatar: signedAvatar,
       });
 
+      setAvatarPreview(signedAvatar);
       toast.success("Perfil atualizado com sucesso!");
       setAvatarFile(null);
     } catch (error) {
