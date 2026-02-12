@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Select from "react-select";
 import { toast } from "react-toastify";
 import { 
-  Users, Plus, Mail, Shield, MoreVertical, 
+  Users, Plus, Mail, Shield, 
   Phone, MapPin, Award, Calendar, Trash2, 
   Edit3, CheckCircle, XCircle, Clock 
 } from "lucide-react";
@@ -50,14 +50,24 @@ export default function GestaoEquipe({ dados, onUpdate }) {
     setLoading(true);
     
     try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      const currentUserId = userData?.user?.id;
+
       const [acessosData, convitesData] = await Promise.all([
-        listAcessosDaFazenda(fazendaAtualId),
+        listAcessosDaFazenda(fazendaAtualId, ["ATIVO", "BLOQUEADO"]),
         listarConvitesPendentesProdutor(fazendaAtualId),
       ]);
+
+      const membrosFiltrados = (acessosData || []).filter((membro) => {
+        const tipoProfissionalVazio = !membro.tipo_profissional || !String(membro.tipo_profissional).trim();
+        const ehProdutorLogado = currentUserId && membro.user_id === currentUserId;
+        return !(ehProdutorLogado && tipoProfissionalVazio);
+      });
       
-      setMembros(acessosData || []);
+      setMembros(membrosFiltrados);
       setConvites(convitesData || []);
-      onUpdate({ membros: acessosData || [], convites: convitesData || [] });
+      onUpdate({ membros: membrosFiltrados, convites: convitesData || [] });
     } catch (error) {
       toast.error("Erro ao carregar equipe");
     } finally {
@@ -120,8 +130,12 @@ export default function GestaoEquipe({ dados, onUpdate }) {
 
       if (error) throw error;
       
+      setMembros((prevMembros) =>
+        prevMembros.map((item) =>
+          item.id === membro.id ? { ...item, status: novoStatus } : item
+        )
+      );
       toast.success(`Status atualizado para ${STATUS_COLORS[novoStatus]?.label || novoStatus}`);
-      carregarDados();
     } catch (err) {
       toast.error("Erro ao atualizar status");
     }
@@ -173,7 +187,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
             Equipe Técnica
           </h3>
           <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 14 }}>
-            {membros.length} profissionais ativos • {convites.length} convites pendentes
+            {membros.length} profissionais • {convites.length} convites pendentes
           </p>
         </div>
         
@@ -331,19 +345,6 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                   </div>
                 </div>
                 
-                <div style={{ position: "relative" }}>
-                  <button
-                    style={{
-                      padding: "6px",
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "#94a3b8",
-                    }}
-                  >
-                    <MoreVertical size={18} />
-                  </button>
-                </div>
               </div>
               
               <div style={{ marginBottom: 16 }}>
@@ -437,7 +438,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                       fontSize: 12,
                     }}
                   >
-                    Reativar Acesso
+                    Desbloquear
                   </button>
                 )}
               </div>
