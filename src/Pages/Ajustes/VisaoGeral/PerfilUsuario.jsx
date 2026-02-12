@@ -1,18 +1,60 @@
 // src/Pages/Ajustes/VisaoGeral/PerfilUsuario.jsx
-import React, { useEffect, useRef, useState } from "react";
-import { 
-  Camera, MapPin, User, Phone, FileText, 
-  MapPinned, CheckCircle, Loader2 
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Camera, MapPin, User, Phone, FileText,
+  MapPinned, CheckCircle, Loader2
 } from "lucide-react";
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import { supabase } from "../../../lib/supabaseClient";
 import { toast } from "react-toastify";
 import { useFazenda } from "../../../context/FazendaContext";
 
 const ESTADOS_BR = [
-  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", 
-  "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", 
+  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
+  "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN",
   "RS", "RO", "RR", "SC", "SP", "SE", "TO"
 ];
+
+const DEFAULT_CENTER = [-14.235, -51.9253];
+const DEFAULT_ZOOM = 4;
+const FOCUSED_ZOOM = 13;
+
+const guessLocationName = (result) => (
+  result?.name
+  || result?.address?.farm
+  || result?.address?.hamlet
+  || result?.address?.village
+  || result?.address?.town
+  || result?.address?.city
+  || "Local selecionado"
+);
+
+const hasMissingLocationColumns = (message = "") => (
+  message.includes("latitude")
+  || message.includes("longitude")
+  || message.includes("local_nome")
+  || message.includes("local_endereco")
+  || message.includes("local_atualizado_em")
+);
+
+function RecenterMap({ center, zoom }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView(center, zoom);
+  }, [center, zoom, map]);
+
+  return null;
+}
+
+function MapClickHandler({ onMapClick }) {
+  useMapEvents({
+    click: onMapClick,
+  });
+
+  return null;
+}
 
 export default function PerfilUsuario({ userData, onUpdate }) {
   const { fazendaAtualId } = useFazenda();
@@ -26,19 +68,48 @@ export default function PerfilUsuario({ userData, onUpdate }) {
   });
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(userData.avatar);
-  const [showMap, setShowMap] = useState(false);
-  const [fazendaLoc, setFazendaLoc] = useState({
-    latitude: "",
-    longitude: "",
-    local_nome: "",
-    local_endereco: "",
-  });
+
+  const [fazLat, setFazLat] = useState(null);
+  const [fazLng, setFazLng] = useState(null);
+  const [localNome, setLocalNome] = useState("");
+  const [localEndereco, setLocalEndereco] = useState("");
+  const [busca, setBusca] = useState("");
+  const [sugestoes, setSugestoes] = useState([]);
+  const [loadingGeo, setLoadingGeo] = useState(false);
+  const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
+  const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
+
   const fileInputRef = useRef(null);
+
+  const fallbackCenter = useMemo(() => {
+    const byState = {
+      RS: [-30.0346, -51.2177],
+      SC: [-27.5954, -48.548],
+      PR: [-25.4284, -49.2733],
+      SP: [-23.5505, -46.6333],
+      RJ: [-22.9068, -43.1729],
+      MG: [-19.9167, -43.9345],
+      GO: [-16.6869, -49.2648],
+      MT: [-15.601, -56.0974],
+      MS: [-20.4697, -54.6201],
+      BA: [-12.9714, -38.5014],
+      PE: [-8.0476, -34.877],
+      CE: [-3.7319, -38.5267],
+      PA: [-1.4558, -48.4902],
+    };
+
+    return byState[formData.estado] || DEFAULT_CENTER;
+  }, [formData.estado]);
 
   useEffect(() => {
     const carregarLocalizacaoFazenda = async () => {
       if (!fazendaAtualId) {
-        setFazendaLoc({ latitude: "", longitude: "", local_nome: "", local_endereco: "" });
+        setFazLat(null);
+        setFazLng(null);
+        setLocalNome("");
+        setLocalEndereco("");
+        setMapCenter(fallbackCenter);
+        setMapZoom(DEFAULT_ZOOM);
         return;
       }
 
@@ -49,42 +120,115 @@ export default function PerfilUsuario({ userData, onUpdate }) {
         .maybeSingle();
 
       if (error) {
+        if (hasMissingLocationColumns(error.message || "")) {
+          toast.error("Faltam colunas de localização em public.fazendas. Rode a migração antes de continuar.");
+          return;
+        }
         toast.error("Não foi possível carregar a localização da fazenda.");
         return;
       }
 
-      setFazendaLoc({
-        latitude: data?.latitude?.toString() || "",
-        longitude: data?.longitude?.toString() || "",
-        local_nome: data?.local_nome || "",
-        local_endereco: data?.local_endereco || "",
-      });
+      const latitude = data?.latitude != null ? Number(data.latitude) : null;
+      const longitude = data?.longitude != null ? Number(data.longitude) : null;
+
+      setFazLat(Number.isFinite(latitude) ? latitude : null);
+      setFazLng(Number.isFinite(longitude) ? longitude : null);
+      setLocalNome(data?.local_nome || "");
+      setLocalEndereco(data?.local_endereco || "");
+
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        setMapCenter([latitude, longitude]);
+        setMapZoom(FOCUSED_ZOOM);
+      } else {
+        setMapCenter(fallbackCenter);
+        setMapZoom(DEFAULT_ZOOM);
+      }
     };
 
     carregarLocalizacaoFazenda();
-  }, [fazendaAtualId]);
+  }, [fazendaAtualId, fallbackCenter]);
 
-  const usarMinhaLocalizacao = () => {
-    if (!navigator.geolocation) {
-      toast.error("Geolocalização não suportada neste navegador.");
+  useEffect(() => {
+    if (!busca.trim()) {
+      setSugestoes([]);
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setFazendaLoc((prev) => ({
-          ...prev,
-          latitude: position.coords.latitude.toFixed(6),
-          longitude: position.coords.longitude.toFixed(6),
-        }));
-        setShowMap(true);
-        toast.success("Localização capturada com sucesso.");
-      },
-      (error) => {
-        toast.error("Não foi possível obter sua localização: " + error.message);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        setLoadingGeo(true);
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(busca.trim())}`,
+          { signal: controller.signal }
+        );
+
+        if (!response.ok) {
+          throw new Error("Falha ao pesquisar localização");
+        }
+
+        const results = await response.json();
+        setSugestoes(
+          (Array.isArray(results) ? results : []).map((result) => ({
+            display_name: result.display_name,
+            lat: Number(result.lat),
+            lon: Number(result.lon),
+            nameGuess: guessLocationName(result),
+          })).filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lon))
+        );
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          setSugestoes([]);
+        }
+      } finally {
+        setLoadingGeo(false);
+      }
+    }, 500);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [busca]);
+
+  const handleMapClick = async (e) => {
+    const clickedLat = e.latlng.lat;
+    const clickedLng = e.latlng.lng;
+
+    setFazLat(clickedLat);
+    setFazLng(clickedLng);
+    setMapCenter([clickedLat, clickedLng]);
+    setMapZoom(FOCUSED_ZOOM);
+
+    try {
+      setLoadingGeo(true);
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${clickedLat}&lon=${clickedLng}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Falha no reverse geocode");
+      }
+
+      const result = await response.json();
+      setLocalEndereco(result?.display_name || localEndereco);
+      setLocalNome(guessLocationName(result));
+    } catch {
+      // Mantém os dados atuais quando reverse geocode falha
+    } finally {
+      setLoadingGeo(false);
+    }
+  };
+
+  const handleSelectSuggestion = (item) => {
+    setFazLat(item.lat);
+    setFazLng(item.lon);
+    setLocalNome(item.nameGuess);
+    setLocalEndereco(item.display_name);
+    setMapCenter([item.lat, item.lon]);
+    setMapZoom(FOCUSED_ZOOM);
+    setBusca(item.display_name);
+    setSugestoes([]);
   };
 
   const handleAvatarChange = (e) => {
@@ -113,22 +257,19 @@ export default function PerfilUsuario({ userData, onUpdate }) {
 
       let avatarUrl = currentProfile?.avatar_url || null;
 
-      // Upload do avatar se houver arquivo novo
       if (avatarFile) {
         const fileExt = avatarFile.name.split(".").pop();
         const fileName = `avatars/${userData.id}/${Date.now()}.${fileExt}`;
-        
+
         const { error: uploadError } = await supabase.storage
           .from("profiles")
           .upload(fileName, avatarFile, { upsert: true });
 
         if (uploadError) throw uploadError;
 
-
         avatarUrl = fileName;
       }
 
-      // Atualizar perfil no banco
       const { error } = await supabase
         .from("profiles")
         .upsert({
@@ -141,25 +282,28 @@ export default function PerfilUsuario({ userData, onUpdate }) {
           avatar_url: avatarUrl,
           updated_at: new Date().toISOString(),
         });
-      
+
       if (error) throw error;
 
-      if (fazendaAtualId) {
-        const latitudeNum = fazendaLoc.latitude === "" ? null : Number(fazendaLoc.latitude);
-        const longitudeNum = fazendaLoc.longitude === "" ? null : Number(fazendaLoc.longitude);
-
+      if (fazendaAtualId && fazLat != null && fazLng != null) {
         const { error: fazendaError } = await supabase
           .from("fazendas")
           .update({
-            latitude: Number.isNaN(latitudeNum) ? null : latitudeNum,
-            longitude: Number.isNaN(longitudeNum) ? null : longitudeNum,
-            local_nome: fazendaLoc.local_nome?.trim() || null,
-            local_endereco: fazendaLoc.local_endereco?.trim() || null,
+            latitude: fazLat,
+            longitude: fazLng,
+            local_nome: localNome.trim() || null,
+            local_endereco: localEndereco.trim() || null,
             local_atualizado_em: new Date().toISOString(),
           })
           .eq("id", fazendaAtualId);
 
-        if (fazendaError) throw fazendaError;
+        if (fazendaError) {
+          if (hasMissingLocationColumns(fazendaError.message || "")) {
+            toast.error("Faltam colunas de localização em public.fazendas. Rode a migração antes de salvar.");
+            return;
+          }
+          throw fazendaError;
+        }
       }
 
       let signedAvatar = avatarUrl || null;
@@ -197,18 +341,17 @@ export default function PerfilUsuario({ userData, onUpdate }) {
       </h3>
 
       <form onSubmit={handleSubmit}>
-        {/* Seção da Foto - Estilo Instagram */}
-        <div style={{ 
-          display: "flex", 
-          alignItems: "center", 
-          gap: 32, 
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 32,
           marginBottom: 32,
           padding: 24,
           background: "#f8fafc",
           borderRadius: 16,
         }}>
           <div style={{ position: "relative" }}>
-            <div 
+            <div
               onClick={() => fileInputRef.current?.click()}
               style={{
                 width: 120,
@@ -222,17 +365,17 @@ export default function PerfilUsuario({ userData, onUpdate }) {
               }}
             >
               {avatarPreview ? (
-                <img 
-                  src={avatarPreview} 
-                  alt="Perfil" 
+                <img
+                  src={avatarPreview}
+                  alt="Perfil"
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
               ) : (
-                <div style={{ 
-                  width: "100%", 
-                  height: "100%", 
-                  display: "flex", 
-                  alignItems: "center", 
+                <div style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
                   justifyContent: "center",
                   background: "#e2e8f0",
                   color: "#64748b",
@@ -242,8 +385,7 @@ export default function PerfilUsuario({ userData, onUpdate }) {
                   {formData.nome?.charAt(0).toUpperCase() || "?"}
                 </div>
               )}
-              
-              {/* Overlay de câmera */}
+
               <div style={{
                 position: "absolute",
                 inset: 0,
@@ -258,7 +400,7 @@ export default function PerfilUsuario({ userData, onUpdate }) {
                 <Camera size={32} color="#fff" />
               </div>
             </div>
-            
+
             <input
               ref={fileInputRef}
               type="file"
@@ -317,7 +459,6 @@ export default function PerfilUsuario({ userData, onUpdate }) {
           </div>
         </div>
 
-        {/* Grid de Campos */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
           <div>
             <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 600, color: "#374151" }}>
@@ -406,7 +547,6 @@ export default function PerfilUsuario({ userData, onUpdate }) {
           </div>
         </div>
 
-        {/* Bio */}
         <div style={{ marginBottom: 24 }}>
           <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 600, color: "#374151" }}>
             <FileText size={16} style={{ display: "inline", marginRight: 6, verticalAlign: "middle" }} />
@@ -421,154 +561,119 @@ export default function PerfilUsuario({ userData, onUpdate }) {
               padding: "12px 16px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
-              fontSize: 15,
+              fontSize: 14,
               resize: "vertical",
-              minHeight: 100,
+              minHeight: 90,
             }}
-            placeholder="Conte um pouco sobre você e sua experiência com o rebanho..."
+            placeholder="Fale um pouco sobre você e sua produção..."
           />
-          <span style={{ fontSize: 12, color: "#94a3b8", marginTop: 4, display: "block" }}>
-            Máximo 200 caracteres
+          <span style={{ color: "#64748b", fontSize: 12 }}>
+            {formData.bio.length}/500 caracteres
           </span>
         </div>
 
-        {/* Localização da Fazenda */}
         <div style={{ marginBottom: 24 }}>
           <label style={{ display: "block", marginBottom: 8, fontSize: 14, fontWeight: 600, color: "#374151" }}>
             <MapPin size={16} style={{ display: "inline", marginRight: 6, verticalAlign: "middle" }} />
             Localização da Fazenda
           </label>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <input
-              type="text"
-              value={fazendaLoc.local_nome}
-              onChange={(e) => setFazendaLoc((prev) => ({ ...prev, local_nome: e.target.value }))}
-              placeholder="Nome do local"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #e2e8f0",
-                fontSize: 14,
-              }}
-            />
-
-            <input
-              type="text"
-              value={fazendaLoc.local_endereco}
-              onChange={(e) => setFazendaLoc((prev) => ({ ...prev, local_endereco: e.target.value }))}
-              placeholder="Endereço/descrição (opcional)"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #e2e8f0",
-                fontSize: 14,
-              }}
-            />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <input
-              type="text"
-              value={fazendaLoc.latitude}
-              onChange={(e) => setFazendaLoc((prev) => ({ ...prev, latitude: e.target.value }))}
-              placeholder="Latitude"
-              style={{
-                width: "100%",
-                padding: "8px 10px",
-                borderRadius: 10,
-                border: "1px solid #e2e8f0",
-                fontSize: 13,
-                background: "#f8fafc",
-              }}
-            />
-            <input
-              type="text"
-              value={fazendaLoc.longitude}
-              onChange={(e) => setFazendaLoc((prev) => ({ ...prev, longitude: e.target.value }))}
-              placeholder="Longitude"
-              style={{
-                width: "100%",
-                padding: "8px 10px",
-                borderRadius: 10,
-                border: "1px solid #e2e8f0",
-                fontSize: 13,
-                background: "#f8fafc",
-              }}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={usarMinhaLocalizacao}
-              style={{
-                padding: "8px 14px",
-                background: "#0f172a",
-                color: "#fff",
-                border: "none",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Usar minha localização
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowMap((prev) => !prev)}
-              style={{
-                padding: "8px 14px",
-                background: "#fff",
-                color: "#334155",
-                border: "1px solid #cbd5e1",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {showMap ? "Ocultar mapa" : "Marcar no mapa"}
-            </button>
-          </div>
-
-          {(showMap || fazendaLoc.latitude || fazendaLoc.longitude || (formData.cidade && formData.estado)) && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{
-              borderRadius: 12,
-              overflow: "hidden",
-              border: "1px solid #e2e8f0",
-              height: 250,
-              background: "#f1f5f9",
-            }}>
-              <iframe
-                width="100%"
-                height="100%"
-                frameBorder="0"
-                scrolling="no"
-                marginHeight="0"
-                marginWidth="0"
-                src={`https://maps.google.com/maps?q=${encodeURIComponent(
-                  fazendaLoc.latitude && fazendaLoc.longitude
-                    ? `${fazendaLoc.latitude},${fazendaLoc.longitude}`
-                    : `${formData.cidade}, ${formData.estado}, Brasil`
-                )}&t=&z=13&ie=UTF8&iwloc=&output=embed`}
-                style={{ filter: "grayscale(0.2)" }}
-              />
-            </div>
-            <p style={{ margin: "8px 0 0", fontSize: 12, color: "#64748b" }}>
-              {fazendaLoc.latitude && fazendaLoc.longitude
-                ? "Localização exata da fazenda com base nas coordenadas salvas."
-                : "Localização aproximada baseada na cidade/estado informados."}
+          {!fazendaAtualId ? (
+            <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>
+              Selecione uma fazenda para definir a localização.
             </p>
-          </div>
-        )}
+          ) : (
+            <>
+              <p style={{ margin: "0 0 10px", fontSize: 12, color: "#64748b" }}>
+                Clique no mapa para marcar ou pesquise um local.
+              </p>
+
+              <div style={{ position: "relative", marginBottom: 12 }}>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Pesquisar local..."
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #e2e8f0",
+                    fontSize: 14,
+                  }}
+                />
+
+                {sugestoes.length > 0 && (
+                  <div style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    left: 0,
+                    right: 0,
+                    background: "#fff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 10,
+                    boxShadow: "0 8px 24px rgba(15,23,42,0.08)",
+                    zIndex: 10,
+                    overflow: "hidden",
+                  }}>
+                    {sugestoes.slice(0, 5).map((item) => (
+                      <button
+                        key={`${item.lat}-${item.lon}-${item.display_name}`}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(item)}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          border: "none",
+                          background: "#fff",
+                          padding: "10px 12px",
+                          fontSize: 13,
+                          cursor: "pointer",
+                          borderBottom: "1px solid #f1f5f9",
+                        }}
+                      >
+                        {item.display_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{
+                borderRadius: 12,
+                overflow: "hidden",
+                border: "1px solid #e2e8f0",
+                height: 250,
+                background: "#f1f5f9",
+                marginBottom: 8,
+              }}>
+                <MapContainer
+                  center={mapCenter}
+                  zoom={mapZoom}
+                  style={{ height: "100%", width: "100%" }}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <RecenterMap center={mapCenter} zoom={mapZoom} />
+                  <MapClickHandler onMapClick={handleMapClick} />
+                  {fazLat != null && fazLng != null && <Marker position={[fazLat, fazLng]} />}
+                </MapContainer>
+              </div>
+
+              <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>
+                {loadingGeo
+                  ? "Buscando informações do local..."
+                  : localNome || localEndereco
+                    ? `${localNome || "Local selecionado"} ${localEndereco ? `• ${localEndereco}` : ""}`
+                    : "Nenhum ponto selecionado ainda."}
+              </p>
+            </>
+          )}
         </div>
 
-        {/* Botão Salvar */}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="submit"
