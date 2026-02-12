@@ -1,19 +1,14 @@
 // src/Pages/Ajustes/VisaoGeral/SegurancaConta.jsx
 import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { 
-  Mail, Lock, Shield, Smartphone, AlertTriangle,
-  CheckCircle, Loader2, Eye, EyeOff, LogOut
-} from "lucide-react";
+import { Mail, Lock, Shield, Smartphone, CheckCircle, Eye, EyeOff, LogOut } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 
-export default function SegurancaConta({ userData, onUpdate }) {
+export default function SegurancaConta({ userData }) {
   const navigate = useNavigate();
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [loadingPassword, setLoadingPassword] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   
   const [emailForm, setEmailForm] = useState({
@@ -30,21 +25,42 @@ export default function SegurancaConta({ userData, onUpdate }) {
 
   const handleEmailChange = async (e) => {
     e.preventDefault();
-    
+
     if (emailForm.novoEmail !== emailForm.confirmarEmail) {
       toast.error("Os emails não coincidem");
       return;
     }
 
+    if (!emailForm.senhaAtual) {
+      toast.error("Informe a senha atual");
+      return;
+    }
+
     setLoadingEmail(true);
     try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user?.email) {
+        throw userError || new Error("Usuário não autenticado");
+      }
+
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: emailForm.senhaAtual,
+      });
+
+      if (reauthError) throw reauthError;
+
       const { error } = await supabase.auth.updateUser({
         email: emailForm.novoEmail,
       });
 
       if (error) throw error;
 
-      toast.success("Email de confirmação enviado! Verifique sua caixa de entrada.");
+      toast.success("Enviamos confirmação para o novo e-mail");
       setEmailForm({ novoEmail: "", confirmarEmail: "", senhaAtual: "" });
     } catch (error) {
       toast.error(error.message);
@@ -66,8 +82,29 @@ export default function SegurancaConta({ userData, onUpdate }) {
       return;
     }
 
+    if (!senhaForm.senhaAtual) {
+      toast.error("Informe a senha atual");
+      return;
+    }
+
     setLoadingPassword(true);
     try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user?.email) {
+        throw userError || new Error("Usuário não autenticado");
+      }
+
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: senhaForm.senhaAtual,
+      });
+
+      if (reauthError) throw reauthError;
+
       const { error } = await supabase.auth.updateUser({
         password: senhaForm.novaSenha,
       });
@@ -90,7 +127,7 @@ export default function SegurancaConta({ userData, onUpdate }) {
       const { error } = await supabase.auth.signOut({ scope: "global" });
       if (error) throw error;
       navigate("/login");
-    } catch (error) {
+    } catch {
       toast.error("Erro ao encerrar sessões");
     }
   };
@@ -170,10 +207,29 @@ export default function SegurancaConta({ userData, onUpdate }) {
               </div>
             </div>
 
+            <div>
+              <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
+                Senha atual
+              </label>
+              <input
+                type="password"
+                value={emailForm.senhaAtual}
+                onChange={(e) => setEmailForm({ ...emailForm, senhaAtual: e.target.value })}
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  fontSize: 14,
+                }}
+                placeholder="Digite sua senha atual"
+              />
+            </div>
+
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button
                 type="submit"
-                disabled={loadingEmail || !emailForm.novoEmail || !emailForm.confirmarEmail}
+                disabled={loadingEmail || !emailForm.novoEmail || !emailForm.confirmarEmail || !emailForm.senhaAtual}
                 style={{
                   padding: "10px 24px",
                   background: loadingEmail ? "#cbd5e1" : "#3b82f6",
@@ -221,6 +277,25 @@ export default function SegurancaConta({ userData, onUpdate }) {
 
           <form onSubmit={handlePasswordChange} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
+                  Senha atual
+                </label>
+                <input
+                  type="password"
+                  value={senhaForm.senhaAtual}
+                  onChange={(e) => setSenhaForm({ ...senhaForm, senhaAtual: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #e2e8f0",
+                    fontSize: 14,
+                  }}
+                  placeholder="Digite sua senha atual"
+                />
+              </div>
+
               <div style={{ position: "relative" }}>
                 <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
                   Nova Senha
@@ -294,7 +369,7 @@ export default function SegurancaConta({ userData, onUpdate }) {
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button
                 type="submit"
-                disabled={loadingPassword || !senhaForm.novaSenha || !senhaForm.confirmarSenha}
+                disabled={loadingPassword || !senhaForm.senhaAtual || !senhaForm.novaSenha || !senhaForm.confirmarSenha}
                 style={{
                   padding: "10px 24px",
                   background: loadingPassword ? "#cbd5e1" : "#d97706",

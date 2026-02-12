@@ -1,6 +1,5 @@
 // src/Pages/Ajustes/VisaoGeral/PerfilUsuario.jsx
 import React, { useState, useRef } from "react";
-import { motion } from "framer-motion";
 import { 
   Camera, MapPin, User, Phone, FileText, 
   MapPinned, CheckCircle, Loader2 
