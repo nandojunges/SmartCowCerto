@@ -3,10 +3,13 @@ import React, { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Select from "react-select";
 import { toast } from "react-toastify";
-import { 
-  Users, Plus, Mail, Shield, 
-  Phone, MapPin, Award, Calendar, Trash2, 
-  Edit3, CheckCircle, XCircle, Clock 
+import {
+  Plus,
+  Award,
+  Trash2,
+  CheckCircle,
+  XCircle,
+  Clock
 } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useFazenda } from "../../../context/FazendaContext";
@@ -42,33 +45,36 @@ export default function GestaoEquipe({ dados, onUpdate }) {
     tipo: null,
     nome: "",
     telefone: "",
-    registroProfissional: "", // CRMV, CRA, etc.
+    registroProfissional: "",
   });
 
   const carregarDados = useCallback(async () => {
     if (!fazendaAtualId) return;
     setLoading(true);
-    
+
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      const currentUserId = userData?.user?.id;
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+      const currentUserId = authData?.user?.id || null;
 
       const [acessosData, convitesData] = await Promise.all([
+        // ✅ busca ATIVO e BLOQUEADO (pra card não sumir)
         listAcessosDaFazenda(fazendaAtualId, ["ATIVO", "BLOQUEADO"]),
         listarConvitesPendentesProdutor(fazendaAtualId),
       ]);
 
-      const membrosFiltrados = (acessosData || []).filter((membro) => {
-        const tipoProfissionalVazio = !membro.tipo_profissional || !String(membro.tipo_profissional).trim();
-        const ehProdutorLogado = currentUserId && membro.user_id === currentUserId;
-        return !(ehProdutorLogado && tipoProfissionalVazio);
+      // ✅ remove o produtor (o próprio user logado) quando não tem tipo_profissional
+      const membrosFiltrados = (acessosData || []).filter((m) => {
+        const ehUsuarioLogado = currentUserId && m.user_id === currentUserId;
+        const tipoVazio = !m.tipo_profissional || !String(m.tipo_profissional).trim();
+        return !(ehUsuarioLogado && tipoVazio);
       });
-      
+
       setMembros(membrosFiltrados);
       setConvites(convitesData || []);
-      onUpdate({ membros: membrosFiltrados, convites: convitesData || [] });
+      onUpdate?.({ membros: membrosFiltrados, convites: convitesData || [] });
     } catch (error) {
+      console.error("[GestaoEquipe] carregarDados error:", error);
       toast.error("Erro ao carregar equipe");
     } finally {
       setLoading(false);
@@ -88,22 +94,25 @@ export default function GestaoEquipe({ dados, onUpdate }) {
 
     try {
       setLoading(true);
-      
+
       const { error } = await supabase
         .from("convites_acesso")
-        .upsert({
-          fazenda_id: fazendaAtualId,
-          email_convidado: novoProfissional.email.toLowerCase().trim(),
-          status: "PENDENTE",
-          tipo_profissional: novoProfissional.tipo.value,
-          nome_profissional: novoProfissional.nome,
-          telefone: novoProfissional.telefone,
-          registro_profissional: novoProfissional.registroProfissional,
-          created_at: new Date().toISOString(),
-        }, { onConflict: "fazenda_id,email_convidado" });
+        .upsert(
+          {
+            fazenda_id: fazendaAtualId,
+            email_convidado: novoProfissional.email.toLowerCase().trim(),
+            status: "PENDENTE",
+            tipo_profissional: novoProfissional.tipo.value,
+            nome_profissional: novoProfissional.nome,
+            telefone: novoProfissional.telefone,
+            registro_profissional: novoProfissional.registroProfissional,
+            created_at: new Date().toISOString(),
+          },
+          { onConflict: "fazenda_id,email_convidado" }
+        );
 
       if (error) throw error;
-      
+
       toast.success("Convite enviado com sucesso!");
       setShowModal(false);
       setNovoProfissional({
@@ -129,21 +138,22 @@ export default function GestaoEquipe({ dados, onUpdate }) {
         .eq("id", membro.id);
 
       if (error) throw error;
-      
-      setMembros((prevMembros) =>
-        prevMembros.map((item) =>
-          item.id === membro.id ? { ...item, status: novoStatus } : item
-        )
+
+      // ✅ atualiza local (card não some)
+      setMembros((prev) =>
+        prev.map((m) => (m.id === membro.id ? { ...m, status: novoStatus } : m))
       );
+
       toast.success(`Status atualizado para ${STATUS_COLORS[novoStatus]?.label || novoStatus}`);
     } catch (err) {
+      console.error("[GestaoEquipe] handleStatusChange error:", err);
       toast.error("Erro ao atualizar status");
     }
   };
 
   const handleRemover = async (membro) => {
     if (!confirm("Tem certeza que deseja revogar o acesso permanentemente?")) return;
-    
+
     try {
       const { error } = await supabase
         .from("fazenda_acessos")
@@ -151,6 +161,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
         .eq("id", membro.id);
 
       if (error) throw error;
+
       toast.success("Acesso revogado");
       carregarDados();
     } catch (err) {
@@ -166,6 +177,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
         .eq("id", convite.id);
 
       if (error) throw error;
+
       toast.success("Convite cancelado");
       carregarDados();
     } catch (err) {
@@ -176,12 +188,14 @@ export default function GestaoEquipe({ dados, onUpdate }) {
   return (
     <div>
       {/* Header da Seção */}
-      <div style={{ 
-        display: "flex", 
-        justifyContent: "space-between", 
-        alignItems: "center",
-        marginBottom: 24 
-      }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 24,
+        }}
+      >
         <div>
           <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
             Equipe Técnica
@@ -190,7 +204,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
             {membros.length} profissionais • {convites.length} convites pendentes
           </p>
         </div>
-        
+
         <button
           onClick={() => setShowModal(true)}
           style={{
@@ -227,34 +241,38 @@ export default function GestaoEquipe({ dados, onUpdate }) {
               position: "relative",
             }}
           >
-            <div style={{ 
-              position: "absolute", 
-              top: 12, 
-              right: 12,
-              padding: "4px 10px",
-              background: "#fef3c7",
-              color: "#92400e",
-              borderRadius: 20,
-              fontSize: 11,
-              fontWeight: 700,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}>
-              <Clock size={12} /> Pendente
-            </div>
-            
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-              <div style={{
-                width: 50,
-                height: 50,
-                borderRadius: "50%",
-                background: "#f3f4f6",
+            <div
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                padding: "4px 10px",
+                background: "#fef3c7",
+                color: "#92400e",
+                borderRadius: 20,
+                fontSize: 11,
+                fontWeight: 700,
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: 20,
-              }}>
+                gap: 4,
+              }}
+            >
+              <Clock size={12} /> Pendente
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+              <div
+                style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: "50%",
+                  background: "#f3f4f6",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 20,
+                }}
+              >
                 ✉️
               </div>
               <div>
@@ -266,20 +284,22 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                 </p>
               </div>
             </div>
-            
+
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-              <span style={{
-                padding: "4px 10px",
-                background: "#eff6ff",
-                color: "#1e40af",
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 600,
-              }}>
+              <span
+                style={{
+                  padding: "4px 10px",
+                  background: "#eff6ff",
+                  color: "#1e40af",
+                  borderRadius: 20,
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
                 {convite.tipo_profissional}
               </span>
             </div>
-            
+
             <button
               onClick={() => handleCancelarConvite(convite)}
               style={{
@@ -299,11 +319,19 @@ export default function GestaoEquipe({ dados, onUpdate }) {
           </motion.div>
         ))}
 
-        {/* Membros Ativos */}
+        {/* Membros */}
         {membros.map((membro) => {
           const status = STATUS_COLORS[membro.status] || STATUS_COLORS.ATIVO;
-          const tipoCor = TIPOS_PROFISSIONAL.find(t => t.value === membro.tipo_profissional)?.color || "#64748b";
-          
+          const tipoCor =
+            TIPOS_PROFISSIONAL.find((t) => t.value === membro.tipo_profissional)?.color || "#64748b";
+
+          const letra = membro.profiles?.full_name?.charAt(0)?.toUpperCase()
+            || membro.nome_profissional?.charAt(0)?.toUpperCase()
+            || "?";
+
+          const email = membro.profiles?.email || membro.nome_profissional || "Email não disponível";
+          const nome = membro.profiles?.full_name || membro.nome_profissional || "Sem nome";
+
           return (
             <motion.div
               key={membro.id}
@@ -320,76 +348,84 @@ export default function GestaoEquipe({ dados, onUpdate }) {
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <div style={{
-                    width: 50,
-                    height: 50,
-                    borderRadius: "50%",
-                    background: `linear-gradient(135deg, ${tipoCor}20, ${tipoCor}40)`,
-                    border: `2px solid ${tipoCor}`,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: tipoCor,
-                    fontWeight: 700,
-                    fontSize: 18,
-                  }}>
-                    {membro.profiles?.full_name?.charAt(0).toUpperCase() || "?"}
+                  <div
+                    style={{
+                      width: 50,
+                      height: 50,
+                      borderRadius: "50%",
+                      background: `linear-gradient(135deg, ${tipoCor}20, ${tipoCor}40)`,
+                      border: `2px solid ${tipoCor}`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: tipoCor,
+                      fontWeight: 700,
+                      fontSize: 18,
+                    }}
+                  >
+                    {letra}
                   </div>
                   <div>
                     <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
-                      {membro.profiles?.full_name || membro.nome_profissional || "Sem nome"}
+                      {nome}
                     </h4>
                     <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748b" }}>
-                      {membro.profiles?.email || "Email não disponível"}
+                      {email}
                     </p>
                   </div>
                 </div>
-                
               </div>
-              
+
               <div style={{ marginBottom: 16 }}>
-                <div style={{ 
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "4px 10px",
-                  background: status.bg,
-                  color: status.text,
-                  borderRadius: 20,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  marginBottom: 8,
-                }}>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "4px 10px",
+                    background: status.bg,
+                    color: status.text,
+                    borderRadius: 20,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    marginBottom: 8,
+                  }}
+                >
                   {membro.status === "ATIVO" ? <CheckCircle size={12} /> : <XCircle size={12} />}
                   {status.label}
                 </div>
-                
+
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  <span style={{
-                    padding: "4px 10px",
-                    background: `${tipoCor}15`,
-                    color: tipoCor,
-                    borderRadius: 20,
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}>
-                    {membro.tipo_profissional}
-                  </span>
-                  {membro.registro_profissional && (
-                    <span style={{
+                  <span
+                    style={{
                       padding: "4px 10px",
-                      background: "#f3f4f6",
-                      color: "#374151",
+                      background: `${tipoCor}15`,
+                      color: tipoCor,
                       borderRadius: 20,
                       fontSize: 12,
-                    }}>
+                      fontWeight: 600,
+                    }}
+                  >
+                    {membro.tipo_profissional}
+                  </span>
+
+                  {membro.registro_profissional && (
+                    <span
+                      style={{
+                        padding: "4px 10px",
+                        background: "#f3f4f6",
+                        color: "#374151",
+                        borderRadius: 20,
+                        fontSize: 12,
+                      }}
+                    >
                       <Award size={12} style={{ display: "inline", marginRight: 4 }} />
                       {membro.registro_profissional}
                     </span>
                   )}
                 </div>
               </div>
-              
+
               <div style={{ display: "flex", gap: 8 }}>
                 {membro.status === "ATIVO" ? (
                   <>
@@ -409,6 +445,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                     >
                       Bloquear
                     </button>
+
                     <button
                       onClick={() => handleRemover(membro)}
                       style={{
@@ -488,7 +525,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
               <p style={{ margin: "0 0 24px", color: "#64748b", fontSize: 14 }}>
                 Preencha os dados do novo membro da equipe técnica.
               </p>
-              
+
               <form onSubmit={handleConvidar} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div>
                   <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
@@ -508,7 +545,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                     }}
                   />
                 </div>
-                
+
                 <div>
                   <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
                     Especialidade *
@@ -528,7 +565,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                     }}
                   />
                 </div>
-                
+
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div>
                     <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
@@ -548,7 +585,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                       }}
                     />
                   </div>
-                  
+
                   <div>
                     <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
                       Registro (CRMV/CRA)
@@ -568,7 +605,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                     />
                   </div>
                 </div>
-                
+
                 <div>
                   <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
                     Telefone
@@ -587,7 +624,7 @@ export default function GestaoEquipe({ dados, onUpdate }) {
                     }}
                   />
                 </div>
-                
+
                 <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
                   <button
                     type="button"
