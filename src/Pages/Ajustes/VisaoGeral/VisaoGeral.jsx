@@ -1,13 +1,8 @@
 // src/Pages/Ajustes/VisaoGeral/index.jsx
 import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { 
-  User, Shield, MapPin, Camera, Loader2,
-  CheckCircle, AlertCircle, ChevronRight 
-} from "lucide-react";
+import { AnimatePresence } from "framer-motion";
+import { User, Shield, Loader2, ChevronRight } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
-import { useFazenda } from "../../../context/FazendaContext";
-import { toast } from "react-toastify";
 import PerfilUsuario from "./PerfilUsuario";
 import SegurancaConta from "./SegurancaConta";
 
@@ -41,16 +36,16 @@ export default function VisaoGeral() {
         // Buscar perfil completo
         const { data: profile } = await supabase
           .from("profiles")
-          .select("*")
+          .select("id, full_name, avatar_url, telefone, cidade, estado, bio, phone")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
 
         setUserData({
           id: user.id,
           email: user.email,
           nome: profile?.full_name || user.user_metadata?.full_name || "",
           avatar: profile?.avatar_url || null,
-          telefone: profile?.telefone || "",
+          telefone: profile?.telefone || profile?.phone || "",
           cidade: profile?.cidade || "",
           estado: profile?.estado || "",
           bio: profile?.bio || "",
@@ -206,19 +201,13 @@ export default function VisaoGeral() {
         {/* Conteúdo */}
         <div style={{ minHeight: 600 }}>
           <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-            >
+            <div key={activeTab}>
               {activeTab === "perfil" ? (
                 <PerfilUsuario userData={userData} onUpdate={updateUserData} />
               ) : (
                 <SegurancaConta userData={userData} onUpdate={updateUserData} />
               )}
-            </motion.div>
+            </div>
           </AnimatePresence>
         </div>
       </div>
