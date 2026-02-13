@@ -83,7 +83,7 @@ function mesclarReproEmAnimais(animais = [], repro = []) {
   return animais.map((animal) => {
     const reproRow = mapRepro[animal?.id];
     if (!reproRow) return animal;
-    const { id, animal_id, ...rest } = reproRow || {};
+    const { id: _ID, animal_id: _ANIMAL_ID, ...rest } = reproRow || {};
     return { ...animal, ...rest };
   });
 }
@@ -93,23 +93,17 @@ function getDelValor(animal) {
   return calcularDEL(getUltimoPartoBR(animal));
 }
 
-function normalizar(str) {
-  return String(str || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-}
+function isLactante(animal) {
+  const statusProdutivo = [
+    animal?.situacao_produtiva,
+    animal?.situacaoProdutiva,
+    animal?.status_produtivo,
+    animal?.statusProdutivo,
+    animal?.situacao_prod,
+    animal?.status,
+  ];
 
-function isLactatingAnimal(a) {
-  if (!a) return false;
-  if (a?.sexo === "macho") return false;
-  const delValor = Number(a?.del);
-  if (Number.isFinite(delValor)) return true;
-  const temUltimoParto = !!a?.ultimo_parto;
-  if (temUltimoParto) return true;
-  const categoriaNorm = normalizar(a?.categoria);
-  return categoriaNorm.includes("lact");
+  return statusProdutivo.some((v) => String(v || "").toLowerCase().includes("lact"));
 }
 
 /* ===== THEME ===== */
@@ -485,7 +479,7 @@ export default function Leite() {
   const [salvandoLancamento, setSalvandoLancamento] = useState(false);
   const inputRefsLancamento = useRef({});
 
-  const vacasLactacao = useMemo(() => vacas.filter(isLactatingAnimal), [vacas]);
+  const vacasLactacao = useMemo(() => vacas.filter(isLactante), [vacas]);
 
   const medicoesDoDiaTabela = useMemo(() => {
     const key = dataTabela || ymdHoje();
@@ -533,20 +527,40 @@ export default function Leite() {
         const cache = readLeiteCache();
         setHasCache(!!cache?.lastAnimals?.length);
         const payload = cache.byDate?.[dateISO] || {};
-        setVacas(cache.lastAnimals || []);
+        const apenasLactantes = (cache.lastAnimals || []).filter(isLactante);
+        setVacas(apenasLactantes);
         setLotesLeite(cache.lastLotes || []);
         setUltimaMedicaoPorAnimal(payload?.ultimaMedicaoPorAnimal || {});
         setMedicoesPorDia((prev) => ({
           ...prev,
-          [dateISO]: montarMapaMedicoes(payload?.medicoesDia || [], cache.lastAnimals || []),
+          [dateISO]: montarMapaMedicoes(payload?.medicoesDia || [], apenasLactantes),
         }));
         return;
       }
 
       try {
         setLoadingLotes(true);
+        const animaisPromise = (async () => {
+          const animaisFiltradosRes = await withFazendaId(
+            supabase.from("animais").select("*").ilike("situacao_produtiva", "%lact%"),
+            fazendaAtualId
+          );
+
+          if (!animaisFiltradosRes.error) return animaisFiltradosRes;
+
+          const erroMsg = String(animaisFiltradosRes.error?.message || "").toLowerCase();
+          const semCampoSituacaoProdutiva =
+            animaisFiltradosRes.error?.code === "42703" ||
+            erroMsg.includes("situacao_produtiva") ||
+            erroMsg.includes("column");
+
+          if (!semCampoSituacaoProdutiva) return animaisFiltradosRes;
+
+          return withFazendaId(supabase.from("animais").select("*"), fazendaAtualId);
+        })();
+
         const [animaisRes, reproRes, lotesRes, medicoesRes, ultimaRes] = await Promise.all([
-          withFazendaId(supabase.from("animais").select("*"), fazendaAtualId),
+          animaisPromise,
           supabase.from("v_repro_tabela").select("*").eq("fazenda_id", fazendaAtualId).order("numero", { ascending: true }),
           withFazendaId(
             supabase
@@ -577,6 +591,7 @@ export default function Leite() {
         }
 
         const vacasData = mesclarReproEmAnimais(animaisRes.data || [], reproRes.data || []);
+        const apenasLactantes = (vacasData || []).filter(isLactante);
         const lotesData = lotesRes.data || [];
         const medicoesDia = medicoesRes.data || [];
 
@@ -585,13 +600,13 @@ export default function Leite() {
           if (!ultimaMap[linha.animal_id]) ultimaMap[linha.animal_id] = linha;
         });
 
-        setVacas(vacasData);
+        setVacas(apenasLactantes);
         setLotesLeite(lotesData);
         setUltimaMedicaoPorAnimal(ultimaMap);
-        setMedicoesPorDia((prev) => ({ ...prev, [dateISO]: montarMapaMedicoes(medicoesDia, vacasData) }));
+        setMedicoesPorDia((prev) => ({ ...prev, [dateISO]: montarMapaMedicoes(medicoesDia, apenasLactantes) }));
         setLoadingLotes(false);
         setSincronizado(true);
-        updateLeiteCache({ dateISO, vacas: vacasData, lotes: lotesData, medicoesDia, ultimaMedicaoPorAnimal: ultimaMap });
+        updateLeiteCache({ dateISO, vacas: apenasLactantes, lotes: lotesData, medicoesDia, ultimaMedicaoPorAnimal: ultimaMap });
       } catch (e) {
         console.error("Erro:", e);
         setLoadingLotes(false);
