@@ -380,12 +380,13 @@ export default function Plantel({ isOnline = navigator.onLine }) {
 
   const closeLoteEdit = useCallback(() => setEditingLoteId(null), []);
   // ❗ Não use onBlur aqui: com menuPortalTarget/body o foco sai do control e "pisca" fechando na hora.
-  // Fechamos o editor apenas via onChange / ESC / onMenuClose.
+  // Fechamos o editor apenas via onChange / ESC.
 
   const handleSetLote = useCallback(
     async (animal, option) => {
       if (bloquearSemEdicao()) return;
-      if (!animal?.id) return;
+      const animalId = animal?.id ?? animal?.animal_id;
+      if (!animalId) return;
       if (!fazendaAtualId) {
         setLoteAviso("Selecione uma fazenda antes de alterar o lote.");
         return;
@@ -398,13 +399,18 @@ export default function Plantel({ isOnline = navigator.onLine }) {
       const valorNovo = option?.value ?? null;
       const valorAnterior = animal?.[LOTE_FIELD] ?? null;
 
-      setAnimais((prev) => prev.map((a) => (a.id === animal.id ? { ...a, [LOTE_FIELD]: valorNovo } : a)));
+      setAnimais((prev) =>
+        prev.map((a) => {
+          const aId = a?.id ?? a?.animal_id;
+          return aId === animalId ? { ...a, [LOTE_FIELD]: valorNovo } : a;
+        })
+      );
       setLoteAviso("");
 
       try {
         const dataMudanca = new Date().toISOString().split("T")[0];
         const { error: histErr } = await supabase.from("animais_lote_historico").insert({
-          animal_id: animal.id,
+          animal_id: animalId,
           lote_id: valorNovo,
           data_mudanca: dataMudanca,
           origem: "manual",
@@ -415,13 +421,18 @@ export default function Plantel({ isOnline = navigator.onLine }) {
         const { error: updErr } = await withFazendaId(
           supabase.from("animais").update({ [LOTE_FIELD]: valorNovo }),
           fazendaAtualId
-        ).eq("id", animal.id);
+        ).eq("id", animalId);
         if (updErr) throw updErr;
 
         closeLoteEdit();
       } catch (e) {
         console.error(e);
-        setAnimais((prev) => prev.map((a) => (a.id === animal.id ? { ...a, [LOTE_FIELD]: valorAnterior } : a)));
+        setAnimais((prev) =>
+          prev.map((a) => {
+            const aId = a?.id ?? a?.animal_id;
+            return aId === animalId ? { ...a, [LOTE_FIELD]: valorAnterior } : a;
+          })
+        );
         setLoteAviso("Não foi possível atualizar o lote. Tente novamente.");
       }
     },
@@ -1236,6 +1247,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                 )}
 
                 {linhasOrdenadas.map((a, idx) => {
+                  const animalKey = a?.id ?? a?.animal_id ?? null;
                   const idade = idadeTexto(a.nascimento);
                   const racaNome = racaMap[a.raca_id] || "—";
                   const sexoLabel = a.sexo === "macho" ? "Macho" : a.sexo === "femea" ? "Fêmea" : a.sexo || "—";
@@ -1249,7 +1261,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                   const loteSelecionado = resolveSelectedLote(a);
                   const isSemLote = !loteSelecionado || loteSelecionado.value == null;
                   const loteLabel = resolveLoteLabel(a);
-                  const rowId = a.id ?? a.numero ?? a.brinco ?? idx;
+                  const rowId = animalKey ?? a.numero ?? a.brinco ?? idx;
                   const isHover = hoveredRowId === rowId;
                   const isColHover = (key) => hoveredColKey === key;
                   const pendenciaTipo = pendenciaPorId.get(String(a?.animal_id ?? a?.id)) || null;
@@ -1288,7 +1300,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                         style={{...styles.td, overflow: "visible", ...(isHover ? styles.trHover : {}), ...(isColHover("lote") ? styles.colHover : {}), ...(isHover && isColHover("lote") ? styles.cellHover : {})}}
                         onMouseEnter={() => handleCellEnter(rowId, "lote")}
                       >
-                        {editingLoteId === a.id ? (
+                        {editingLoteId === animalKey ? (
                           <div onKeyDown={(e) => { if (e.key === "Escape") closeLoteEdit(); }}>
                             <Select
                               autoFocus
@@ -1303,12 +1315,11 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                               isClearable
                               isDisabled={!canEditAnimais}
                               onChange={(opt) => handleSetLote(a, opt)}
-                              onMenuClose={closeLoteEdit}
                               closeMenuOnSelect
                             />
                           </div>
                         ) : (
-                          <button type="button" onClick={() => { if (bloquearSemEdicao()) return; setEditingLoteId(a.id); }} title={!canEditAnimais ? "Sem permissão para editar nesta fazenda" : "Clique para alterar"} disabled={!canEditAnimais} style={{...styles.pill, ...getPillStyle("prod", isSemLote ? "seca" : "lact"), ...styles.loteBtn, ...(!canEditAnimais ? styles.actionBtnDisabled : {})}}>
+                          <button type="button" onClick={() => { if (bloquearSemEdicao()) return; setEditingLoteId(animalKey); }} title={!canEditAnimais ? "Sem permissão para editar nesta fazenda" : "Clique para alterar"} disabled={!canEditAnimais} style={{...styles.pill, ...getPillStyle("prod", isSemLote ? "seca" : "lact"), ...styles.loteBtn, ...(!canEditAnimais ? styles.actionBtnDisabled : {})}}>
                             {loteLabel}
                           </button>
                         )}
