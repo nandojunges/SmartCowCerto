@@ -469,6 +469,7 @@ export default function Leite() {
   const inputRefsLancamento = useRef({});
 
   const vacasLactacao = useMemo(() => vacas.filter(isLactante), [vacas]);
+  const totalFiltrados = vacas.length;
 
   const medicoesDoDiaTabela = useMemo(() => {
     const key = dataTabela || ymdHoje();
@@ -534,10 +535,9 @@ export default function Leite() {
         const [animaisRes, lotesRes, medicoesRes, ultimaRes] = await Promise.all([
           supabase
             .from("v_repro_tabela")
-            .select("animal_id, numero, brinco, lote, del, situacao_produtiva")
+            .select("animal_id, numero, brinco, del, situacao_produtiva")
             .eq("fazenda_id", fazendaAtualId)
             .ilike("situacao_produtiva", "%lact%")
-            .order("lote", { ascending: true })
             .order("numero", { ascending: true }),
           withFazendaId(
             supabase
@@ -567,9 +567,8 @@ export default function Leite() {
           return;
         }
 
-        const dataFiltrada = (animaisRes.data || [])
-          .map(normalizarAnimalLeite)
-          .filter((animal) => String(animal?.situacao_produtiva || "").toLowerCase().includes("lact"));
+        const filtrados = (animaisRes.data || []).filter((r) => String(r?.situacao_produtiva || "").toLowerCase().includes("lact"));
+        const dataFiltrada = filtrados.map(normalizarAnimalLeite);
         const lotesData = lotesRes.data || [];
         const medicoesDia = medicoesRes.data || [];
 
@@ -658,34 +657,17 @@ export default function Leite() {
   };
 
   const vacasPorLote = useMemo(() => {
-    const grupos = {};
-    const semLote = [];
+    if (!Array.isArray(vacasLactacao) || vacasLactacao.length === 0) return [];
 
-    vacasLactacao.forEach((vaca) => {
-      const loteNome = String(vaca.lote || "").trim() || "Sem lote";
-      const loteId = modoLancamento ? lotesEdicaoLancamento[String(vaca.numero)] ?? vaca.lote_id : vaca.lote_id;
-
-      if (modoLancamento && loteId) {
-        if (!grupos[loteId]) grupos[loteId] = [];
-        grupos[loteId].push(vaca);
-      } else if (loteNome === "Sem lote") semLote.push(vaca);
-      else {
-        if (!grupos[loteNome]) grupos[loteNome] = [];
-        grupos[loteNome].push(vaca);
-      }
-    });
-
-    const resultado = Object.entries(grupos).map(([loteId, vacasDoLote]) => {
-      const loteInfo = lotesLeite.find((l) => l.id === loteId) || { id: loteId, nome: loteId };
-      return { ...loteInfo, value: loteId, vacas: vacasDoLote };
-    });
-
-    if (semLote.length > 0) resultado.push({ value: "sem_lote", label: "Sem Lote Definido", vacas: semLote });
-
-    return resultado
-      .filter((lote) => Array.isArray(lote?.vacas) && lote.vacas.length > 0)
-      .sort((a, b) => String(a.nome || a.label).localeCompare(String(b.nome || b.label)));
-  }, [vacasLactacao, lotesLeite, modoLancamento, lotesEdicaoLancamento]);
+    return [
+      {
+        value: "lactantes",
+        nome: "Lactantes",
+        label: "Lactantes",
+        vacas: vacasLactacao,
+      },
+    ];
+  }, [vacasLactacao]);
 
   const iniciarNovaMedicao = () => {
     const dia = dataTabela || ymdHoje();
@@ -968,14 +950,14 @@ export default function Leite() {
                 border: `2px solid ${theme.colors.brand[200]}`,
               }}
             >
-              {vacasLactacao.length} animais em lactação
+              {totalFiltrados} animais em lactação
             </div>
           </div>
         </div>
       )}
 
       {/* CARDS RESUMO */}
-      <ResumoLeiteDia resumoDia={resumoDia} qtdLactacao={vacasLactacao.length} />
+      <ResumoLeiteDia resumoDia={resumoDia} qtdLactacao={totalFiltrados} />
 
       {/* TOOLBAR - ABAIXO DOS CARDS */}
       <div
