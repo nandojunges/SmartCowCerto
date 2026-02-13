@@ -81,6 +81,7 @@ export default function ManejosPendentes({
 }) {
   const { fazendaAtualId } = useFazenda();
   const [pendTabAtiva, setPendTabAtiva] = useState("secagem");
+  const [pendenciasOpen, setPendenciasOpen] = useState(false);
   const [modalSecagemOpen, setModalSecagemOpen] = useState(false);
   const [modalPartoOpen, setModalPartoOpen] = useState(false);
   const [openParamsModal, setOpenParamsModal] = useState(false);
@@ -101,6 +102,18 @@ export default function ManejosPendentes({
       setPendTabAtiva("secagem");
     }
   }, [pendTabAtiva]);
+
+  const handleTabClick = (key) => {
+    setPendTabAtiva((prev) => {
+      if (prev === key) {
+        setPendenciasOpen((open) => !open);
+        return prev;
+      }
+
+      setPendenciasOpen(true);
+      return key;
+    });
+  };
 
   useEffect(() => {
     if (!prePartoSelecionado) return;
@@ -410,7 +423,7 @@ export default function ManejosPendentes({
               <button
                 key={key}
                 type="button"
-                onClick={() => setPendTabAtiva(key)}
+                onClick={() => handleTabClick(key)}
                 style={{
                   ...styles.pill,
                   ...(isActive ? styles.pillActive : {}),
@@ -424,6 +437,15 @@ export default function ManejosPendentes({
             );
           })}
         </div>
+
+        <button
+          type="button"
+          style={styles.toggleButton}
+          onClick={() => setPendenciasOpen((value) => !value)}
+          title={pendenciasOpen ? "Ocultar tabela" : "Mostrar tabela"}
+        >
+          {pendenciasOpen ? "Ocultar" : "Mostrar"}
+        </button>
 
         <button
           type="button"
@@ -445,7 +467,7 @@ export default function ManejosPendentes({
         {!hasDpp && <span> Nenhuma previsão de parto registrada.</span>}
       </div>
 
-      <div>{renderPendenciasTable(activeList, pendTabAtiva)}</div>
+      {pendenciasOpen && <div>{renderPendenciasTable(activeList, pendTabAtiva)}</div>}
 
       {/* ✅ Só monta quando estiver aberto (não aparece ao entrar na aba) */}
       {modalSecagemOpen && secagemContext?.animal && (
@@ -542,6 +564,22 @@ const styles = {
     fontSize: "16px",
     cursor: "pointer",
     boxShadow: "0 6px 14px rgba(15, 23, 42, 0.06)",
+  },
+  toggleButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "34px",
+    padding: "0 12px",
+    borderRadius: "999px",
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    fontSize: "13px",
+    fontWeight: 800,
+    cursor: "pointer",
+    boxShadow: "0 6px 14px rgba(15, 23, 42, 0.06)",
+    color: "#0f172a",
+    whiteSpace: "nowrap",
   },
   pill: {
     display: "inline-flex",
