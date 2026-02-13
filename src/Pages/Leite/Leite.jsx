@@ -68,24 +68,13 @@ function getUltimoPartoBR(animal) {
   return Number.isNaN(dt.getTime()) ? "" : toBR(dt);
 }
 
-function mapearReproPorAnimal(lista = []) {
-  const map = {};
-  (lista || []).forEach((item) => {
-    const id = item?.animal_id ?? item?.id;
-    if (!id) return;
-    map[id] = item;
-  });
-  return map;
-}
-
-function mesclarReproEmAnimais(animais = [], repro = []) {
-  const mapRepro = mapearReproPorAnimal(repro);
-  return animais.map((animal) => {
-    const reproRow = mapRepro[animal?.id];
-    if (!reproRow) return animal;
-    const { id: _ID, animal_id: _ANIMAL_ID, ...rest } = reproRow || {};
-    return { ...animal, ...rest };
-  });
+function normalizarAnimalLeite(animal = {}) {
+  const loteNormalizado = String(animal?.lote || "").trim() || "Sem lote";
+  return {
+    ...animal,
+    id: animal?.id ?? animal?.animal_id,
+    lote: loteNormalizado,
+  };
 }
 
 function getDelValor(animal) {
@@ -527,7 +516,9 @@ export default function Leite() {
         const cache = readLeiteCache();
         setHasCache(!!cache?.lastAnimals?.length);
         const payload = cache.byDate?.[dateISO] || {};
-        const apenasLactantes = (cache.lastAnimals || []).filter(isLactante);
+        const apenasLactantes = (cache.lastAnimals || [])
+          .map(normalizarAnimalLeite)
+          .filter((animal) => String(animal?.situacao_produtiva || "").toLowerCase().includes("lact"));
         setVacas(apenasLactantes);
         setLotesLeite(cache.lastLotes || []);
         setUltimaMedicaoPorAnimal(payload?.ultimaMedicaoPorAnimal || {});
@@ -540,28 +531,14 @@ export default function Leite() {
 
       try {
         setLoadingLotes(true);
-        const animaisPromise = (async () => {
-          const animaisFiltradosRes = await withFazendaId(
-            supabase.from("animais").select("*").ilike("situacao_produtiva", "%lact%"),
-            fazendaAtualId
-          );
-
-          if (!animaisFiltradosRes.error) return animaisFiltradosRes;
-
-          const erroMsg = String(animaisFiltradosRes.error?.message || "").toLowerCase();
-          const semCampoSituacaoProdutiva =
-            animaisFiltradosRes.error?.code === "42703" ||
-            erroMsg.includes("situacao_produtiva") ||
-            erroMsg.includes("column");
-
-          if (!semCampoSituacaoProdutiva) return animaisFiltradosRes;
-
-          return withFazendaId(supabase.from("animais").select("*"), fazendaAtualId);
-        })();
-
-        const [animaisRes, reproRes, lotesRes, medicoesRes, ultimaRes] = await Promise.all([
-          animaisPromise,
-          supabase.from("v_repro_tabela").select("*").eq("fazenda_id", fazendaAtualId).order("numero", { ascending: true }),
+        const [animaisRes, lotesRes, medicoesRes, ultimaRes] = await Promise.all([
+          supabase
+            .from("v_repro_tabela")
+            .select("animal_id, numero, brinco, lote, del, situacao_produtiva")
+            .eq("fazenda_id", fazendaAtualId)
+            .ilike("situacao_produtiva", "%lact%")
+            .order("lote", { ascending: true })
+            .order("numero", { ascending: true }),
           withFazendaId(
             supabase
               .from("lotes")
@@ -583,15 +560,16 @@ export default function Leite() {
             .limit(2000),
         ]);
 
-        const error = animaisRes.error || reproRes.error || lotesRes.error || medicoesRes.error || ultimaRes.error;
+        const error = animaisRes.error || lotesRes.error || medicoesRes.error || ultimaRes.error;
         if (error) {
           console.error("Erro:", error);
           setLoadingLotes(false);
           return;
         }
 
-        const vacasData = mesclarReproEmAnimais(animaisRes.data || [], reproRes.data || []);
-        const apenasLactantes = (vacasData || []).filter(isLactante);
+        const dataFiltrada = (animaisRes.data || [])
+          .map(normalizarAnimalLeite)
+          .filter((animal) => String(animal?.situacao_produtiva || "").toLowerCase().includes("lact"));
         const lotesData = lotesRes.data || [];
         const medicoesDia = medicoesRes.data || [];
 
@@ -600,13 +578,13 @@ export default function Leite() {
           if (!ultimaMap[linha.animal_id]) ultimaMap[linha.animal_id] = linha;
         });
 
-        setVacas(apenasLactantes);
+        setVacas(dataFiltrada);
         setLotesLeite(lotesData);
         setUltimaMedicaoPorAnimal(ultimaMap);
-        setMedicoesPorDia((prev) => ({ ...prev, [dateISO]: montarMapaMedicoes(medicoesDia, apenasLactantes) }));
+        setMedicoesPorDia((prev) => ({ ...prev, [dateISO]: montarMapaMedicoes(medicoesDia, dataFiltrada) }));
         setLoadingLotes(false);
         setSincronizado(true);
-        updateLeiteCache({ dateISO, vacas: apenasLactantes, lotes: lotesData, medicoesDia, ultimaMedicaoPorAnimal: ultimaMap });
+        updateLeiteCache({ dateISO, vacas: dataFiltrada, lotes: lotesData, medicoesDia, ultimaMedicaoPorAnimal: ultimaMap });
       } catch (e) {
         console.error("Erro:", e);
         setLoadingLotes(false);
@@ -684,23 +662,29 @@ export default function Leite() {
     const semLote = [];
 
     vacasLactacao.forEach((vaca) => {
+      const loteNome = String(vaca.lote || "").trim() || "Sem lote";
       const loteId = modoLancamento ? lotesEdicaoLancamento[String(vaca.numero)] ?? vaca.lote_id : vaca.lote_id;
 
-      if (!loteId) semLote.push(vaca);
-      else {
+      if (modoLancamento && loteId) {
         if (!grupos[loteId]) grupos[loteId] = [];
         grupos[loteId].push(vaca);
+      } else if (loteNome === "Sem lote") semLote.push(vaca);
+      else {
+        if (!grupos[loteNome]) grupos[loteNome] = [];
+        grupos[loteNome].push(vaca);
       }
     });
 
     const resultado = Object.entries(grupos).map(([loteId, vacasDoLote]) => {
-      const loteInfo = lotesLeite.find((l) => l.id === loteId) || { id: loteId, nome: `Lote ${String(loteId).slice(0, 8)}` };
+      const loteInfo = lotesLeite.find((l) => l.id === loteId) || { id: loteId, nome: loteId };
       return { ...loteInfo, value: loteId, vacas: vacasDoLote };
     });
 
     if (semLote.length > 0) resultado.push({ value: "sem_lote", label: "Sem Lote Definido", vacas: semLote });
 
-    return resultado.sort((a, b) => String(a.nome || a.label).localeCompare(String(b.nome || b.label)));
+    return resultado
+      .filter((lote) => Array.isArray(lote?.vacas) && lote.vacas.length > 0)
+      .sort((a, b) => String(a.nome || a.label).localeCompare(String(b.nome || b.label)));
   }, [vacasLactacao, lotesLeite, modoLancamento, lotesEdicaoLancamento]);
 
   const iniciarNovaMedicao = () => {
@@ -1132,6 +1116,21 @@ export default function Leite() {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {vacasLactacao.length === 0 && (
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: 14,
+                border: `1px solid ${theme.colors.slate[200]}`,
+                padding: "20px 18px",
+                color: theme.colors.slate[700],
+                fontWeight: 700,
+              }}
+            >
+              Nenhum animal lactante encontrado. Verifique a situação produtiva na Reprodução/Parto/Secagem.
+            </div>
+          )}
+
           {vacasPorLote.map((lote, loteIdx) => {
             const isExpanded = expandedLotesLancamento[lote.value] !== false;
 
