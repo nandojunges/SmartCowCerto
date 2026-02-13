@@ -379,7 +379,8 @@ export default function Plantel({ isOnline = navigator.onLine }) {
   );
 
   const closeLoteEdit = useCallback(() => setEditingLoteId(null), []);
-  const handleLoteBlur = useCallback(() => setTimeout(() => setEditingLoteId(null), 150), []);
+  // ❗ Não use onBlur aqui: com menuPortalTarget/body o foco sai do control e "pisca" fechando na hora.
+  // Fechamos o editor apenas via onChange / ESC / onMenuClose.
 
   const handleSetLote = useCallback(
     async (animal, option) => {
@@ -763,6 +764,20 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     []
   );
 
+  const selectStylesLoteEdit = useMemo(
+    () => ({
+      ...selectStylesCompact,
+      container: (base) => ({ ...base, width: 180, fontSize: 13 }),
+      control: (base, state) => ({
+        ...selectStylesCompact.control(base, state),
+        minHeight: 32,
+      }),
+      valueContainer: (base) => ({ ...base, padding: "0 8px" }),
+      indicatorsContainer: (base) => ({ ...base, height: 32 }),
+    }),
+    [selectStylesCompact]
+  );
+
   const portalTarget = typeof document !== "undefined" ? document.body : null;
 
   useEffect(() => {
@@ -1073,7 +1088,8 @@ export default function Plantel({ isOnline = navigator.onLine }) {
     alertDanger: { backgroundColor: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" },
     alertWarn: { backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" },
     loading: { padding: "24px", textAlign: "center", color: "#64748b", fontSize: "14px" },
-    loteBtn: { width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "32px", padding: "0 12px", cursor: "pointer", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", border: "1px solid transparent" },
+    // botão do lote (modo leitura) - mais compacto, sem forçar 100% da célula
+    loteBtn: { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "30px", padding: "0 10px", cursor: "pointer", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", border: "1px solid transparent", maxWidth: 160 },
   };
 
   const getPillStyle = (type, value) => {
@@ -1120,14 +1136,14 @@ export default function Plantel({ isOnline = navigator.onLine }) {
             <div style={styles.tableContainer}>
               <table style={styles.table} onMouseLeave={() => { setHoveredRowId(null); setHoveredColKey(null); }}>
               <colgroup>
-                <col style={{ width: "22%" }} />
+                <col style={{ width: "21%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "13%" }} />
                 <col style={{ width: "14%" }} />
-                <col style={{ width: "13%" }} />
-                <col style={{ width: "13%" }} />
                 <col style={{ width: "12%" }} />
                 <col style={{ width: "8%" }} />
+                <col style={{ width: "9%" }} />
                 <col style={{ width: "10%" }} />
-                <col style={{ width: "8%" }} />
               </colgroup>
 
               <thead>
@@ -1274,7 +1290,22 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                       >
                         {editingLoteId === a.id ? (
                           <div onKeyDown={(e) => { if (e.key === "Escape") closeLoteEdit(); }}>
-                            <Select autoFocus menuIsOpen menuPortalTarget={portalTarget} menuPosition="fixed" menuShouldBlockScroll styles={selectStylesCompact} options={loteOptions} value={resolveSelectedLote(a)} placeholder="Selecionar lote…" onChange={(opt) => handleSetLote(a, opt)} onBlur={handleLoteBlur} isClearable isDisabled={!canEditAnimais} />
+                            <Select
+                              autoFocus
+                              menuIsOpen
+                              menuPortalTarget={portalTarget}
+                              menuPosition="fixed"
+                              menuShouldBlockScroll
+                              styles={selectStylesLoteEdit}
+                              options={loteOptions}
+                              value={resolveSelectedLote(a)}
+                              placeholder="Lote…"
+                              isClearable
+                              isDisabled={!canEditAnimais}
+                              onChange={(opt) => handleSetLote(a, opt)}
+                              onMenuClose={closeLoteEdit}
+                              closeMenuOnSelect
+                            />
                           </div>
                         ) : (
                           <button type="button" onClick={() => { if (bloquearSemEdicao()) return; setEditingLoteId(a.id); }} title={!canEditAnimais ? "Sem permissão para editar nesta fazenda" : "Clique para alterar"} disabled={!canEditAnimais} style={{...styles.pill, ...getPillStyle("prod", isSemLote ? "seca" : "lact"), ...styles.loteBtn, ...(!canEditAnimais ? styles.actionBtnDisabled : {})}}>
@@ -1297,7 +1328,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                         onMouseEnter={() => handleCellEnter(rowId, "sitreprod")}
                       >
                         <span style={{...styles.pill, ...getPillStyle("repro", sitReprod)}}>
-                          {String(sitReprod).toUpperCase().slice(0, 3)}
+                          {String(sitReprod).toUpperCase()}
                         </span>
                       </td>
 
@@ -1323,7 +1354,7 @@ export default function Plantel({ isOnline = navigator.onLine }) {
                       </td>
 
                       <td 
-                        style={{...styles.td, textAlign: "center", ...(isHover ? styles.trHover : {}), ...(isColHover("acoes") ? styles.colHover : {}), ...(isHover && isColHover("acoes") ? styles.cellHover : {})}}
+                        style={{...styles.td, textAlign: "center", overflow: "visible", whiteSpace: "normal", ...(isHover ? styles.trHover : {}), ...(isColHover("acoes") ? styles.colHover : {}), ...(isHover && isColHover("acoes") ? styles.cellHover : {})}}
                         onMouseEnter={() => handleCellEnter(rowId, "acoes")}
                       >
                         <div style={styles.actionStack}>
