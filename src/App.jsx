@@ -23,6 +23,7 @@ import Saude from "./Pages/Saude/Saude.jsx";
 import ConsumoReposicao from "./Pages/ConsumoReposicao/Estoque.jsx";
 import Financeiro from "./Pages/Financeiro/Financeiro.jsx";
 import Calendario from "./Pages/Calendario/Calendario.jsx";
+import Desempenho from "./Pages/Desempenho/Desempenho.jsx";
 import Ajustes from "./Pages/Ajustes/Ajustes.jsx";
 import AjustesAcessos from "./Pages/Ajustes/AjustesAcessos.jsx";
 import AjustesAparencia from "./Pages/Ajustes/AjustesAparencia.jsx";
@@ -229,6 +230,14 @@ export default function App() {
                     element={
                       <RequireModuloAccess modulo="financeiro" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
                         <Financeiro />
+                      </RequireModuloAccess>
+                    }
+                  />
+                  <Route
+                    path="/desempenho"
+                    element={
+                      <RequireModuloAccess modulo="desempenho" isAssistenteTecnico={isAssistenteTecnico} canView={canView} canEdit={canEdit} permissoesLoading={permissoesLoading}>
+                        <Desempenho />
                       </RequireModuloAccess>
                     }
                   />
