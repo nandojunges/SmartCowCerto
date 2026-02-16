@@ -7,6 +7,7 @@ export const MODULOS_MENU = [
   { id: "saude", label: "Saúde", icon: "💉" },
   { id: "consumo", label: "Consumo", icon: "📦" },
   { id: "financeiro", label: "Financeiro", icon: "💰" },
+  { id: "desempenho", label: "Desempenho", icon: "📊" },
   { id: "calendario", label: "Calendário", icon: "📅" },
   { id: "ajustes", label: "Ajustes", icon: "⚙️" },
 ];
@@ -20,6 +21,7 @@ const MODULO_POR_PREFIXO = {
   saude: "saude",
   consumo: "consumo",
   financeiro: "financeiro",
+  desempenho: "desempenho",
   calendario: "calendario",
   ajustes: "ajustes",
 };
