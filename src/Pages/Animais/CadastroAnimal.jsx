@@ -567,6 +567,8 @@ export default function CadastroAnimal() {
       input_br: _inputBr,
       modo: _modo,
       diasDesdeIA: _diasDesdeIA,
+      bezerros_qtd: _bezerrosQtd,
+      sem_secagem: _semSecagem,
       palhetas: _palhetas,
       razao: _razao,
       evidencia: _evidencia,

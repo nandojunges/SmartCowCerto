@@ -280,6 +280,8 @@ function sanitizeReproEventoPayload(payload) {
     input_br: _metaInputBr,
     modo: _metaModo,
     diasDesdeIA: _metaDiasDesdeIA,
+    bezerros_qtd: _metaBezerrosQtd,
+    sem_secagem: _metaSemSecagem,
     palhetas: _metaPalhetas,
     razao: _metaRazao,
     evidencia: _metaEvidencia,

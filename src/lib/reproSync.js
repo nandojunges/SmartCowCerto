@@ -4,6 +4,24 @@ import { supabase } from "./supabaseClient";
 const TIPOS_REPRO = ["IA", "PARTO", "SECAGEM", "DG", "ABORTO"];
 const ALLOWED_META_KEYS = new Set(["origem", "comentario", "dg", "ia_ref", "tipoExame"]);
 
+function sanitizeMeta(meta) {
+  const base = meta && typeof meta === "object" ? meta : {};
+  const {
+    input_br: _inputBr,
+    modo: _modo,
+    diasDesdeIA: _diasDesdeIA,
+    bezerros_qtd: _bezerrosQtd,
+    sem_secagem: _semSecagem,
+    palhetas: _palhetas,
+    razao: _razao,
+    evidencia: _evidencia,
+    tipoSemen: _tipoSemen,
+    tipo_semen: _tipoSemenSnake,
+    ...cleanMeta
+  } = base;
+  return cleanMeta || {};
+}
+
 function normalizarDataEvento(valor) {
   if (!valor) return null;
   const texto = String(valor).trim();
